@@ -41,6 +41,3 @@ ENV/
 *.bin
 *.elf
 *.map
-
-# Managed components
-managed_components/
