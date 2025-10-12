@@ -66,9 +66,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
     reset_c6_slave();
 
-    // Initialize system event loop
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
     ESP_LOGI(TAG, "Starting WiFi scan task (scans every 5s until connected)...");
     wifi_scan_start();
 
