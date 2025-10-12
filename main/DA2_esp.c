@@ -1,4 +1,4 @@
-/* Scan Example
+/* Scan Example - Periodic WiFi Scan with FreeRTOS Task
 
    This example code is in the Public Domain (or CC0 licensed, at your option.)
 
@@ -8,18 +8,19 @@
 */
 
 /*
-    This example shows how to scan for available set of APs.
+    This example shows how to scan for available set of APs periodically using FreeRTOS task.
 */
 #include <string.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
-#include "regex.h"
 
 #define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
+#define SCAN_INTERVAL_MS 5000  // 5 seconds
 
 #ifdef CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP
 #define USE_CHANNEL_BITMAP 1
@@ -156,9 +157,64 @@ static void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t c
 }
 #endif /*USE_CHANNEL_BITMAP*/
 
+/* Perform WiFi scan and print results */
+static void perform_scan(void)
+{
+    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
+    wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
+    uint16_t ap_count = 0;
+    memset(ap_info, 0, sizeof(ap_info));
 
-/* Initialize Wi-Fi as sta and set scan method */
-static void wifi_scan(void)
+#ifdef USE_CHANNEL_BITMAP
+    wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1, sizeof(wifi_scan_config_t));
+    if (!scan_config) {
+        ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
+        return;
+    }
+    array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
+    esp_wifi_scan_start(scan_config, true);
+    free(scan_config);
+#else
+    esp_wifi_scan_start(NULL, true);
+#endif /*USE_CHANNEL_BITMAP*/
+
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
+    
+    ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
+    
+    for (int i = 0; i < number; i++) {
+        ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
+        ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
+        print_auth_mode(ap_info[i].authmode);
+        if (ap_info[i].authmode != WIFI_AUTH_WEP) {
+            print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
+        }
+        ESP_LOGI(TAG, "Channel \t\t%d", ap_info[i].primary);
+        ESP_LOGI(TAG, "--------------------------------");
+    }
+}
+
+/* WiFi scan task - runs every 5 seconds */
+static void wifi_scan_task(void *pvParameters)
+{
+    uint32_t scan_count = 0;
+    
+    ESP_LOGI(TAG, "WiFi scan task started");
+    
+    while (1) {
+        scan_count++;
+        ESP_LOGI(TAG, "\n========== Scan #%lu ==========", scan_count);
+        
+        perform_scan();
+        
+        // Wait for 5 seconds before next scan
+        vTaskDelay(pdMS_TO_TICKS(SCAN_INTERVAL_MS));
+    }
+}
+
+/* Initialize Wi-Fi as sta */
+static void wifi_init(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -168,42 +224,10 @@ static void wifi_scan(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
-    wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
-    uint16_t ap_count = 0;
-    memset(ap_info, 0, sizeof(ap_info));
-
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
-
-#ifdef USE_CHANNEL_BITMAP
-    wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1,sizeof(wifi_scan_config_t));
-    if (!scan_config) {
-        ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
-        return;
-    }
-    array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
-    esp_wifi_scan_start(scan_config, true);
-    free(scan_config);
-
-#else
-    esp_wifi_scan_start(NULL, true);
-#endif /*USE_CHANNEL_BITMAP*/
-
-    ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
-    ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
-    for (int i = 0; i < number; i++) {
-        ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
-        ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
-        print_auth_mode(ap_info[i].authmode);
-        if (ap_info[i].authmode != WIFI_AUTH_WEP) {
-            print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
-        }
-        ESP_LOGI(TAG, "Channel \t\t%d", ap_info[i].primary);
-    }
+    
+    ESP_LOGI(TAG, "WiFi initialized successfully");
 }
 
 void app_main(void)
@@ -214,7 +238,13 @@ void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK( ret );
+    ESP_ERROR_CHECK(ret);
 
-    wifi_scan();
+    // Initialize WiFi
+    wifi_init();
+    
+    // Create WiFi scan task
+    xTaskCreate(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, NULL);
+    
+    ESP_LOGI(TAG, "Application started - scanning every %d seconds", SCAN_INTERVAL_MS / 1000);
 }
