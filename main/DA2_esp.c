@@ -19,6 +19,8 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
+#include "driver/gpio.h"
+
 /* WiFi configuration - hardcoded values are used here.
    Change the values below to your WiFi SSID, password, and retry count.
    No project configuration menu (Kconfig/menuconfig) is needed. */
