@@ -52,9 +52,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGI(TAG, "Disconnected from WiFi MQTT suspended, WiFi scan resumed");
-        mqtt_handle_suspend(); // Suspend MQTT task on disconnect
-        wifi_scan_resume();  // Resume WiFi scan task on disconnect
         if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
@@ -63,6 +60,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
         ESP_LOGI(TAG,"Connect to the AP failed");
+        ESP_LOGI(TAG, "Disconnected from WiFi MQTT suspended, WiFi scan resumed");
+        mqtt_handle_suspend(); // Suspend MQTT task on disconnect
+        wifi_scan_resume();  // Resume WiFi scan task on disconnect
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
