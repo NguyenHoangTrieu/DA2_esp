@@ -202,7 +202,7 @@ static void wifi_scan_task(void *pvParameters)
         scan_count++;
         ESP_LOGI(TAG, "\n========== Scan #%lu ==========", scan_count);
         perform_scan();
-        // Wait for 5 seconds before next scan
+        // Wait for 20 seconds before next scan
         vTaskDelay(pdMS_TO_TICKS(SCAN_INTERVAL_MS));
     }
 }

@@ -13,7 +13,7 @@
 
 /* Macro defines */
 #define DEFAULT_SCAN_LIST_SIZE      20
-#define SCAN_INTERVAL_MS            5000  // 5 seconds
+#define SCAN_INTERVAL_MS            20000  // 20 seconds
 
 #define USE_CHANNEL_BITMAP          1
 
