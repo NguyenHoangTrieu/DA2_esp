@@ -61,7 +61,7 @@ static void mqtt_publish_task(void *arg)
  * Initialize MQTT client and start publishing task (default is suspend).
  * Call this once at startup.
  */
-void mqtt_handler_init(void)
+void mqtt_handler_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker = {
