@@ -22,8 +22,8 @@
 /* WiFi configuration - hardcoded values are used here.
    Change the values below to your WiFi SSID, password, and retry count.
    No project configuration menu (Kconfig/menuconfig) is needed. */
-#define EXAMPLE_ESP_WIFI_SSID      "your_ssid"
-#define EXAMPLE_ESP_WIFI_PASS      "your_password"
+#define EXAMPLE_ESP_WIFI_SSID      "Devil"
+#define EXAMPLE_ESP_WIFI_PASS      "hamhap7604"
 #define EXAMPLE_ESP_MAXIMUM_RETRY  10
 
 // WPA3-SAE mode. Set as needed, or comment out if not used.
