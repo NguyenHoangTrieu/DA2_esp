@@ -32,8 +32,8 @@ void app_main(void)
     wifi_scan_start();
 
     ESP_LOGI(TAG, "Starting WiFi UART connect task (waiting for connect command)...");
-    wifi_uart_task_start();
+    wifi_connect_task_start();
 
     ESP_LOGI(TAG, "Starting MQTT handler (suspended by default, resumes on WiFi connect)...");
-    mqtt_handler_start();
+    mqtt_handle_start();
 }
