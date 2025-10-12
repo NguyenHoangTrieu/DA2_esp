@@ -15,7 +15,6 @@
 #define DEFAULT_SCAN_LIST_SIZE      20
 #define SCAN_INTERVAL_MS            5000  // 5 seconds
 
-#define C6_RESET_GPIO               GPIO_NUM_54
 #define USE_CHANNEL_BITMAP          1
 
 #if USE_CHANNEL_BITMAP
@@ -27,7 +26,6 @@ void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t channel_
 /* Function declarations (all original functions retained) */
 void print_auth_mode(int authmode);
 void print_cipher_type(int pairwise_cipher, int group_cipher);
-void reset_c6_slave(void);
 void perform_scan(void);
 void wifi_init(void);
 void wifi_scan_suspend(void);

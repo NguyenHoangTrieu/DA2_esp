@@ -242,6 +242,7 @@ void wifi_init(void)
 void wifi_scan_start(void)
 {
     // Create the WiFi scan task
+    wifi_init();
     xTaskCreate(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &scan_task_handle);
     ESP_LOGI(TAG, "WiFi scan task created");
 }
