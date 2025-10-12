@@ -66,11 +66,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
     reset_c6_slave();
 
-    ESP_LOGI(TAG, "Starting WiFi scan task (scans every 5s until connected)...");
-    wifi_scan_start();
-
     ESP_LOGI(TAG, "Starting WiFi UART connect task (waiting for connect command)...");
     wifi_connect_task_start();
+
+    ESP_LOGI(TAG, "Starting WiFi scan task (scans every 5s until connected)...");
+    wifi_scan_start();
 
     ESP_LOGI(TAG, "Starting MQTT handler (suspended by default, resumes on WiFi connect)...");
     mqtt_handle_start();
