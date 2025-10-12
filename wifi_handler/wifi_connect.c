@@ -70,8 +70,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         wifi_scan_suspend(); // Suspend WiFi scan task on successful connection
         mqtt_handle_resume(); // Resume MQTT task on successful connection
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s Wifi scan suspended, MQTT resumed",
-                 s_wifi_ssid, s_wifi_pass);
     }
 }
 
