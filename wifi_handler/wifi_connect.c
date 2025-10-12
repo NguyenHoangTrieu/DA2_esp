@@ -68,10 +68,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-        ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s Wifi scan suspended, MQTT resumed",
-                 s_wifi_ssid, s_wifi_pass);
-        wifi_scan_suspend(); // Suspend WiFi scan task on successful connection
-        mqtt_handle_resume(); // Resume MQTT task on successful connection
     }
 }
 
@@ -171,7 +167,12 @@ static void wifi_uart_task(void *arg)
                     strncpy(s_wifi_pass, colon_ptr + 1, pass_len);
                     s_wifi_pass[pass_len] = '\0';
                     ESP_LOGI(TAG, "Received command: SSID='%s', PASS='%s'", s_wifi_ssid, s_wifi_pass);
-
+                    
+                    ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s Wifi scan suspended, MQTT resumed",
+                                s_wifi_ssid, s_wifi_pass);
+                    wifi_scan_suspend(); // Suspend WiFi scan task on successful connection
+                    mqtt_handle_resume(); // Resume MQTT task on successful connection
+                    
                     // Connect to new WiFi network with parsed credentials
                     wifi_config_t wifi_config = {0};
                     strncpy((char *)wifi_config.sta.ssid, s_wifi_ssid, sizeof(wifi_config.sta.ssid));
