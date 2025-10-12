@@ -29,7 +29,6 @@ void print_auth_mode(int authmode);
 void print_cipher_type(int pairwise_cipher, int group_cipher);
 void reset_c6_slave(void);
 void perform_scan(void);
-void wifi_scan_task(void *pvParameters);
 void wifi_init(void);
 void wifi_scan_suspend(void);
 void wifi_scan_resume(void);
