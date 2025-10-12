@@ -9,6 +9,7 @@
 
 /*
     This example shows how to scan for available set of APs periodically using FreeRTOS task.
+    Added software reset for ESP32-C6 slave via GPIO54 for Waveshare ESP32-P4-WIFI6-DEV-KIT.
 */
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -18,9 +19,13 @@
 #include "esp_log.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 
 #define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
 #define SCAN_INTERVAL_MS 5000  // 5 seconds
+
+// GPIO for ESP32-C6 slave reset control on Waveshare board
+#define C6_RESET_GPIO GPIO_NUM_54
 
 #ifdef CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP
 #define USE_CHANNEL_BITMAP 1
@@ -157,6 +162,41 @@ static void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t c
 }
 #endif /*USE_CHANNEL_BITMAP*/
 
+/* Software reset ESP32-C6 slave via GPIO54 */
+static void reset_c6_slave(void)
+{
+    ESP_LOGI(TAG, "Performing software reset of ESP32-C6 slave...");
+    
+    // Configure GPIO54 as output
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << C6_RESET_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    
+    // Perform reset sequence - multiple toggles for robust reset
+    for (int i = 0; i < 3; i++) {
+        gpio_set_level(C6_RESET_GPIO, 0);  // Assert reset (LOW)
+        vTaskDelay(pdMS_TO_TICKS(100));
+        gpio_set_level(C6_RESET_GPIO, 1);  // De-assert reset (HIGH)
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // Final reset - hold low for 500ms then release
+    gpio_set_level(C6_RESET_GPIO, 0);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(C6_RESET_GPIO, 1);
+    
+    // Wait for C6 to boot up completely (critical timing)
+    ESP_LOGI(TAG, "Waiting for ESP32-C6 to boot up...");
+    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds for C6 bootloader + app init
+    
+    ESP_LOGI(TAG, "ESP32-C6 slave reset completed");
+}
+
 /* Perform WiFi scan and print results */
 static void perform_scan(void)
 {
@@ -240,7 +280,12 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // Initialize WiFi
+    // CRITICAL: Reset ESP32-C6 slave before WiFi initialization
+    // This ensures C6 is in a known good state after P4 reset
+    ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
+    reset_c6_slave();
+
+    // Initialize WiFi (ESP-Hosted will connect to C6)
     wifi_init();
     
     // Create WiFi scan task
