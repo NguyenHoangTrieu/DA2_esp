@@ -10,7 +10,7 @@ idf.py fullclean
 idf.py build
 
 #4. copy firmware to flash directory
-# cp -r build/esp_usb_otg.bin /mnt/c/embedded/esp_flash_folder/esp_usb_otg
+cp -r build/DA2_esp.bin /mnt/c/embedded/esp_flash_folder/da2_esp
 
 # 4. (Optional) flash firmware to device
 # idf.py -p /dev/ttyUSB0 flash
