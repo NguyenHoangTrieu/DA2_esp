@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 
 #define MQTT_SERVER_URI "mqtt://demo.thingsboard.io:1883"
-#define THINGSBOARD_TOKEN "YOUR_THINGSBOARD_DEVICE_TOKEN" // <-- Replace with your token
+#define THINGSBOARD_TOKEN "ZCOjw6KKw5j2EqYV2co6" // <-- Replace with your token
 #define MQTT_PUB_TOPIC "v1/devices/me/telemetry"
 #define PUBLISH_PERIOD_MS 10000  // Publish every 10 seconds
 
