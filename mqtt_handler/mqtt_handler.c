@@ -61,7 +61,7 @@ static void mqtt_publish_task(void *arg)
  * Initialize MQTT client and start publishing task (default is suspend).
  * Call this once at startup.
  */
-void mqtt_handler_start(void)
+void mqtt_handle_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker = {
@@ -85,7 +85,7 @@ void mqtt_handler_start(void)
 /*
  * Resume the MQTT publish task after WiFi/MQTT connection is established.
  */
-void mqtt_handler_resume(void)
+void mqtt_handle_resume(void)
 {
     if (m_pub_task)
         vTaskResume(m_pub_task);
@@ -94,7 +94,7 @@ void mqtt_handler_resume(void)
 /*
  * Suspend the MQTT publish task when WiFi/MQTT disconnects.
  */
-void mqtt_handler_suspend(void)
+void mqtt_handle_suspend(void)
 {
     if (m_pub_task)
         vTaskSuspend(m_pub_task);
