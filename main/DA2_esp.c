@@ -6,6 +6,7 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,45 +16,48 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-
 #include "lwip/err.h"
 #include "lwip/sys.h"
-
 #include "driver/gpio.h"
+#include "driver/uart.h"
 
-/* WiFi configuration - hardcoded values are used here.
-   Change the values below to your WiFi SSID, password, and retry count.
-   No project configuration menu (Kconfig/menuconfig) is needed. */
-#define EXAMPLE_ESP_WIFI_SSID      "Devil"
-#define EXAMPLE_ESP_WIFI_PASS      "hamhap7604"
+/* WiFi configuration - these are initial values. 
+   Can be changed by UART command at runtime. */
+#define DEFAULT_ESP_WIFI_SSID      "Devil"
+#define DEFAULT_ESP_WIFI_PASS      "hamhap7604"
 #define EXAMPLE_ESP_MAXIMUM_RETRY  10
 
-// WPA3-SAE mode. Set as needed, or comment out if not used.
-// Options: WPA3_SAE_PWE_HUNT_AND_PECK, WPA3_SAE_PWE_HASH_TO_ELEMENT, WPA3_SAE_PWE_BOTH
+// WPA3-SAE mode settings. Set as needed.
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
-#define EXAMPLE_H2E_IDENTIFIER ""    // Used for WPA3 H2E, otherwise leave empty string
+#define EXAMPLE_H2E_IDENTIFIER ""    // Used for WPA3 H2E, otherwise keep empty
 
-// Authmode threshold. Change as needed: WIFI_AUTH_OPEN, WIFI_AUTH_WEP, WIFI_AUTH_WPA_PSK, ...
+// Authmode threshold. Adjust as needed.
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
 
 // Uncomment if you use WPA3-compatible support
 // #define ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
 
-/* FreeRTOS event group to signal when we are connected */
+// FreeRTOS event group to signal WiFi state
 static EventGroupHandle_t s_wifi_event_group;
 
-/* The event group allows multiple bits for each event, but we only care about two events:
- * - we are connected to the AP with an IP
- * - we failed to connect after the maximum amount of retries */
+// The event group uses two bits for WiFi connection state
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
 // GPIO for ESP32-C6 slave reset control on Waveshare board
 #define C6_RESET_GPIO GPIO_NUM_54
 
-static const char *TAG = "wifi station";
+// UART parameters for WiFi credential input
+#define UART_PORT_NUM      UART_NUM_0
+#define UART_BAUD_RATE     115200
+#define UART_BUF_SIZE      256
 
+static const char *TAG = "wifi station";
 static int s_retry_num = 0;
+
+/* Buffers to store SSID and password */
+static char s_wifi_ssid[33] = DEFAULT_ESP_WIFI_SSID;
+static char s_wifi_pass[65] = DEFAULT_ESP_WIFI_PASS;
 
 /* WiFi event handler function */
 static void event_handler(void* arg, esp_event_base_t event_base,
@@ -79,7 +83,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 }
 
 /* Initialize WiFi station and start connection */
-void wifi_init_sta(void)
+void wifi_init_sta(const char *custom_ssid, const char *custom_pass)
 {
     s_wifi_event_group = xEventGroupCreate();
 
@@ -104,26 +108,19 @@ void wifi_init_sta(void)
                                                         NULL,
                                                         &instance_got_ip));
 
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .password = EXAMPLE_ESP_WIFI_PASS,
-            /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (password len => 8).
-             * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
-             * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
-             * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
-             */
-            .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
-            .sae_h2e_identifier = EXAMPLE_H2E_IDENTIFIER,
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, custom_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, custom_pass, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
+    wifi_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
+    strcpy((char *)wifi_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
-            .disable_wpa3_compatible_mode = 0,
+    wifi_config.sta.disable_wpa3_compatible_mode = 0;
 #endif
-        },
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
@@ -140,10 +137,10 @@ void wifi_init_sta(void)
        hence we can test which event actually happened. */
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s",
-                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+                 custom_ssid, custom_pass);
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s, Password:%s",
-                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+                 custom_ssid, custom_pass);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }
@@ -153,7 +150,6 @@ void wifi_init_sta(void)
 static void reset_c6_slave(void)
 {
     ESP_LOGI(TAG, "Performing software reset of ESP32-C6 slave...");
-    
     // Configure GPIO54 as output
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << C6_RESET_GPIO),
@@ -163,27 +159,81 @@ static void reset_c6_slave(void)
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf);
-    
-    // Perform reset sequence - multiple toggles for robust reset
+    // Perform reset sequence with multiple toggles for robust reset
     for (int i = 0; i < 3; i++) {
         gpio_set_level(C6_RESET_GPIO, 0);  // Assert reset (LOW)
         vTaskDelay(pdMS_TO_TICKS(100));
         gpio_set_level(C6_RESET_GPIO, 1);  // De-assert reset (HIGH)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    
-    // Final reset - hold low for 500ms then release
+    // Final reset: hold low for 500ms then release
     gpio_set_level(C6_RESET_GPIO, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
     gpio_set_level(C6_RESET_GPIO, 1);
-    
     // Wait for C6 to boot up completely (critical timing)
     ESP_LOGI(TAG, "Waiting for ESP32-C6 to boot up...");
     vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds for C6 bootloader + app init
-    
     ESP_LOGI(TAG, "ESP32-C6 slave reset completed");
 }
 
+/* Task to receive SSID/Password via UART and connect to WiFi.
+   Command format: SSID:PASSWORD (just send this string, no '\n' is needed) */
+static void wifi_uart_task(void *arg)
+{
+    // UART configuration
+    uart_config_t uart_config = {
+        .baud_rate = UART_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    uart_param_config(UART_PORT_NUM, &uart_config);
+    uart_driver_install(UART_PORT_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
+
+    ESP_LOGI(TAG, "Listening for WiFi SSID/Password over UART (format: SSID:PASSWORD)");
+
+    uint8_t data[UART_BUF_SIZE];
+    while (1) {
+        int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
+        if (len > 0) {
+            data[len] = '\0';
+            // Parse input by finding first ':' and splitting SSID/PASSWORD
+            char *colon_ptr = strchr((char *)data, ':');
+            if (colon_ptr) {
+                int ssid_len = colon_ptr - (char *)data;
+                int pass_len = strlen((char *)data) - ssid_len - 1;
+                if (ssid_len > 0 && ssid_len < 33 && pass_len >= 0 && pass_len < 65) {
+                    strncpy(s_wifi_ssid, (char *)data, ssid_len);
+                    s_wifi_ssid[ssid_len] = '\0';
+                    strncpy(s_wifi_pass, colon_ptr + 1, pass_len);
+                    s_wifi_pass[pass_len] = '\0';
+                    ESP_LOGI(TAG, "Received command: SSID='%s', PASS='%s'", s_wifi_ssid, s_wifi_pass);
+
+                    /* Connect to new WiFi network */
+                    wifi_config_t wifi_config = {0};
+                    strncpy((char *)wifi_config.sta.ssid, s_wifi_ssid, sizeof(wifi_config.sta.ssid));
+                    strncpy((char *)wifi_config.sta.password, s_wifi_pass, sizeof(wifi_config.sta.password));
+                    wifi_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
+                    wifi_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
+                    strcpy((char *)wifi_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
+
+    #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
+                    wifi_config.sta.disable_wpa3_compatible_mode = 0;
+    #endif
+                    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+                    ESP_ERROR_CHECK(esp_wifi_disconnect()); // Ensure disconnect before reconnect
+                    ESP_ERROR_CHECK(esp_wifi_connect());
+                }
+            } else {
+                ESP_LOGI(TAG, "Invalid format. Usage: SSID:PASSWORD");
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+/* Main entry point */
 void app_main(void)
 {
     // Initialize NVS
@@ -193,12 +243,14 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
     // CRITICAL: Reset ESP32-C6 slave before WiFi initialization
     reset_c6_slave();
 
-    // If you want to increase log level for the WiFi module, call esp_log_level_set("wifi", level)
-    // before esp_wifi_init(). Example: esp_log_level_set("wifi", ESP_LOG_VERBOSE);
+    // Initialize WiFi with default SSID/PASS at boot
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
+    wifi_init_sta(s_wifi_ssid, s_wifi_pass);
 
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-    wifi_init_sta();
+    // Start UART task to listen for credentials and connect dynamically
+    xTaskCreate(wifi_uart_task, "wifi_uart_task", 4096, NULL, 5, NULL);
 }
