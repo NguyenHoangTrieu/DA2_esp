@@ -25,8 +25,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-            esp_mqtt_client_subscribe(client, "v1/devices/me/attributes", 1);
-            esp_mqtt_client_subscribe(client, "v1/devices/me/rpc/request/+", 1);
+            esp_mqtt_client_subscribe(event->client, "v1/devices/me/attributes", 1);
+            esp_mqtt_client_subscribe(event->client, "v1/devices/me/rpc/request/+", 1);
             m_mqtt_connected = true;
             break;
         case MQTT_EVENT_DISCONNECTED:
