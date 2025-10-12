@@ -24,8 +24,6 @@ extern uint8_t channel_list[CHANNEL_LIST_SIZE];
 void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t channel_list_size, wifi_scan_config_t *scan_config);
 #endif
 
-extern const char *TAG;
-
 /* Function declarations (all original functions retained) */
 void print_auth_mode(int authmode);
 void print_cipher_type(int pairwise_cipher, int group_cipher);
