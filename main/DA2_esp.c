@@ -13,7 +13,7 @@
 #include "nvs_flash.h"
 #include "esp_log.h"
 
-#define C6_RESET_GPIO               GPIO_NUM_54
+#define C6_RESET_GPIO   GPIO_NUM_54
 static const char *TAG = "DA2_esp_main";
 
 /* Software reset ESP32-C6 slave via GPIO54 */
@@ -65,6 +65,9 @@ void app_main(void)
     // This ensures C6 is in a known good state after P4 reset
     ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
     reset_c6_slave();
+
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
+    wifi_init_sta(s_wifi_ssid, s_wifi_pass);
 
     // Initialize system event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());

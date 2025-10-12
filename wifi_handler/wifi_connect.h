@@ -17,10 +17,6 @@
 // Allows passing custom SSID/PASSWORD for initial connect.
 void wifi_init_sta(const char *custom_ssid, const char *custom_pass);
 
-// Perform a software reset of the attached ESP32-C6 slave via GPIO54.
-// Typically called on hardware boot/reset.
-void reset_c6_slave(void);
-
 void wifi_connect_task_start(void);
 
 #endif // WIFI_CONNECT_H
