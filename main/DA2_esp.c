@@ -66,9 +66,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
     reset_c6_slave();
 
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
-    wifi_init_sta(s_wifi_ssid, s_wifi_pass);
-
     // Initialize system event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 

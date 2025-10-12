@@ -194,6 +194,8 @@ static void wifi_uart_task(void *arg)
 
 void wifi_connect_task_start(void)
 {
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
+    wifi_init_sta(s_wifi_ssid, s_wifi_pass);
     // Start the UART task to listen for WiFi credentials
     xTaskCreate(wifi_uart_task, "wifi_uart_task", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "WiFi UART task created");
