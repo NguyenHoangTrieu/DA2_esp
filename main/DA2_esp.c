@@ -21,17 +21,19 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
-#define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
+#define DEFAULT_SCAN_LIST_SIZE      20
+
 #define SCAN_INTERVAL_MS 5000  // 5 seconds
 
 // GPIO for ESP32-C6 slave reset control on Waveshare board
 #define C6_RESET_GPIO GPIO_NUM_54
 
-#ifdef CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP
-#define USE_CHANNEL_BITMAP 1
-#define CHANNEL_LIST_SIZE 3
-static uint8_t channel_list[CHANNEL_LIST_SIZE] = {1, 6, 11};
-#endif /*CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP*/
+#define USE_CHANNEL_BITMAP         1 
+
+#if USE_CHANNEL_BITMAP
+#define CHANNEL_LIST_SIZE          3
+static uint8_t channel_list[CHANNEL_LIST_SIZE] = {1, 6, 11}; // Only scan channels 1, 6, and 11
+#endif
 
 static const char *TAG = "scan";
 
