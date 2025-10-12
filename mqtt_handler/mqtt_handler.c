@@ -5,15 +5,14 @@
 #include "freertos/task.h"
 
 #define BROKER_URI        "mqtt://demo.thingsboard.io:1883"
-#define DEVICE_TOKEN      "ZCOjw6KKw5j2EqYV2co6" // Replace with your actual ThingsBoard device token
+#define DEVICE_TOKEN      "ZCOjw6KKw5j2EqYV2co6" // Replace with your ThingsBoard token
 #define PUBLISH_TOPIC     "v1/devices/me/telemetry"
-#define PUBLISH_INTERVAL  10000  // ms
+#define PUBLISH_INTERVAL  1000  // ms
 
 static const char *TAG = "mqtt_handler";
 static esp_mqtt_client_handle_t m_client = NULL;
 static TaskHandle_t m_pub_task = NULL;
-static volatile bool m_mqtt_connected = false;
-
+static volatile uint8_t m_mqtt_connected = false;
 /*
  * MQTT event handler function.
  * Updates connection state and logs events.
@@ -32,6 +31,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGE(TAG, "MQTT_EVENT_ERROR");
+            m_mqtt_connected = false;
             break;
         default:
             break;
@@ -47,7 +47,7 @@ static void mqtt_publish_task(void *arg)
     int counter = 0;
     while (1) {
         // Only publish if MQTT client is connected
-        if (m_client && esp_mqtt_client_is_connected(m_client)) {
+        if (m_client && m_mqtt_connected) {
             char payload[64];
             snprintf(payload, sizeof(payload), "{\"count\": %d}", counter++);
             esp_mqtt_client_publish(m_client, PUBLISH_TOPIC, payload, 0, 1, 0);
@@ -64,9 +64,14 @@ static void mqtt_publish_task(void *arg)
 void mqtt_handler_init(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker_address.uri = BROKER_URI,
-        .credentials.username = DEVICE_TOKEN,           // ThingsBoard uses token as username
-        // .protocol_ver = MQTT_PROTOCOL_V_311,         // Optionally specify protocol version
+        .broker = {
+            .address = {
+                .uri = BROKER_URI,
+            },
+        },
+        .credentials = {
+            .username = DEVICE_TOKEN,
+        }
     };
     m_client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
