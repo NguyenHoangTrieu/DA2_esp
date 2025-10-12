@@ -25,6 +25,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+            esp_mqtt_client_subscribe(client, "v1/devices/me/attributes", 1);
+            esp_mqtt_client_subscribe(client, "v1/devices/me/rpc/request/+", 1);
             m_mqtt_connected = true;
             break;
         case MQTT_EVENT_DISCONNECTED:
@@ -83,9 +85,6 @@ void mqtt_handle_start(void)
     m_client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(m_client);
-    esp_mqtt_client_subscribe(m_client, SUBSCRIBE_TOPIC, 1);
-    esp_mqtt_client_subscribe(m_client, ATRIBUTE_TOPIC, 1);
-
     // Start publish task and immediately suspend it
     xTaskCreate(mqtt_publish_task, "mqtt_publish_task", 4096, NULL, 5, &m_pub_task);
     vTaskSuspend(m_pub_task);
