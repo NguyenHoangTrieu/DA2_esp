@@ -249,5 +249,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Application started - scanning every %d seconds", SCAN_INTERVAL_MS / 1000);
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "Main task running...");
     }
 }
