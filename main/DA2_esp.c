@@ -247,8 +247,4 @@ void app_main(void)
     xTaskCreate(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, NULL);
     
     ESP_LOGI(TAG, "Application started - scanning every %d seconds", SCAN_INTERVAL_MS / 1000);
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        ESP_LOGI(TAG, "Main task running...");
-    }
 }
