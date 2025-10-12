@@ -46,6 +46,9 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+// GPIO for ESP32-C6 slave reset control on Waveshare board
+#define C6_RESET_GPIO GPIO_NUM_54
+
 static const char *TAG = "wifi station";
 
 static int s_retry_num = 0;
@@ -144,6 +147,41 @@ void wifi_init_sta(void)
     }
 }
 
+/* Software reset ESP32-C6 slave via GPIO54 */
+static void reset_c6_slave(void)
+{
+    ESP_LOGI(TAG, "Performing software reset of ESP32-C6 slave...");
+    
+    // Configure GPIO54 as output
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << C6_RESET_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    
+    // Perform reset sequence - multiple toggles for robust reset
+    for (int i = 0; i < 3; i++) {
+        gpio_set_level(C6_RESET_GPIO, 0);  // Assert reset (LOW)
+        vTaskDelay(pdMS_TO_TICKS(100));
+        gpio_set_level(C6_RESET_GPIO, 1);  // De-assert reset (HIGH)
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // Final reset - hold low for 500ms then release
+    gpio_set_level(C6_RESET_GPIO, 0);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(C6_RESET_GPIO, 1);
+    
+    // Wait for C6 to boot up completely (critical timing)
+    ESP_LOGI(TAG, "Waiting for ESP32-C6 to boot up...");
+    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds for C6 bootloader + app init
+    
+    ESP_LOGI(TAG, "ESP32-C6 slave reset completed");
+}
+
 void app_main(void)
 {
     // Initialize NVS
@@ -153,6 +191,8 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    // CRITICAL: Reset ESP32-C6 slave before WiFi initialization
+    reset_c6_slave();
 
     // If you want to increase log level for the WiFi module, call esp_log_level_set("wifi", level)
     // before esp_wifi_init(). Example: esp_log_level_set("wifi", ESP_LOG_VERBOSE);
