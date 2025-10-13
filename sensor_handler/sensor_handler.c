@@ -253,7 +253,7 @@ static void sensor_task(void *arg)
 
         // Change relay only if more than 10s since last change
         if (relay_cmd_received &&
-            (now_tick - last_relay_change_tick >= pdMS_TO_TICKS(10000))) {
+            (now_tick - last_relay_change_tick >= pdMS_TO_TICKS(5000))) {
             gpio_set_level(RELAY_GPIO, requested_motor_val ? 1 : 0);
             relay_state = requested_motor_val;
             last_relay_change_tick = now_tick;
