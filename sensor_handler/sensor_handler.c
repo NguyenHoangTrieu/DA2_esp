@@ -138,6 +138,30 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle,
 }
 
 /**
+ * @brief Scan I2C bus for devices
+ */
+static void i2c_scanner(i2c_master_bus_handle_t bus_handle)
+{
+    ESP_LOGI(TAG, "Scanning I2C bus...");
+    int devices_found = 0;
+    
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        esp_err_t ret = i2c_master_probe(bus_handle, addr, 1000);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Device found at address 0x%02X", addr);
+            devices_found++;
+        }
+    }
+    
+    if (devices_found == 0) {
+        ESP_LOGE(TAG, "No I2C devices found! Check wiring and pull-ups.");
+    } else {
+        ESP_LOGI(TAG, "Scan complete. Found %d device(s)", devices_found);
+    }
+}
+
+
+/**
  * @brief Perform soft reset of HTU21D sensor
  */
 static esp_err_t htu21_soft_reset(i2c_master_dev_handle_t dev_handle)
@@ -171,6 +195,19 @@ static void sensor_task(void *arg)
         ESP_LOGE(TAG, "Failed to initialize I2C");
         vTaskDelete(NULL);
         return;
+    }
+    // Try to initialize just the bus for scanning
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = I2C_MASTER_NUM,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .scl_io_num = I2C_MASTER_SCL_IO,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    
+    if (i2c_new_master_bus(&bus_config, &bus_handle) == ESP_OK) {
+        i2c_scanner(bus_handle);
     }
 
     // Perform soft reset on startup
