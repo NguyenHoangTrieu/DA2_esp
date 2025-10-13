@@ -14,8 +14,8 @@
 static const char *TAG = "htu21d_example";
 
 // I2C Configuration for ESP32-P4 WiFi Dev Kit
-#define I2C_MASTER_SCL_IO           6               /*!< GPIO number for I2C master clock */
-#define I2C_MASTER_SDA_IO           5               /*!< GPIO number for I2C master data  */
+#define I2C_MASTER_SCL_IO           8               /*!< GPIO number for I2C master clock */
+#define I2C_MASTER_SDA_IO           7               /*!< GPIO number for I2C master data  */
 #define I2C_MASTER_NUM              I2C_NUM_0       /*!< I2C port number for master dev */
 #define I2C_MASTER_FREQ_HZ          400000          /*!< I2C master clock frequency (400kHz) */
 #define I2C_MASTER_TIMEOUT_MS       1000
