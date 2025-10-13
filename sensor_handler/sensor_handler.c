@@ -3,9 +3,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "esp_adc/adc_oneshot.h"
-#include "hal/i2c_ll.h"
 #include "driver/i2c_master.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
@@ -13,15 +11,17 @@
 
 #define TAG "sensor_handler"
 
-// Pin and ADC config
+// Pin config
 #define SOIL_ADC_GPIO       32
 #define SOIL_ADC_CHANNEL    ADC_CHANNEL_4
 #define SOIL_DIGITAL_GPIO   GPIO_NUM_26
 #define RELAY_GPIO          GPIO_NUM_15
 
-#define HTU21_I2C_PORT      0
-#define HTU21_SDA           21
-#define HTU21_SCL           22
+#define I2C_MASTER_NUM      I2C_NUM_0
+#define I2C_MASTER_SDA_IO   21
+#define I2C_MASTER_SCL_IO   22
+#define I2C_MASTER_FREQ_HZ  100000
+
 #define HTU21_ADDR          0x40
 #define HTU21_TEMP_CMD      0xE3
 #define HTU21_HUMID_CMD     0xE5
@@ -33,30 +33,29 @@ static int s_soil_adc = 0;
 static uint8_t s_soil_dig = 0;
 static int s_soil_thres = SOIL_DRY_THRESHOLD;
 
-// HTU21 sensor I2C read via new ESP-IDF i2c_master_xxx API
-static esp_err_t htu21_read(int16_t *temp100, int16_t *humid100, i2c_master_handle_t i2c_handle) {
+// HTU21 sensor I2C read using driver/i2c_master.h
+static esp_err_t htu21_read(int16_t *temp100, int16_t *humid100, i2c_master_dev_handle_t dev_handle) {
     uint8_t data[3];
     uint16_t raw;
+    esp_err_t ret;
 
     // Read Temperature
-    esp_err_t ret = i2c_master_transmit(i2c_handle, HTU21_ADDR, (uint8_t[]){HTU21_TEMP_CMD}, 1, false);
+    ret = i2c_master_transmit(dev_handle, &HTU21_TEMP_CMD, 1, 1000);
     if (ret != ESP_OK) return ret;
-    ret = i2c_master_receive(i2c_handle, HTU21_ADDR, data, 3, true);
+    ret = i2c_master_receive(dev_handle, data, 3, 1000);
     if (ret != ESP_OK) return ret;
-    raw = ((uint16_t)data[0] << 8) | data[1];
-    raw &= 0xFFFC;
+    raw = ((uint16_t)data[0] << 8) | data[1]; raw &= 0xFFFC;
     int32_t temp = -4685 + (17572L * raw) / 65536;
-    *temp100 = (int16_t)temp;
+    *temp100 = temp;
 
     // Read Humidity
-    ret = i2c_master_transmit(i2c_handle, HTU21_ADDR, (uint8_t[]){HTU21_HUMID_CMD}, 1, false);
+    ret = i2c_master_transmit(dev_handle, &HTU21_HUMID_CMD, 1, 1000);
     if (ret != ESP_OK) return ret;
-    ret = i2c_master_receive(i2c_handle, HTU21_ADDR, data, 3, true);
+    ret = i2c_master_receive(dev_handle, data, 3, 1000);
     if (ret != ESP_OK) return ret;
-    raw = ((uint16_t)data[0] << 8) | data[1];
-    raw &= 0xFFFC;
+    raw = ((uint16_t)data[0] << 8) | data[1]; raw &= 0xFFFC;
     int32_t humid = -600 + (12500L * raw) / 65536;
-    *humid100 = (int16_t)humid;
+    *humid100 = humid;
 
     return ESP_OK;
 }
@@ -78,29 +77,28 @@ static void sensor_task(void *arg) {
     gpio_set_direction(SOIL_DIGITAL_GPIO, GPIO_MODE_INPUT);
     gpio_set_direction(RELAY_GPIO, GPIO_MODE_OUTPUT);
 
-    // I2C setup (new API)
-    i2c_master_bus_config_t bus_cfg = {
+    // I2C setup using i2c_master API
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = I2C_MASTER_NUM,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .scl_io_num = I2C_MASTER_SCL_IO,
         .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = HTU21_I2C_PORT,
-        .sda_io_num = HTU21_SDA,
-        .scl_io_num = HTU21_SCL,
-        .glitch_ignore_cnt = 0,
-        .flags.enable_internal_pullup = true
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
-    i2c_master_bus_handle_t i2c_bus;
-    i2c_master_new_bus(&bus_cfg, &i2c_bus);
+    i2c_master_bus_handle_t bus_handle;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &bus_handle));
 
-    i2c_master_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_LEN_7,
+    i2c_device_config_t dev_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = HTU21_ADDR,
-        .scl_speed_hz = 100000
+        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
-    i2c_master_handle_t i2c_handle;
-    i2c_master_bus_add_device(i2c_bus, &dev_cfg, &i2c_handle);
+    i2c_master_dev_handle_t dev_handle;
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_config, &dev_handle));
 
     while (1) {
-        // Read HTU21 sensor
-        htu21_read(&s_temp_x100, &s_humid_x100, i2c_handle);
+        htu21_read(&s_temp_x100, &s_humid_x100, dev_handle);
         adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &s_soil_adc);
         s_soil_dig = gpio_get_level(SOIL_DIGITAL_GPIO);
 
