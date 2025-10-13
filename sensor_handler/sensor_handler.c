@@ -19,17 +19,17 @@
 #define I2C_MASTER_FREQ_HZ     100000  // 100kHz (safe for AHT20)
 #define I2C_MASTER_TIMEOUT_MS  1000
 
-// --- Soil sensor pins ---
-#define SOIL_ADC_GPIO       32
-#define SOIL_ADC_CHANNEL    ADC_CHANNEL_4
-#define SOIL_DIGITAL_GPIO   GPIO_NUM_26
-#define RELAY_GPIO          GPIO_NUM_15
-#define SOIL_DRY_THRESHOLD  1800
+// // --- Soil sensor pins ---
+// #define SOIL_ADC_GPIO       32
+// #define SOIL_ADC_CHANNEL    ADC_CHANNEL_4
+// #define SOIL_DIGITAL_GPIO   GPIO_NUM_26
+// #define RELAY_GPIO          GPIO_NUM_15
+// #define SOIL_DRY_THRESHOLD  1800
 
-static uint16_t s_soil_adc = 0;
-static uint8_t s_soil_dig = 0;
-static int s_soil_thres = SOIL_DRY_THRESHOLD;
-adc_oneshot_unit_handle_t adc_handle;
+// static uint16_t s_soil_adc = 0;
+// static uint8_t s_soil_dig = 0;
+// static int s_soil_thres = SOIL_DRY_THRESHOLD;
+// adc_oneshot_unit_handle_t adc_handle;
 
 // AHT20 (7bit) I2C address
 #define AHT20_ADDR             0x38
@@ -191,23 +191,23 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle, i2c_master
     return ESP_OK;
 }
 
-void soil_sensor_init(adc_oneshot_unit_handle_t *adc_handle) {
-    adc_oneshot_unit_init_cfg_t adc_cfg = {
-        .unit_id = ADC_UNIT_1,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&adc_cfg, adc_handle));
+// void soil_sensor_init(adc_oneshot_unit_handle_t *adc_handle) {
+//     adc_oneshot_unit_init_cfg_t adc_cfg = {
+//         .unit_id = ADC_UNIT_1,
+//     };
+//     ESP_ERROR_CHECK(adc_oneshot_new_unit(&adc_cfg, adc_handle));
 
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_12,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_handle, SOIL_ADC_CHANNEL, &chan_cfg));
+//     adc_oneshot_chan_cfg_t chan_cfg = {
+//         .bitwidth = ADC_BITWIDTH_12,
+//         .atten = ADC_ATTEN_DB_12,
+//     };
+//     ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_handle, SOIL_ADC_CHANNEL, &chan_cfg));
 
-    // Configure digital pin
-    gpio_set_direction(SOIL_DIGITAL_GPIO, GPIO_MODE_INPUT);
-    // Configure relay pin
-    gpio_set_direction(RELAY_GPIO, GPIO_MODE_OUTPUT);
-}
+//     // Configure digital pin
+//     gpio_set_direction(SOIL_DIGITAL_GPIO, GPIO_MODE_INPUT);
+//     // Configure relay pin
+//     gpio_set_direction(RELAY_GPIO, GPIO_MODE_OUTPUT);
+// }
 
 /**
  * @brief Task to periodically read temperature/humidity from AHT20 and publish via MQTT.
@@ -234,8 +234,8 @@ static void sensor_task(void *arg)
         return;
     }
 
-    // --- ADC setup for analog soil sensor ---
-    soil_sensor_init(&adc_handle);
+    // // --- ADC setup for analog soil sensor ---
+    // soil_sensor_init(&adc_handle);
 
     ESP_LOGI(TAG, "Sensor task started");
 
@@ -259,16 +259,16 @@ static void sensor_task(void *arg)
           ESP_LOGE(TAG, "Failed to read AHT20 sensor");
         }
 
-       // Build telemetry data (JSON)
-        char telemetry[128];
-        snprintf(telemetry, sizeof(telemetry),
-            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u}",
-            s_temp_x100/100, abs(s_temp_x100%100),
-            s_humid_x100/100, abs(s_humid_x100%100),
-            s_soil_adc, s_soil_dig
-        );
-        ESP_LOGI(TAG, "Telemetry: %s", telemetry);
-        mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
+    //    // Build telemetry data (JSON)
+    //     char telemetry[128];
+    //     snprintf(telemetry, sizeof(telemetry),
+    //         "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u}",
+    //         s_temp_x100/100, abs(s_temp_x100%100),
+    //         s_humid_x100/100, abs(s_humid_x100%100),
+    //         s_soil_adc, s_soil_dig
+    //     );
+    //     ESP_LOGI(TAG, "Telemetry: %s", telemetry);
+    //     mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
