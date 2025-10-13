@@ -240,16 +240,16 @@ static void sensor_task(void *arg)
     ESP_LOGI(TAG, "Sensor task started");
 
     while (1) {
-        // Read soil moisture analog value
-        int adc_val = 0;
-        adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &adc_val);
-        s_soil_adc = (uint16_t)adc_val;
+        // // Read soil moisture analog value
+        // int adc_val = 0;
+        // adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &adc_val);
+        // s_soil_adc = (uint16_t)adc_val;
 
-        // Read digital soil sensor
-        s_soil_dig = gpio_get_level(SOIL_DIGITAL_GPIO);
+        // // Read digital soil sensor
+        // s_soil_dig = gpio_get_level(SOIL_DIGITAL_GPIO);
 
-        // Control relay for pump (on if soil is dry)
-        gpio_set_level(RELAY_GPIO, (s_soil_adc < s_soil_thres) ? 1 : 0);
+        // // Control relay for pump (on if soil is dry)
+        // gpio_set_level(RELAY_GPIO, (s_soil_adc < s_soil_thres) ? 1 : 0);
 
         if (aht20_read(dev_handle, &s_temp_x100, &s_humid_x100) == ESP_OK) {
           ESP_LOGI(TAG, "Temperature: %d.%02d °C, Humidity: %d.%02d %%",
