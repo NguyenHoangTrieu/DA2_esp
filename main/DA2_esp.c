@@ -15,7 +15,7 @@ static const char *TAG = "i2c_sensor_detect";
 #define I2C_MASTER_SDA_IO           7
 #define I2C_MASTER_NUM              I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ          400000
-#define I2C_MASTER_TIMEOUT_MS       2000
+#define I2C_MASTER_TIMEOUT_MS       100
 
 // Possible sensor addresses
 #define HTU21D_ADDR                 0x40    // HTU21D address
