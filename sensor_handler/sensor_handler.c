@@ -4,219 +4,227 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define TAG "sensor_handler"
 
-// I2C Configuration for ESP32-P4 WiFi Dev Kit
+// I2C configuration for ESP32-P4 WiFi Dev Kit
 #define I2C_MASTER_NUM         I2C_NUM_0
-#define I2C_MASTER_SDA_IO      7        // GPIO7 for SDA
-#define I2C_MASTER_SCL_IO      8        // GPIO8 for SCL
-#define I2C_MASTER_FREQ_HZ     400000   // 400kHz
+#define I2C_MASTER_SDA_IO      7  // GPIO7 for SDA
+#define I2C_MASTER_SCL_IO      8  // GPIO8 for SCL
+#define I2C_MASTER_FREQ_HZ     100000  // 100kHz (safe for AHT20)
 #define I2C_MASTER_TIMEOUT_MS  1000
 
-// HTU21D Sensor Commands
-#define HTU21_ADDR             0x40     // I2C address
-#define HTU21_TEMP_CMD         0xE3     // Trigger Temperature Measurement (Hold Master)
-#define HTU21_HUMID_CMD        0xE5     // Trigger Humidity Measurement (Hold Master)
-#define HTU21_SOFT_RESET       0xFE     // Soft Reset
+// AHT20 (7bit) I2C address
+#define AHT20_ADDR             0x38
 
-// Global variables for sensor data
+// AHT20 commands 
+#define AHT20_CMD_INIT         0xBE
+#define AHT20_CMD_START_MEAS   0xAC
+#define AHT20_CMD_SOFT_RESET   0xBA
+#define AHT20_CMD_STATUS       0x71
+
+#define AHT20_INIT_ARG1        0x08
+#define AHT20_INIT_ARG2        0x00
+#define AHT20_MEAS_ARG1        0x33
+#define AHT20_MEAS_ARG2        0x00
+
+#define AHT20_STATUS_BUSY_MASK 0x80
+#define AHT20_STATUS_CAL_MASK  0x08
+
 static int16_t s_temp_x100 = 0;
 static int16_t s_humid_x100 = 0;
 
 /**
- * @brief Read temperature from HTU21D sensor
+ * @brief Initialize the AHT20 sensor as per datasheet.
+ * @note If calibration is needed, sends the init command.
  */
-static esp_err_t htu21_read_temperature(i2c_master_dev_handle_t dev_handle, int16_t *temp_x100)
+static esp_err_t aht20_init(i2c_master_dev_handle_t dev_handle)
 {
-    uint8_t cmd = HTU21_TEMP_CMD;
-    uint8_t data[3];
-    esp_err_t ret;
+    vTaskDelay(pdMS_TO_TICKS(40)); // Wait sensor startup
 
-    // Send temperature measurement command
-    ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+    // Read status to check calibration
+    uint8_t status_cmd = AHT20_CMD_STATUS;
+    uint8_t status = 0;
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle, &status_cmd, 1, &status, 1, I2C_MASTER_TIMEOUT_MS);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send temperature command: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to read status register: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Wait for measurement completion (max 50ms for 14-bit resolution)
-    vTaskDelay(pdMS_TO_TICKS(50));
+    // If not calibrated (CAL=0), send init command
+    if ((status & AHT20_STATUS_CAL_MASK) == 0) {
+        ESP_LOGI(TAG, "Sensor not calibrated. Sending init command...");
+        uint8_t init_cmd[3] = {AHT20_CMD_INIT, AHT20_INIT_ARG1, AHT20_INIT_ARG2};
+        ret = i2c_master_transmit(dev_handle, init_cmd, 3, I2C_MASTER_TIMEOUT_MS);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send init command: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20)); // Wait for sensor to calibrate
+    }
+    ESP_LOGI(TAG, "AHT20 initialized OK");
+    return ESP_OK;
+}
 
-    // Read 3 bytes: MSB, LSB, CRC
-    ret = i2c_master_receive(dev_handle, data, 3, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+/**
+ * @brief Soft reset the AHT20 sensor.
+ */
+static esp_err_t aht20_soft_reset(i2c_master_dev_handle_t dev_handle)
+{
+    uint8_t cmd = AHT20_CMD_SOFT_RESET;
+    esp_err_t ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS);
+    vTaskDelay(pdMS_TO_TICKS(20)); // Allow sensor reset time
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read temperature data: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to send soft reset command: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "AHT20 soft reset completed");
+    return ESP_OK;
+}
+
+/**
+ * @brief Trigger a measurement and read temperature/humidity from AHT20.
+ * @param temp_x100 Output variable for temperature x100 (°C)
+ * @param humid_x100 Output variable for humidity x100 (%RH)
+ */
+static esp_err_t aht20_read(i2c_master_dev_handle_t dev_handle, int16_t *temp_x100, int16_t *humid_x100)
+{
+    // 1. Trigger measurement
+    uint8_t trig_cmd[3] = {AHT20_CMD_START_MEAS, AHT20_MEAS_ARG1, AHT20_MEAS_ARG2};
+    esp_err_t ret = i2c_master_transmit(dev_handle, trig_cmd, 3, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send measurement command: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Calculate temperature: T = -46.85 + 175.72 * (S_T / 2^16)
-    // Clear status bits (last 2 bits)
-    uint16_t raw = ((uint16_t)data[0] << 8) | data[1];
-    raw &= 0xFFFC;
+    // 2. Wait at least 80ms for measurement to be ready
+    vTaskDelay(pdMS_TO_TICKS(90));
 
-    // Calculate temperature in 0.01°C units to avoid float
-    int32_t temp = -4685 + (17572L * raw) / 65536;
-    *temp_x100 = (int16_t)temp;
+    // 3. Poll status to make sure sensor is not busy
+    uint8_t status_cmd = AHT20_CMD_STATUS;
+    uint8_t status = 0;
+    int try_count = 0;
+    do {
+        ret = i2c_master_transmit_receive(dev_handle, &status_cmd, 1, &status, 1, I2C_MASTER_TIMEOUT_MS);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read status: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        if (!(status & AHT20_STATUS_BUSY_MASK)) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+        try_count++;
+    } while ((status & AHT20_STATUS_BUSY_MASK) && try_count < 10);
+
+    if (status & AHT20_STATUS_BUSY_MASK) {
+        ESP_LOGE(TAG, "AHT20 is still busy after waiting!");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    // 4. Read 6 bytes (status + 5 data)
+    uint8_t rx_data[6];
+    ret = i2c_master_receive(dev_handle, rx_data, 6, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read measurement data: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 5. Parse raw data as per datasheet
+    // Status | Humidity[19:12] | Humidity[11:4] | Humidity[3:0]+Temp[19:16] | Temp[15:8] | Temp[7:0]
+    uint32_t hum_raw = ((uint32_t)rx_data[1] << 12) | ((uint32_t)rx_data[2] << 4) | (rx_data[3] >> 4);
+    uint32_t temp_raw = (((uint32_t)(rx_data[3] & 0x0F)) << 16) | ((uint32_t)rx_data[4] << 8) | (rx_data[5]);
+
+    // Convert to %RH and °C, scaled x100 for fixed-point int use
+    *humid_x100 = (int16_t)(((hum_raw * 1000) / 1048576) / 10); // scale for %, formula: RH = hum_raw/2^20*100
+    *temp_x100  = (int16_t)((((temp_raw * 2000) / 1048576) - 500) / 10); // scale for °C, formula: T = temp_raw/2^20*200-50
 
     return ESP_OK;
 }
 
 /**
- * @brief Read humidity from HTU21D sensor
+ * @brief Initialize I2C bus and AHT20 device.
  */
-static esp_err_t htu21_read_humidity(i2c_master_dev_handle_t dev_handle, int16_t *humid_x100)
+static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle, i2c_master_dev_handle_t *dev_handle)
 {
-    uint8_t cmd = HTU21_HUMID_CMD;
-    uint8_t data[3];
-    esp_err_t ret;
-
-    // Send humidity measurement command
-    ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send humidity command: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // Wait for measurement completion (max 16ms for 12-bit resolution)
-    vTaskDelay(pdMS_TO_TICKS(20));
-
-    // Read 3 bytes: MSB, LSB, CRC
-    ret = i2c_master_receive(dev_handle, data, 3, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read humidity data: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // Calculate humidity: RH = -6 + 125 * (S_RH / 2^16)
-    // Clear status bits (last 2 bits)
-    uint16_t raw = ((uint16_t)data[0] << 8) | data[1];
-    raw &= 0xFFFC;
-
-    // Calculate humidity in 0.01% units to avoid float
-    int32_t humid = -600 + (12500L * raw) / 65536;
-    *humid_x100 = (int16_t)humid;
-
-    return ESP_OK;
-}
-
-/**
- * @brief Initialize I2C master bus and HTU21D device
- */
-static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle, 
-                                 i2c_master_dev_handle_t *dev_handle)
-{
-    // Configure I2C master bus
+    // Configure the I2C master bus
     i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_MASTER_NUM,
         .sda_io_num = I2C_MASTER_SDA_IO,
         .scl_io_num = I2C_MASTER_SCL_IO,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
+        .flags.enable_internal_pullup = false, // ESP32-P4-DevKit has external pull-ups
     };
-    
-    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, bus_handle));
-    ESP_LOGI(TAG, "I2C master bus initialized on SDA=%d, SCL=%d", 
-             I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
 
-    // Configure HTU21D device
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, bus_handle));
+    ESP_LOGI(TAG, "I2C bus initialized on SDA=%d, SCL=%d", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
+
+    // Configure the AHT20 device
     i2c_device_config_t dev_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = HTU21_ADDR,
+        .device_address = AHT20_ADDR,
         .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
-    
+
     ESP_ERROR_CHECK(i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle));
-    ESP_LOGI(TAG, "HTU21D device added to I2C bus (address: 0x%02X)", HTU21_ADDR);
+    ESP_LOGI(TAG, "AHT20 device added to I2C bus (address: 0x%02X)", AHT20_ADDR);
 
     return ESP_OK;
 }
 
 /**
- * @brief Perform soft reset of HTU21D sensor
- */
-static esp_err_t htu21_soft_reset(i2c_master_dev_handle_t dev_handle)
-{
-    uint8_t cmd = HTU21_SOFT_RESET;
-    esp_err_t ret;
-
-    ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send soft reset command: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // Wait for sensor to complete reset (15ms max)
-    vTaskDelay(pdMS_TO_TICKS(20));
-    ESP_LOGI(TAG, "HTU21D soft reset completed");
-
-    return ESP_OK;
-}
-
-/**
- * @brief Sensor task - reads HTU21D and publishes data
+ * @brief Task to periodically read temperature/humidity from AHT20 and publish via MQTT.
  */
 static void sensor_task(void *arg)
 {
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
 
-    // Initialize I2C and HTU21D
+    // Initialize I2C and sensor
     if (i2c_master_init(&bus_handle, &dev_handle) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize I2C");
         vTaskDelete(NULL);
         return;
     }
 
-    // Perform soft reset on startup
-    htu21_soft_reset(dev_handle);
+    // Optional: Soft-reset sensor at startup
+    aht20_soft_reset(dev_handle);
+
+    // Always attempt to initialize the sensor (calibration check)
+    if (aht20_init(dev_handle) != ESP_OK) {
+        ESP_LOGE(TAG, "AHT20 init failed!");
+        vTaskDelete(NULL);
+        return;
+    }
 
     ESP_LOGI(TAG, "Sensor task started");
 
     while (1) {
-        // Read temperature
-        if (htu21_read_temperature(dev_handle, &s_temp_x100) == ESP_OK) {
-            ESP_LOGI(TAG, "Temperature: %d.%02d °C", 
-                     s_temp_x100 / 100, abs(s_temp_x100 % 100));
+        if (aht20_read(dev_handle, &s_temp_x100, &s_humid_x100) == ESP_OK) {
+            ESP_LOGI(TAG, "Temperature: %d.%02d °C, Humidity: %d.%02d %%", 
+                s_temp_x100 / 100, abs(s_temp_x100 % 100), 
+                s_humid_x100 / 100, abs(s_humid_x100 % 100));
         } else {
-            ESP_LOGE(TAG, "Failed to read temperature");
+            ESP_LOGE(TAG, "Failed to read AHT20 sensor");
         }
 
-        // Small delay between measurements
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Format telemetry for MQTT (JSON string)
+        char telemetry[64];
+        snprintf(telemetry, sizeof(telemetry), 
+            "{\"temp\":%d.%02d,\"humid\":%d.%02d}", 
+            s_temp_x100 / 100, abs(s_temp_x100 % 100), 
+            s_humid_x100 / 100, abs(s_humid_x100 % 100));
 
-        // Read humidity
-        if (htu21_read_humidity(dev_handle, &s_humid_x100) == ESP_OK) {
-            ESP_LOGI(TAG, "Humidity: %d.%02d %%", 
-                     s_humid_x100 / 100, abs(s_humid_x100 % 100));
-        } else {
-            ESP_LOGE(TAG, "Failed to read humidity");
-        }
-
-        // Build telemetry JSON payload
-        char telemetry[128];
-        snprintf(telemetry, sizeof(telemetry),
-                 "{\"temp\":%d.%02d,\"humid\":%d.%02d}",
-                 s_temp_x100 / 100, abs(s_temp_x100 % 100),
-                 s_humid_x100 / 100, abs(s_humid_x100 % 100));
-
-        ESP_LOGI(TAG, "Telemetry: %s", telemetry);
-        
-        // Send to MQTT handler
         mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
 
-        // Read every 5 seconds
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(5000)); // Read every 5 seconds
     }
 }
 
 /**
- * @brief Start the sensor handler task
+ * @brief Start the sensor handler (task creation stub).
  */
 void sensor_handler_start(void)
 {
@@ -225,7 +233,7 @@ void sensor_handler_start(void)
 }
 
 /**
- * @brief Get current temperature value
+ * @brief Get current temperature value (x100)
  */
 int16_t sensor_get_temp_x100(void)
 {
@@ -233,7 +241,7 @@ int16_t sensor_get_temp_x100(void)
 }
 
 /**
- * @brief Get current humidity value
+ * @brief Get current humidity value (x100)
  */
 int16_t sensor_get_humid_x100(void)
 {
