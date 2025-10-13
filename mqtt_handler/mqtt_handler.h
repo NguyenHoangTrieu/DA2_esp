@@ -16,4 +16,7 @@ void mqtt_handle_resume(void);
 // Called from WiFi disconnect event: suspends MQTT publishing task.
 void mqtt_handle_suspend(void);
 
+// Build telemetry data from source buffer to internal payload buffer and clear source.
+void mqtt_build_telemetry_payload(char *source, size_t len);
+
 #endif // MQTT_HANDLE_H

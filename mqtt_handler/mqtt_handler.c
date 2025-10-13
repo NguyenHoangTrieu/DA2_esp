@@ -15,6 +15,8 @@ static const char *TAG = "mqtt_handler";
 static esp_mqtt_client_handle_t m_client = NULL;
 static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
+static volatile uint8_t s_mqtt_payload_updated = false;
+static char s_mqtt_payload[1024] = {0};
 /*
  * MQTT event handler function.
  * Updates connection state and logs events.
@@ -57,11 +59,10 @@ static void mqtt_publish_task(void *arg)
     int counter = 0;
     while (1) {
         // Only publish if MQTT client is connected
-        if (m_client && m_mqtt_connected) {
-            char payload[64];
-            snprintf(payload, sizeof(payload), "{\"count\": %d}", counter++);
-            esp_mqtt_client_publish(m_client, PUBLISH_TOPIC, payload, 0, 1, 0);
-            ESP_LOGI(TAG, "Published: %s", payload);
+        if (m_client && m_mqtt_connected && s_mqtt_payload_updated) {
+            esp_mqtt_client_publish(m_client, PUBLISH_TOPIC, s_mqtt_payload, 0, 1, 0);
+            ESP_LOGI(TAG, "Published: %s", s_mqtt_payload);
+            s_mqtt_payload_updated = false; // Reset flag after publishing
         }
         vTaskDelay(pdMS_TO_TICKS(PUBLISH_INTERVAL));
     }
@@ -107,4 +108,12 @@ void mqtt_handle_suspend(void)
 {
     if (m_pub_task)
         vTaskSuspend(m_pub_task);
+}
+
+/* MQTT build telematry data from source to payload buffer and clear the source */
+void mqtt_build_telemetry_payload(char *source, size_t len)
+{
+    memcpy(s_mqtt_payload, source, len);
+    s_mqtt_payload_updated = true;
+    memset(source, 0, len); // Clear source after copying
 }

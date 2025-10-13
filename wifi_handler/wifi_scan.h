@@ -27,8 +27,5 @@ void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t channel_
 void print_auth_mode(int authmode);
 void print_cipher_type(int pairwise_cipher, int group_cipher);
 void perform_scan(void);
-void wifi_scan_suspend(void);
-void wifi_scan_resume(void);
-void wifi_scan_start(void);
 
 #endif // WIFI_SCAN_H

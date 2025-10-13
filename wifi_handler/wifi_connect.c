@@ -41,6 +41,7 @@ static int s_retry_num = 0;
 
 static char s_wifi_ssid[33] = DEFAULT_ESP_WIFI_SSID; // Buffer for current SSID
 static char s_wifi_pass[65] = DEFAULT_ESP_WIFI_PASS; // Buffer for current password
+static uint8_t s_wifi_connected = 0;          // Connection status flag
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -62,13 +63,13 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG,"Connect to the AP failed");
         ESP_LOGI(TAG, "Disconnected from WiFi MQTT suspended, WiFi scan resumed");
         mqtt_handle_suspend(); // Suspend MQTT task on disconnect
-        wifi_scan_resume();  // Resume WiFi scan task on disconnect
+        s_wifi_connected = 0; // WiFi disconnected
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
-        wifi_scan_suspend(); // Suspend WiFi scan task on successful connection
         mqtt_handle_resume(); // Resume MQTT task on successful connection
+        s_wifi_connected = 1; // WiFi connected
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -153,9 +154,16 @@ static void wifi_uart_task(void *arg)
     uart_param_config(UART_PORT_NUM, &uart_config);
     uart_driver_install(UART_PORT_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
     ESP_LOGI(TAG, "Listening for WiFi SSID/Password over UART (format: SSID:PASSWORD)");
+    uint16_t delay_time = pdMS_TO_TICKS(100);
 
     uint8_t data[UART_BUF_SIZE];
     while (1) {
+        if (!s_wifi_connected) {
+            delay_time = pdMS_TO_TICKS(20000); // slower polling when disconnected
+            perform_scan(); // Perform WiFi scan when disconnected
+        } else {
+            delay_time = pdMS_TO_TICKS(100); // Faster polling when connected
+        }
         int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
         if (len > 0) {
             data[len] = '\0';
@@ -189,7 +197,7 @@ static void wifi_uart_task(void *arg)
                 ESP_LOGI(TAG, "Invalid format. Usage: SSID:PASSWORD");
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay((delay_time)); // Adjust delay based on connection status
     }
 }
 
