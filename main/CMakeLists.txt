@@ -4,5 +4,5 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../mqtt_handler/mqtt_handler.c"
                                 "../sensor_handler/sensor_handler.c"
                                 "cmd_i2ctools.c"
-                    PRIV_REQUIRES esp_wifi nvs_flash mqtt esp_adc esp_driver_i2c
+                    PRIV_REQUIRES esp_wifi nvs_flash mqtt esp_adc esp_driver_i2c console
                     INCLUDE_DIRS "." "../wifi_handler" "../mqtt_handler" "../sensor_handler")
