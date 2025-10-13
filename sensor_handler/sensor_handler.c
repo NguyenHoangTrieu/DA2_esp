@@ -18,8 +18,8 @@
 #define RELAY_GPIO          GPIO_NUM_15
 
 #define I2C_MASTER_NUM      I2C_NUM_0
-#define I2C_MASTER_SDA_IO   21
-#define I2C_MASTER_SCL_IO   22
+#define I2C_MASTER_SDA_IO   7
+#define I2C_MASTER_SCL_IO   8
 #define I2C_MASTER_FREQ_HZ  100000
 
 #define HTU21_ADDR          0x40
