@@ -120,29 +120,9 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle,
         .flags.enable_internal_pullup = true,
     };
     
-    esp_err_t ret = i2c_new_master_bus(&bus_config, bus_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2C master bus init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, bus_handle));
     ESP_LOGI(TAG, "I2C master bus initialized on SDA=%d, SCL=%d", 
              I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
-
-    // Probe HTU21D before adding device
-    ESP_LOGI(TAG, "Probing HTU21D sensor at address 0x%02X...", HTU21_ADDR);
-    ret = i2c_master_probe(*bus_handle, HTU21_ADDR, 1000);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "HTU21D sensor found!");
-    } else if (ret == ESP_ERR_NOT_FOUND) {
-        ESP_LOGE(TAG, "HTU21D sensor NOT found - check wiring and address");
-        return ret;
-    } else if (ret == ESP_ERR_TIMEOUT) {
-        ESP_LOGE(TAG, "I2C probe timeout - check pull-up resistors!");
-        return ret;
-    } else {
-        ESP_LOGE(TAG, "I2C probe error: %s", esp_err_to_name(ret));
-        return ret;
-    }
 
     // Configure HTU21D device
     i2c_device_config_t dev_config = {
@@ -151,12 +131,8 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle,
         .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
     
-    ret = i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add HTU21D device: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    ESP_LOGI(TAG, "HTU21D device added to I2C bus");
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle));
+    ESP_LOGI(TAG, "HTU21D device added to I2C bus (address: 0x%02X)", HTU21_ADDR);
 
     return ESP_OK;
 }
