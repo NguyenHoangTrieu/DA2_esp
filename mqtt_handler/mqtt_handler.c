@@ -3,7 +3,6 @@
 #include "mqtt_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
 
 #define BROKER_URI        "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN      "ZCOjw6KKw5j2EqYV2co6"
