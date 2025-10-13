@@ -167,7 +167,8 @@ static void wifi_uart_task(void *arg)
             scan_counter++;
         }
         else {
-           scan_counter = 0;
+            ESP_LOGI(TAG, "Connected to WiFi, skipping scan");
+            scan_counter = 0;
         }
         int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
         if (len > 0) {
