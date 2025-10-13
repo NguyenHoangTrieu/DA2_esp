@@ -8,10 +8,10 @@
 #include "freertos/task.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define TAG "sensor_handler"
 
-// Pin config
 #define SOIL_ADC_GPIO       32
 #define SOIL_ADC_CHANNEL    ADC_CHANNEL_4
 #define SOIL_DIGITAL_GPIO   GPIO_NUM_26
@@ -29,18 +29,20 @@
 
 static int16_t s_temp_x100 = 0;
 static int16_t s_humid_x100 = 0;
-static int s_soil_adc = 0;
+static uint16_t s_soil_adc = 0;
 static uint8_t s_soil_dig = 0;
 static int s_soil_thres = SOIL_DRY_THRESHOLD;
 
 // HTU21 sensor I2C read using driver/i2c_master.h
 static esp_err_t htu21_read(int16_t *temp100, int16_t *humid100, i2c_master_dev_handle_t dev_handle) {
+    uint8_t cmd_buf[1];
     uint8_t data[3];
     uint16_t raw;
     esp_err_t ret;
 
     // Read Temperature
-    ret = i2c_master_transmit(dev_handle, &HTU21_TEMP_CMD, 1, 1000);
+    cmd_buf[0] = HTU21_TEMP_CMD;
+    ret = i2c_master_transmit(dev_handle, cmd_buf, 1, 1000);
     if (ret != ESP_OK) return ret;
     ret = i2c_master_receive(dev_handle, data, 3, 1000);
     if (ret != ESP_OK) return ret;
@@ -49,7 +51,8 @@ static esp_err_t htu21_read(int16_t *temp100, int16_t *humid100, i2c_master_dev_
     *temp100 = temp;
 
     // Read Humidity
-    ret = i2c_master_transmit(dev_handle, &HTU21_HUMID_CMD, 1, 1000);
+    cmd_buf[0] = HTU21_HUMID_CMD;
+    ret = i2c_master_transmit(dev_handle, cmd_buf, 1, 1000);
     if (ret != ESP_OK) return ret;
     ret = i2c_master_receive(dev_handle, data, 3, 1000);
     if (ret != ESP_OK) return ret;
@@ -63,7 +66,7 @@ static esp_err_t htu21_read(int16_t *temp100, int16_t *humid100, i2c_master_dev_
 void sensor_set_soil_threshold(uint16_t thres) { s_soil_thres = thres; }
 int16_t sensor_get_temp_x100(void) { return s_temp_x100; }
 int16_t sensor_get_humid_x100(void) { return s_humid_x100; }
-int sensor_get_soil_analog(void) { return s_soil_adc; }
+uint16_t sensor_get_soil_analog(void) { return s_soil_adc; }
 uint8_t sensor_get_soil_digital(void) { return s_soil_dig; }
 
 static void sensor_task(void *arg) {
@@ -71,13 +74,13 @@ static void sensor_task(void *arg) {
     adc_oneshot_unit_handle_t adc_handle;
     adc_oneshot_unit_init_cfg_t adc_cfg = { .unit_id = ADC_UNIT_1 };
     adc_oneshot_new_unit(&adc_cfg, &adc_handle);
-    adc_oneshot_chan_cfg_t chan_cfg = { .bitwidth = ADC_BITWIDTH_12, .atten = ADC_ATTEN_DB_11 };
+    adc_oneshot_chan_cfg_t chan_cfg = { .bitwidth = ADC_BITWIDTH_12, .atten = ADC_ATTEN_DB_12 };
     adc_oneshot_config_channel(adc_handle, SOIL_ADC_CHANNEL, &chan_cfg);
 
     gpio_set_direction(SOIL_DIGITAL_GPIO, GPIO_MODE_INPUT);
     gpio_set_direction(RELAY_GPIO, GPIO_MODE_OUTPUT);
 
-    // I2C setup using i2c_master API
+    // I2C setup using i2c_master API (like i2c_basic)
     i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_MASTER_NUM,
         .sda_io_num = I2C_MASTER_SDA_IO,
@@ -99,20 +102,22 @@ static void sensor_task(void *arg) {
 
     while (1) {
         htu21_read(&s_temp_x100, &s_humid_x100, dev_handle);
-        adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &s_soil_adc);
+        int adc_val = 0;
+        adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &adc_val);
+        s_soil_adc = (uint16_t)adc_val;
         s_soil_dig = gpio_get_level(SOIL_DIGITAL_GPIO);
 
         gpio_set_level(RELAY_GPIO, (s_soil_adc < s_soil_thres) ? 1 : 0);
 
         char telemetry[128];
         snprintf(telemetry, sizeof(telemetry),
-            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%d,\"soil_dig\":%d,\"pump\":%d}",
+            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u,\"pump\":%d}",
             s_temp_x100/100, abs(s_temp_x100%100),
             s_humid_x100/100, abs(s_humid_x100%100),
             s_soil_adc, s_soil_dig, gpio_get_level(RELAY_GPIO)
         );
-        mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
         ESP_LOGI(TAG, "Telemetry: %s", telemetry);
+        mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
