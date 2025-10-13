@@ -17,6 +17,13 @@ static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 static volatile uint8_t s_mqtt_payload_updated = false;
 static char s_mqtt_payload[1024] = {0};
+
+void mqtt_receive_parser(const char *data, size_t len)
+{
+    ESP_LOGI(TAG, "Received data to parse: %.*s", len, data);
+    // Add parsing logic here as needed
+}
+
 /*
  * MQTT event handler function.
  * Updates connection state and logs events.
