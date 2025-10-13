@@ -23,7 +23,6 @@
 #include "wifi_scan.h"
 
 static const char *TAG = "scan";
-static TaskHandle_t scan_task_handle = NULL;
 /* Only scan channels 1, 6, and 11 (if bitmap enabled) */
 #if USE_CHANNEL_BITMAP
 uint8_t channel_list[CHANNEL_LIST_SIZE] = {1, 6, 11};
