@@ -1,5 +1,8 @@
 /*
- * HTU21D or Alternative Sensor Detection Example
+ * HTU21D Temperature and Humidity Sensor Example
+ * 
+ * This example shows how to read temperature and humidity from HTU21D sensor
+ * using ESP-IDF I2C master driver on ESP32-P4
  */
 #include <stdio.h>
 #include "sdkconfig.h"
@@ -8,38 +11,31 @@
 #include "esp_log.h"
 #include "driver/i2c_master.h"
 
-static const char *TAG = "i2c_sensor_detect";
+static const char *TAG = "htu21d_example";
 
-// I2C Configuration
-#define I2C_MASTER_SCL_IO           8
-#define I2C_MASTER_SDA_IO           7
-#define I2C_MASTER_NUM              I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ          100000
+// I2C Configuration for ESP32-P4 WiFi Dev Kit
+#define I2C_MASTER_SCL_IO           8               /*!< GPIO number for I2C master clock */
+#define I2C_MASTER_SDA_IO           7               /*!< GPIO number for I2C master data  */
+#define I2C_MASTER_NUM              I2C_NUM_0       /*!< I2C port number for master dev */
+#define I2C_MASTER_FREQ_HZ          400000          /*!< I2C master clock frequency (400kHz) */
 #define I2C_MASTER_TIMEOUT_MS       1000
 
-// Possible sensor addresses
-#define HTU21D_ADDR                 0x40    // HTU21D address
-#define MCP9808_ADDR                0x18    // MCP9808 temperature sensor
-#define LIS3DH_ADDR                 0x18    // LIS3DH accelerometer (same as MCP9808)
-
-// MCP9808 Registers
-#define MCP9808_REG_CONFIG          0x01
-#define MCP9808_REG_AMBIENT_TEMP    0x05
-#define MCP9808_REG_MANUF_ID        0x06    // Should read 0x0054
-#define MCP9808_REG_DEVICE_ID       0x07    // Should read 0x0400
-
-// HTU21D Commands
-#define HTU21D_TEMP_HOLD_CMD        0xE3
-#define HTU21D_HUMID_HOLD_CMD       0xE5
-#define HTU21D_SOFT_RESET           0xFE
-#define HTU21D_READ_USER_REG        0xE7
+// HTU21D Sensor Configuration
+#define HTU21D_SENSOR_ADDR          0x40            /*!< I2C address of HTU21D sensor */
+#define HTU21D_TEMP_HOLD_CMD        0xE3            /*!< Trigger Temp Measurement (Hold Master) */
+#define HTU21D_HUMID_HOLD_CMD       0xE5            /*!< Trigger RH Measurement (Hold Master) */
+#define HTU21D_TEMP_NOHOLD_CMD      0xF3            /*!< Trigger Temp Measurement (No Hold Master) */
+#define HTU21D_HUMID_NOHOLD_CMD     0xF5            /*!< Trigger RH Measurement (No Hold Master) */
+#define HTU21D_SOFT_RESET           0xFE            /*!< Soft reset command */
+#define HTU21D_READ_USER_REG        0xE7            /*!< Read user register */
+#define HTU21D_WRITE_USER_REG       0xE6            /*!< Write user register */
 
 /**
  * @brief Scan I2C bus for devices
  */
 static void i2c_scanner(i2c_master_bus_handle_t bus_handle)
 {
-    ESP_LOGI(TAG, "=== Scanning I2C bus ===");
+    ESP_LOGI(TAG, "Scanning I2C bus...");
     int devices_found = 0;
     
     for (uint8_t addr = 1; addr < 127; addr++) {
@@ -53,154 +49,181 @@ static void i2c_scanner(i2c_master_bus_handle_t bus_handle)
     if (devices_found == 0) {
         ESP_LOGE(TAG, "No I2C devices found!");
     } else {
-        ESP_LOGI(TAG, "Total: %d device(s) found", devices_found);
+        ESP_LOGI(TAG, "Found %d device(s)", devices_found);
     }
 }
 
 /**
- * @brief Read 16-bit register from MCP9808
+ * @brief Soft reset HTU21D sensor
  */
-static esp_err_t mcp9808_read_reg16(i2c_master_dev_handle_t dev_handle, uint8_t reg_addr, uint16_t *value)
+static esp_err_t htu21d_soft_reset(i2c_master_dev_handle_t dev_handle)
 {
-    uint8_t data[2];
-    esp_err_t ret = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, data, 2, I2C_MASTER_TIMEOUT_MS);
-    if (ret == ESP_OK) {
-        *value = ((uint16_t)data[0] << 8) | data[1];
-    }
-    return ret;
-}
-
-/**
- * @brief Identify sensor at address 0x18
- */
-static void identify_sensor_0x18(i2c_master_bus_handle_t bus_handle)
-{
-    ESP_LOGI(TAG, "\n=== Identifying sensor at 0x18 ===");
-    
-    // Try to add device at 0x18
-    i2c_device_config_t dev_config = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = 0x18,
-        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
-    };
-    
-    i2c_master_dev_handle_t dev_handle;
-    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_config, &dev_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add device at 0x18");
-        return;
-    }
-    
-    // Try reading MCP9808 manufacturer ID
-    uint16_t manuf_id = 0;
-    ret = mcp9808_read_reg16(dev_handle, MCP9808_REG_MANUF_ID, &manuf_id);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Read Manufacturer ID: 0x%04X", manuf_id);
-        if (manuf_id == 0x0054) {
-            ESP_LOGI(TAG, "*** Sensor identified as MCP9808 Temperature Sensor ***");
-            
-            // Read device ID
-            uint16_t device_id = 0;
-            mcp9808_read_reg16(dev_handle, MCP9808_REG_DEVICE_ID, &device_id);
-            ESP_LOGI(TAG, "Device ID: 0x%04X (expected 0x0400)", device_id);
-            
-            // Read temperature
-            uint16_t temp_raw = 0;
-            if (mcp9808_read_reg16(dev_handle, MCP9808_REG_AMBIENT_TEMP, &temp_raw) == ESP_OK) {
-                // Calculate temperature
-                temp_raw &= 0x1FFF; // Clear flag bits
-                float temperature = (temp_raw & 0x0FFF) / 16.0;
-                if (temp_raw & 0x1000) {
-                    temperature -= 256;
-                }
-                ESP_LOGI(TAG, "Temperature: %.2f °C", temperature);
-            }
-        } else {
-            ESP_LOGW(TAG, "Unknown device with Manufacturer ID: 0x%04X", manuf_id);
-        }
-    } else {
-        ESP_LOGE(TAG, "Failed to read from 0x18: %s", esp_err_to_name(ret));
-        ESP_LOGI(TAG, "Sensor might be LIS3DH accelerometer (different read method needed)");
-    }
-    
-    i2c_master_bus_rm_device(dev_handle);
-}
-
-/**
- * @brief Try to communicate with HTU21D at 0x40
- */
-static void test_htu21d(i2c_master_bus_handle_t bus_handle)
-{
-    ESP_LOGI(TAG, "\n=== Testing HTU21D at 0x40 ===");
-    
-    // Probe first
-    esp_err_t ret = i2c_master_probe(bus_handle, HTU21D_ADDR, I2C_MASTER_TIMEOUT_MS);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "HTU21D NOT found at 0x40!");
-        ESP_LOGE(TAG, "Check wiring:");
-        ESP_LOGE(TAG, "  - HTU21D VIN to 3.3V");
-        ESP_LOGE(TAG, "  - HTU21D GND to GND");
-        ESP_LOGE(TAG, "  - HTU21D SDA to GPIO7");
-        ESP_LOGE(TAG, "  - HTU21D SCL to GPIO8");
-        ESP_LOGE(TAG, "  - Check if pull-up resistors are present (4.7kΩ)");
-        return;
-    }
-    
-    ESP_LOGI(TAG, "HTU21D found at 0x40!");
-    
-    // Add device
-    i2c_device_config_t dev_config = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = HTU21D_ADDR,
-        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
-    };
-    
-    i2c_master_dev_handle_t dev_handle;
-    ret = i2c_master_bus_add_device(bus_handle, &dev_config, &dev_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add HTU21D device");
-        return;
-    }
-    
-    // Try soft reset (optional, not critical)
     uint8_t cmd = HTU21D_SOFT_RESET;
+    esp_err_t ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Soft reset failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(15)); // Wait 15ms after reset
+    ESP_LOGI(TAG, "HTU21D soft reset completed");
+    return ESP_OK;
+}
+
+/**
+ * @brief Read temperature from HTU21D (Hold Master mode)
+ * 
+ * In Hold Master mode, the sensor holds the SCL line low during measurement.
+ * This is simpler but blocks the I2C bus.
+ */
+static esp_err_t htu21d_read_temperature_hold(i2c_master_dev_handle_t dev_handle, float *temperature)
+{
+    uint8_t cmd = HTU21D_TEMP_HOLD_CMD;
+    uint8_t data[3]; // MSB, LSB, CRC
+    
+    // Send command and read result in one operation
+    // The sensor will hold SCL during measurement (~50ms)
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle, &cmd, 1, data, 3, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Temperature read failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Calculate temperature: T = -46.85 + 175.72 * (S_T / 2^16)
+    uint16_t raw_temp = ((uint16_t)data[0] << 8) | data[1];
+    raw_temp &= 0xFFFC; // Clear status bits (last 2 bits)
+    
+    *temperature = -46.85 + 175.72 * ((float)raw_temp / 65536.0);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Read humidity from HTU21D (Hold Master mode)
+ */
+static esp_err_t htu21d_read_humidity_hold(i2c_master_dev_handle_t dev_handle, float *humidity)
+{
+    uint8_t cmd = HTU21D_HUMID_HOLD_CMD;
+    uint8_t data[3]; // MSB, LSB, CRC
+    
+    // Send command and read result in one operation
+    // The sensor will hold SCL during measurement (~16ms)
+    esp_err_t ret = i2c_master_transmit_receive(dev_handle, &cmd, 1, data, 3, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Humidity read failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Calculate humidity: RH = -6 + 125 * (S_RH / 2^16)
+    uint16_t raw_humid = ((uint16_t)data[0] << 8) | data[1];
+    raw_humid &= 0xFFFC; // Clear status bits
+    
+    *humidity = -6.0 + 125.0 * ((float)raw_humid / 65536.0);
+    
+    // Clamp to valid range
+    if (*humidity < 0) *humidity = 0;
+    if (*humidity > 100) *humidity = 100;
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Read temperature from HTU21D (No Hold Master mode)
+ * 
+ * In No Hold Master mode, the I2C bus is not blocked during measurement.
+ * We need to poll the sensor until data is ready.
+ */
+static esp_err_t htu21d_read_temperature_nohold(i2c_master_dev_handle_t dev_handle, float *temperature)
+{
+    uint8_t cmd = HTU21D_TEMP_NOHOLD_CMD;
+    uint8_t data[3];
+    esp_err_t ret;
+    
+    // Send measurement trigger command
     ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Soft reset sent successfully");
-        vTaskDelay(pdMS_TO_TICKS(15));
-    } else {
-        ESP_LOGW(TAG, "Soft reset failed (not critical): %s", esp_err_to_name(ret));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send temperature command: %s", esp_err_to_name(ret));
+        return ret;
     }
     
-    // Try reading user register
-    cmd = HTU21D_READ_USER_REG;
-    uint8_t user_reg;
-    ret = i2c_master_transmit_receive(dev_handle, &cmd, 1, &user_reg, 1, I2C_MASTER_TIMEOUT_MS);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "User Register: 0x%02X", user_reg);
+    // Poll for data ready (max 50ms for 14-bit temperature)
+    int retry_count = 0;
+    const int max_retries = 10;
+    while (retry_count < max_retries) {
+        vTaskDelay(pdMS_TO_TICKS(10)); // Wait 10ms between polls
         
-        // Try reading temperature
-        cmd = HTU21D_TEMP_HOLD_CMD;
-        uint8_t temp_data[3];
-        ret = i2c_master_transmit_receive(dev_handle, &cmd, 1, temp_data, 3, I2C_MASTER_TIMEOUT_MS);
+        ret = i2c_master_receive(dev_handle, data, 3, I2C_MASTER_TIMEOUT_MS);
         if (ret == ESP_OK) {
-            uint16_t raw = ((uint16_t)temp_data[0] << 8) | temp_data[1];
-            raw &= 0xFFFC;
-            float temperature = -46.85 + 175.72 * ((float)raw / 65536.0);
-            ESP_LOGI(TAG, "Temperature: %.2f °C", temperature);
+            // Data ready, calculate temperature
+            uint16_t raw_temp = ((uint16_t)data[0] << 8) | data[1];
+            raw_temp &= 0xFFFC;
+            *temperature = -46.85 + 175.72 * ((float)raw_temp / 65536.0);
+            return ESP_OK;
         }
-    } else {
-        ESP_LOGE(TAG, "Failed to read user register: %s", esp_err_to_name(ret));
+        
+        retry_count++;
     }
     
-    i2c_master_bus_rm_device(dev_handle);
+    ESP_LOGE(TAG, "Temperature measurement timeout");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Read humidity from HTU21D (No Hold Master mode)
+ */
+static esp_err_t htu21d_read_humidity_nohold(i2c_master_dev_handle_t dev_handle, float *humidity)
+{
+    uint8_t cmd = HTU21D_HUMID_NOHOLD_CMD;
+    uint8_t data[3];
+    esp_err_t ret;
+    
+    // Send measurement trigger command
+    ret = i2c_master_transmit(dev_handle, &cmd, 1, I2C_MASTER_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send humidity command: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Poll for data ready (max 16ms for 12-bit humidity)
+    int retry_count = 0;
+    const int max_retries = 5;
+    while (retry_count < max_retries) {
+        vTaskDelay(pdMS_TO_TICKS(5)); // Wait 5ms between polls
+        
+        ret = i2c_master_receive(dev_handle, data, 3, I2C_MASTER_TIMEOUT_MS);
+        if (ret == ESP_OK) {
+            // Data ready, calculate humidity
+            uint16_t raw_humid = ((uint16_t)data[0] << 8) | data[1];
+            raw_humid &= 0xFFFC;
+            *humidity = -6.0 + 125.0 * ((float)raw_humid / 65536.0);
+            
+            // Clamp to valid range
+            if (*humidity < 0) *humidity = 0;
+            if (*humidity > 100) *humidity = 100;
+            return ESP_OK;
+        }
+        
+        retry_count++;
+    }
+    
+    ESP_LOGE(TAG, "Humidity measurement timeout");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Read user register from HTU21D
+ */
+static esp_err_t htu21d_read_user_register(i2c_master_dev_handle_t dev_handle, uint8_t *reg_value)
+{
+    uint8_t cmd = HTU21D_READ_USER_REG;
+    return i2c_master_transmit_receive(dev_handle, &cmd, 1, reg_value, 1, I2C_MASTER_TIMEOUT_MS);
 }
 
 /**
  * @brief Initialize I2C master bus
  */
-static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle)
+static void i2c_master_init(i2c_master_bus_handle_t *bus_handle, i2c_master_dev_handle_t *dev_handle)
 {
+    // Initialize I2C bus
     i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_MASTER_NUM,
         .sda_io_num = I2C_MASTER_SDA_IO,
@@ -209,36 +232,75 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle)
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-    
-    esp_err_t ret = i2c_new_master_bus(&bus_config, bus_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2C bus init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    ESP_LOGI(TAG, "I2C bus initialized (SDA=GPIO%d, SCL=GPIO%d)", 
-             I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
-    return ESP_OK;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, bus_handle));
+    ESP_LOGI(TAG, "I2C bus initialized (SDA=%d, SCL=%d)", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
+
+    // Scan I2C bus
+    i2c_scanner(*bus_handle);
+
+    // Add HTU21D device to bus
+    i2c_device_config_t dev_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = HTU21D_SENSOR_ADDR,
+        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+    };
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle));
+    ESP_LOGI(TAG, "HTU21D device added (address: 0x%02X)", HTU21D_SENSOR_ADDR);
 }
 
 void app_main(void)
 {
+    float temperature, humidity;
+    uint8_t user_reg;
     i2c_master_bus_handle_t bus_handle;
+    i2c_master_dev_handle_t dev_handle;
     
-    // Initialize I2C
-    ESP_ERROR_CHECK(i2c_master_init(&bus_handle));
+    // Initialize I2C and HTU21D
+    i2c_master_init(&bus_handle, &dev_handle);
+    ESP_LOGI(TAG, "I2C initialized successfully");
+
+    // Perform soft reset
+    ESP_ERROR_CHECK(htu21d_soft_reset(dev_handle));
+
+    // Read user register to verify communication
+    ESP_ERROR_CHECK(htu21d_read_user_register(dev_handle, &user_reg));
+    ESP_LOGI(TAG, "HTU21D User Register = 0x%02X", user_reg);
+
+    ESP_LOGI(TAG, "\n=== Hold Master Mode Demo ===");
     
-    // Scan bus to find all devices
-    i2c_scanner(bus_handle);
+    // Read temperature using Hold Master mode
+    ESP_ERROR_CHECK(htu21d_read_temperature_hold(dev_handle, &temperature));
+    ESP_LOGI(TAG, "Temperature (Hold): %.2f °C", temperature);
+
+    // Read humidity using Hold Master mode
+    ESP_ERROR_CHECK(htu21d_read_humidity_hold(dev_handle, &humidity));
+    ESP_LOGI(TAG, "Humidity (Hold): %.2f %%", humidity);
+
+    ESP_LOGI(TAG, "\n=== No Hold Master Mode Demo ===");
     
-    // Identify sensor at 0x18
-    identify_sensor_0x18(bus_handle);
+    // Read temperature using No Hold Master mode
+    ESP_ERROR_CHECK(htu21d_read_temperature_nohold(dev_handle, &temperature));
+    ESP_LOGI(TAG, "Temperature (No Hold): %.2f °C", temperature);
+
+    // Read humidity using No Hold Master mode
+    ESP_ERROR_CHECK(htu21d_read_humidity_nohold(dev_handle, &humidity));
+    ESP_LOGI(TAG, "Humidity (No Hold): %.2f %%", humidity);
+
+    ESP_LOGI(TAG, "\n=== Continuous Reading Loop ===");
     
-    // Test HTU21D at 0x40
-    test_htu21d(bus_handle);
-    
-    ESP_LOGI(TAG, "\n=== Test Complete ===");
-    
-    // Cleanup
-    i2c_del_master_bus(bus_handle);
+    // Continuous reading loop
+    while (1) {
+        // Read both values using Hold Master mode (simpler)
+        if (htu21d_read_temperature_hold(dev_handle, &temperature) == ESP_OK &&
+            htu21d_read_humidity_hold(dev_handle, &humidity) == ESP_OK) {
+            ESP_LOGI(TAG, "Temp: %.2f °C, Humidity: %.2f %%", temperature, humidity);
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(2000)); // Read every 2 seconds
+    }
+
+    // Cleanup (unreachable in this example due to infinite loop)
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev_handle));
+    ESP_ERROR_CHECK(i2c_del_master_bus(bus_handle));
+    ESP_LOGI(TAG, "I2C de-initialized successfully");
 }
