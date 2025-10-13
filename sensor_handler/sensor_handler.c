@@ -215,6 +215,7 @@ static void sensor_task(void *arg)
 {
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
+    adc_oneshot_unit_handle_t adc_handle;
 
     // Initialize I2C and sensor
     if (i2c_master_init(&bus_handle, &dev_handle) != ESP_OK) {
@@ -222,55 +223,84 @@ static void sensor_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
-
-    // Optional: Soft-reset sensor at startup
     aht20_soft_reset(dev_handle);
-
-    // Always attempt to initialize the sensor (calibration check)
     if (aht20_init(dev_handle) != ESP_OK) {
         ESP_LOGE(TAG, "AHT20 init failed!");
         vTaskDelete(NULL);
         return;
     }
-
-    // --- ADC setup for analog soil sensor ---
     soil_sensor_init(&adc_handle);
-
     ESP_LOGI(TAG, "Sensor task started");
 
+    TickType_t last_relay_change_tick = 0; // Last time relay state changed
+    bool relay_state = gpio_get_level(RELAY_GPIO); // Initial relay state
+
     while (1) {
-        // Read soil moisture analog value
+        TickType_t now_tick = xTaskGetTickCount();
+        bool relay_cmd_received = false;
+        bool requested_motor_val = relay_state; // default to keep current state
+
+        // Check queue for relay/motor command (MQTT)
+        char incoming_cmd[128];
+        if (g_server_cmd_queue && xQueueReceive(g_server_cmd_queue, incoming_cmd, 0)) {
+            if (strstr(incoming_cmd, "\"params\":true"))
+                requested_motor_val = true;
+            else if (strstr(incoming_cmd, "\"params\":false"))
+                requested_motor_val = false;
+            relay_cmd_received = true;
+        }
+
+        // Change relay only if more than 10s since last change
+        if (relay_cmd_received &&
+            (now_tick - last_relay_change_tick >= pdMS_TO_TICKS(10000))) {
+            gpio_set_level(RELAY_GPIO, requested_motor_val ? 1 : 0);
+            relay_state = requested_motor_val;
+            last_relay_change_tick = now_tick;
+            ESP_LOGI(TAG, "Motor command applied: %s", relay_state ? "ON" : "OFF");
+        } else if (relay_cmd_received &&
+                   (now_tick - last_relay_change_tick < pdMS_TO_TICKS(10000))) {
+            ESP_LOGW(TAG, "Relay command ignored: 10s cooldown not finished");
+        }
+
+        // Soil sensor logic (ADC and digital)
         int adc_val = 0;
         adc_oneshot_read(adc_handle, SOIL_ADC_CHANNEL, &adc_val);
         s_soil_adc = (uint16_t)adc_val;
-
-        // Read digital soil sensor
         s_soil_dig = gpio_get_level(SOIL_DIGITAL_GPIO);
 
-        // Control relay for pump (on if soil is dry)
-        gpio_set_level(RELAY_GPIO, (s_soil_adc < s_soil_thres) ? 1 : 0);
-
-        if (aht20_read(dev_handle, &s_temp_x100, &s_humid_x100) == ESP_OK) {
-          ESP_LOGI(TAG, "Temperature: %d.%02d °C, Humidity: %d.%02d %%",
-                   s_temp_x100 / 100, abs(s_temp_x100 % 100),
-                   s_humid_x100 / 100, abs(s_humid_x100 % 100));
-        } else {
-          ESP_LOGE(TAG, "Failed to read AHT20 sensor");
+        // Auto relay logic
+        if (!relay_cmd_received &&
+            (now_tick - last_relay_change_tick >= pdMS_TO_TICKS(10000))) {
+            bool auto_pump = (s_soil_adc < s_soil_thres);
+            if (auto_pump != relay_state) {
+                gpio_set_level(RELAY_GPIO, auto_pump ? 1 : 0);
+                relay_state = auto_pump;
+                last_relay_change_tick = now_tick;
+                ESP_LOGI(TAG, "Auto pump logic applied: %s", relay_state ? "ON" : "OFF");
+            }
         }
 
-       // Build telemetry data (JSON)
+        if (aht20_read(dev_handle, &s_temp_x100, &s_humid_x100) == ESP_OK) {
+            ESP_LOGI(TAG, "Temperature: %d.%02d °C, Humidity: %d.%02d %%", 
+                     s_temp_x100 / 100, abs(s_temp_x100 % 100), 
+                     s_humid_x100 / 100, abs(s_humid_x100 % 100));
+        } else {
+            ESP_LOGE(TAG, "Failed to read AHT20 sensor");
+        }
+
         char telemetry[128];
         snprintf(telemetry, sizeof(telemetry),
-            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u}",
+            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u,\"motor\":%d}",
             s_temp_x100/100, abs(s_temp_x100%100),
             s_humid_x100/100, abs(s_humid_x100%100),
-            s_soil_adc, s_soil_dig
+            s_soil_adc, s_soil_dig, relay_state ? 1 : 0
         );
         ESP_LOGI(TAG, "Telemetry: %s", telemetry);
         mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
 
 /**
  * @brief Start the sensor handler (task creation stub).

@@ -17,11 +17,17 @@ static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 static volatile uint8_t s_mqtt_payload_updated = false;
 static char s_mqtt_payload[1024] = {0};
+QueueHandle_t g_server_cmd_queue = NULL;
 
-void mqtt_receive_parser(const char *data, size_t len)
+void mqtt_receive_enqueue(const char *data, size_t len)
 {
-    ESP_LOGI(TAG, "Received data to parse: %.*s", len, data);
-    // Add parsing logic here as needed
+    ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
+    if (!g_server_cmd_queue) return;
+    char buf[128];
+    int copy_len = len < 127 ? (int)len : 127;
+    memcpy(buf, data, copy_len);
+    buf[copy_len] = 0;
+    xQueueSend(g_server_cmd_queue, buf, 0);
 }
 
 /*
@@ -51,6 +57,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
             ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
             ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
+            mqtt_receive_enqueue(event->data, event->data_len);
             break;
         default:
             break;
@@ -63,6 +70,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
  */
 static void mqtt_publish_task(void *arg)
 {
+
     while (1) {
         // Only publish if MQTT client is connected
         if (m_client && m_mqtt_connected && s_mqtt_payload_updated) {
@@ -93,6 +101,8 @@ void mqtt_handle_start(void)
     m_client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(m_client);
+    if (!g_server_cmd_queue)
+        g_server_cmd_queue = xQueueCreate(8, 128); // 8 slots, 128 bytes payload
     // Start publish task and immediately suspend it
     xTaskCreate(mqtt_publish_task, "mqtt_publish_task", 4096, NULL, 5, &m_pub_task);
     vTaskSuspend(m_pub_task);
