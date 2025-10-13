@@ -73,6 +73,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting MQTT handler (suspended by default, resumes on WiFi connect)...");
     mqtt_handle_start();
 
-    // ESP_LOGI(TAG, "Starting sensor handler task (reads sensors, controls relay, builds telemetry)...");
-    // sensor_handler_start();
+    ESP_LOGI(TAG, "Starting sensor handler task (reads sensors, controls relay, builds telemetry)...");
+    sensor_handler_start();
 }
