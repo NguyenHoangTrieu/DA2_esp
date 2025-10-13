@@ -159,6 +159,7 @@ static void wifi_uart_task(void *arg)
     uint8_t data[UART_BUF_SIZE];
     while (1) {
         if (!s_wifi_connected && scan_counter == 200) {
+            ESP_LOGI(TAG, "Not connected, performing WiFi scan...");
             perform_scan(); // Scan for available networks if not connected
             scan_counter = 0;
         }
