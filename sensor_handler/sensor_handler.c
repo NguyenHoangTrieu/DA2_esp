@@ -15,7 +15,7 @@
 #define I2C_MASTER_NUM         I2C_NUM_0
 #define I2C_MASTER_SDA_IO      7        // GPIO7 for SDA
 #define I2C_MASTER_SCL_IO      8        // GPIO8 for SCL
-#define I2C_MASTER_FREQ_HZ     100000   // 100kHz
+#define I2C_MASTER_FREQ_HZ     400000   // 400kHz
 #define I2C_MASTER_TIMEOUT_MS  1000
 
 // HTU21D Sensor Commands
