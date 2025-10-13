@@ -17,7 +17,7 @@ static const char *TAG = "htu21d_example";
 #define I2C_MASTER_SCL_IO           8               /*!< GPIO number for I2C master clock */
 #define I2C_MASTER_SDA_IO           7               /*!< GPIO number for I2C master data  */
 #define I2C_MASTER_NUM              I2C_NUM_0       /*!< I2C port number for master dev */
-#define I2C_MASTER_FREQ_HZ          100000          /*!< I2C master clock frequency (100kHz) */
+#define I2C_MASTER_FREQ_HZ          400000          /*!< I2C master clock frequency (100kHz) */
 #define I2C_MASTER_TIMEOUT_MS       1000
 
 // HTU21D Sensor Configuration
