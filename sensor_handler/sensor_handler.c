@@ -20,9 +20,9 @@
 #define I2C_MASTER_TIMEOUT_MS  1000
 
 // --- Soil sensor pins ---
-#define SOIL_ADC_GPIO       32
+#define SOIL_ADC_GPIO       GPIO_NUM_32
 #define SOIL_ADC_CHANNEL    ADC_CHANNEL_4
-#define SOIL_DIGITAL_GPIO   GPIO_NUM_26
+#define SOIL_DIGITAL_GPIO   GPIO_NUM_36
 #define RELAY_GPIO          GPIO_NUM_15
 #define SOIL_DRY_THRESHOLD  1800
 
