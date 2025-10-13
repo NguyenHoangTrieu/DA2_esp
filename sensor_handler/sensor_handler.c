@@ -100,10 +100,10 @@ static esp_err_t aht20_read(i2c_master_dev_handle_t dev_handle, int16_t *temp_x1
         return ret;
     }
 
-    // 2. Wait at least 80ms for measurement to be ready
+    // 2. Wait for measurement (datasheet: min ~80ms)
     vTaskDelay(pdMS_TO_TICKS(90));
 
-    // 3. Poll status to make sure sensor is not busy
+    // 3. Read status to ensure not busy (optional)
     uint8_t status_cmd = AHT20_CMD_STATUS;
     uint8_t status = 0;
     int try_count = 0;
@@ -131,14 +131,17 @@ static esp_err_t aht20_read(i2c_master_dev_handle_t dev_handle, int16_t *temp_x1
         return ret;
     }
 
-    // 5. Parse raw data as per datasheet
-    // Status | Humidity[19:12] | Humidity[11:4] | Humidity[3:0]+Temp[19:16] | Temp[15:8] | Temp[7:0]
-    uint32_t hum_raw = ((uint32_t)rx_data[1] << 12) | ((uint32_t)rx_data[2] << 4) | (rx_data[3] >> 4);
-    uint32_t temp_raw = (((uint32_t)(rx_data[3] & 0x0F)) << 16) | ((uint32_t)rx_data[4] << 8) | (rx_data[5]);
+    // 5. Parse 20 bits for humidity and temp (see datasheet)
+    uint32_t hum_raw  = ((uint32_t)rx_data[1] << 12) | ((uint32_t)rx_data[2] << 4) | ((uint32_t)(rx_data[3] & 0xF0) >> 4);
+    uint32_t temp_raw = (((uint32_t)(rx_data[3] & 0x0F)) << 16) | ((uint32_t)rx_data[4] << 8) | rx_data[5];
 
-    // Convert to %RH and °C, scaled x100 for fixed-point int use
-    *humid_x100 = (int16_t)(((hum_raw * 1000) / 1048576) / 10); // scale for %, formula: RH = hum_raw/2^20*100
-    *temp_x100  = (int16_t)((((temp_raw * 2000) / 1048576) - 500) / 10); // scale for °C, formula: T = temp_raw/2^20*200-50
+    // Convert to float for calculation
+    float hum  = ((float)hum_raw)  / 1048576.0f * 100.0f; // %RH
+    float temp = ((float)temp_raw) / 1048576.0f * 200.0f - 50.0f; // degree C
+
+    // Save as int x100
+    *humid_x100 = (int16_t)(hum * 100.0f);
+    *temp_x100  = (int16_t)(temp * 100.0f);
 
     return ESP_OK;
 }
