@@ -15,8 +15,8 @@
 #define I2C_MASTER_NUM         I2C_NUM_0
 #define I2C_MASTER_SDA_IO      7        // GPIO7 for SDA
 #define I2C_MASTER_SCL_IO      8        // GPIO8 for SCL
-#define I2C_MASTER_FREQ_HZ     400000   // 400kHz
-#define I2C_MASTER_TIMEOUT_MS  1000
+#define I2C_MASTER_FREQ_HZ     100000   // 100kHz (giảm từ 400kHz)
+#define I2C_MASTER_TIMEOUT_MS  2000     // Tăng timeout
 
 // HTU21D Sensor Commands
 #define HTU21_ADDR             0x40     // I2C address
@@ -27,6 +27,29 @@
 // Global variables for sensor data
 static int16_t s_temp_x100 = 0;
 static int16_t s_humid_x100 = 0;
+
+/**
+ * @brief Scan I2C bus for devices
+ */
+static void i2c_scanner(i2c_master_bus_handle_t bus_handle)
+{
+    ESP_LOGI(TAG, "Scanning I2C bus...");
+    int devices_found = 0;
+    
+    for (uint8_t addr = 1; addr < 127; addr++) {
+        esp_err_t ret = i2c_master_probe(bus_handle, addr, 1000);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Device found at address 0x%02X", addr);
+            devices_found++;
+        }
+    }
+    
+    if (devices_found == 0) {
+        ESP_LOGE(TAG, "No I2C devices found! Check wiring and pull-ups.");
+    } else {
+        ESP_LOGI(TAG, "Scan complete. Found %d device(s)", devices_found);
+    }
+}
 
 /**
  * @brief Read temperature from HTU21D sensor
@@ -110,6 +133,8 @@ static esp_err_t htu21_read_humidity(i2c_master_dev_handle_t dev_handle, int16_t
 static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle, 
                                  i2c_master_dev_handle_t *dev_handle)
 {
+    esp_err_t ret;
+
     // Configure I2C master bus
     i2c_master_bus_config_t bus_config = {
         .i2c_port = I2C_MASTER_NUM,
@@ -120,9 +145,32 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle,
         .flags.enable_internal_pullup = true,
     };
     
-    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, bus_handle));
+    ret = i2c_new_master_bus(&bus_config, bus_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2C master bus init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
     ESP_LOGI(TAG, "I2C master bus initialized on SDA=%d, SCL=%d", 
              I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
+
+    // Scan I2C bus để tìm thiết bị
+    i2c_scanner(*bus_handle);
+
+    // Probe HTU21D before adding device
+    ESP_LOGI(TAG, "Probing HTU21D sensor at address 0x%02X...", HTU21_ADDR);
+    ret = i2c_master_probe(*bus_handle, HTU21_ADDR, 1000);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "HTU21D sensor found!");
+    } else if (ret == ESP_ERR_NOT_FOUND) {
+        ESP_LOGE(TAG, "HTU21D sensor NOT found - check wiring and address");
+        return ret;
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGE(TAG, "I2C probe timeout - check pull-up resistors!");
+        return ret;
+    } else {
+        ESP_LOGE(TAG, "I2C probe error: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
     // Configure HTU21D device
     i2c_device_config_t dev_config = {
@@ -131,35 +179,15 @@ static esp_err_t i2c_master_init(i2c_master_bus_handle_t *bus_handle,
         .scl_speed_hz = I2C_MASTER_FREQ_HZ,
     };
     
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle));
-    ESP_LOGI(TAG, "HTU21D device added to I2C bus (address: 0x%02X)", HTU21_ADDR);
+    ret = i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add HTU21D device: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "HTU21D device added to I2C bus");
 
     return ESP_OK;
 }
-
-/**
- * @brief Scan I2C bus for devices
- */
-static void i2c_scanner(i2c_master_bus_handle_t bus_handle)
-{
-    ESP_LOGI(TAG, "Scanning I2C bus...");
-    int devices_found = 0;
-    
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        esp_err_t ret = i2c_master_probe(bus_handle, addr, 1000);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Device found at address 0x%02X", addr);
-            devices_found++;
-        }
-    }
-    
-    if (devices_found == 0) {
-        ESP_LOGE(TAG, "No I2C devices found! Check wiring and pull-ups.");
-    } else {
-        ESP_LOGI(TAG, "Scan complete. Found %d device(s)", devices_found);
-    }
-}
-
 
 /**
  * @brief Perform soft reset of HTU21D sensor
@@ -190,28 +218,17 @@ static void sensor_task(void *arg)
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
 
-    // Initialize I2C and HTU21D
+    // Initialize I2C and HTU21D (CHỈ TẠO BUS MỘT LẦN)
     if (i2c_master_init(&bus_handle, &dev_handle) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize I2C");
+        ESP_LOGE(TAG, "Failed to initialize I2C - check hardware connection!");
         vTaskDelete(NULL);
         return;
     }
-    // Try to initialize just the bus for scanning
-    i2c_master_bus_config_t bus_config = {
-        .i2c_port = I2C_MASTER_NUM,
-        .sda_io_num = I2C_MASTER_SDA_IO,
-        .scl_io_num = I2C_MASTER_SCL_IO,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
-    };
-    
-    if (i2c_new_master_bus(&bus_config, &bus_handle) == ESP_OK) {
-        i2c_scanner(bus_handle);
-    }
 
     // Perform soft reset on startup
-    htu21_soft_reset(dev_handle);
+    if (htu21_soft_reset(dev_handle) != ESP_OK) {
+        ESP_LOGW(TAG, "Soft reset failed, continuing anyway...");
+    }
 
     ESP_LOGI(TAG, "Sensor task started");
 
