@@ -199,7 +199,7 @@ void soil_sensor_init(adc_oneshot_unit_handle_t *adc_handle) {
 
     adc_oneshot_chan_cfg_t chan_cfg = {
         .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_11,
+        .atten = ADC_ATTEN_DB_12,
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_handle, SOIL_ADC_CHANNEL, &chan_cfg));
 
@@ -250,6 +250,14 @@ static void sensor_task(void *arg)
 
         // Control relay for pump (on if soil is dry)
         gpio_set_level(RELAY_GPIO, (s_soil_adc < s_soil_thres) ? 1 : 0);
+
+        if (aht20_read(dev_handle, &s_temp_x100, &s_humid_x100) == ESP_OK) {
+          ESP_LOGI(TAG, "Temperature: %d.%02d °C, Humidity: %d.%02d %%",
+                   s_temp_x100 / 100, abs(s_temp_x100 % 100),
+                   s_humid_x100 / 100, abs(s_humid_x100 % 100));
+        } else {
+          ESP_LOGE(TAG, "Failed to read AHT20 sensor");
+        }
 
        // Build telemetry data (JSON)
         char telemetry[128];
