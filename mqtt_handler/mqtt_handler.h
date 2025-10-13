@@ -6,7 +6,7 @@
 
 #ifndef MQTT_HANDLER_H
 #define MQTT_HANDLER_H
-
+#include <stddef.h>
 // Start the MQTT handle, launch FreeRTOS publishing task in suspended state.
 void mqtt_handle_start(void);
 
