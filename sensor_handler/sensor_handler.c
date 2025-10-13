@@ -254,10 +254,10 @@ static void sensor_task(void *arg)
        // Build telemetry data (JSON)
         char telemetry[128];
         snprintf(telemetry, sizeof(telemetry),
-            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u,\"pump\":%d}",
+            "{\"temp\":%d.%02d,\"humid\":%d.%02d,\"soil_adc\":%u,\"soil_dig\":%u}",
             s_temp_x100/100, abs(s_temp_x100%100),
             s_humid_x100/100, abs(s_humid_x100%100),
-            s_soil_adc, s_soil_dig, gpio_get_level(RELAY_GPIO)
+            s_soil_adc, s_soil_dig
         );
         ESP_LOGI(TAG, "Telemetry: %s", telemetry);
         mqtt_build_telemetry_payload(telemetry, strlen(telemetry));
