@@ -154,15 +154,20 @@ static void wifi_uart_task(void *arg)
     uart_param_config(UART_PORT_NUM, &uart_config);
     uart_driver_install(UART_PORT_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
     ESP_LOGI(TAG, "Listening for WiFi SSID/Password over UART (format: SSID:PASSWORD)");
-    uint8_t scan_counter = 0;
+    uint16_t scan_counter = 0;
 
     uint8_t data[UART_BUF_SIZE];
     while (1) {
-        if (!s_wifi_connected && scan_counter == 20) {
+        if (!s_wifi_connected && scan_counter == 200) {
             perform_scan(); // Scan for available networks if not connected
             scan_counter = 0;
         }
-        scan_counter++;
+        else if (!s_wifi_connected) {
+            scan_counter++;
+        }
+        else {
+           scan_counter = 0;
+        }
         int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
         if (len > 0) {
             data[len] = '\0';
@@ -197,6 +202,7 @@ static void wifi_uart_task(void *arg)
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void wifi_connect_task_start(void)
