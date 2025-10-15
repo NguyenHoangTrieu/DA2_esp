@@ -11,15 +11,6 @@
     This example shows how to scan for available set of APs periodically using FreeRTOS task.
     Added software reset for ESP32-C6 slave via GPIO54 for Waveshare ESP32-P4-WIFI6-DEV-KIT.
 */
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_wifi.h"
-#include "esp_log.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "driver/gpio.h"
 #include "wifi_scan.h"
 
 static const char *TAG = "scan";

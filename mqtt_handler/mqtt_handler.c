@@ -1,8 +1,4 @@
 #include "mqtt_handler.h"
-#include "esp_log.h"
-#include "mqtt_client.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 #define BROKER_URI        "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN      "ZCOjw6KKw5j2EqYV2co6"

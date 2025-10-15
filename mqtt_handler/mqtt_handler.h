@@ -9,6 +9,9 @@
 #include <stddef.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "mqtt_client.h"
 // Start the MQTT handle, launch FreeRTOS publishing task in suspended state.
 void mqtt_handle_start(void);
 
