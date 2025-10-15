@@ -124,6 +124,7 @@ void mqtt_handle_suspend(void)
 /* MQTT build telematry data from source to payload buffer and clear the source */
 void mqtt_build_telemetry_payload(char *source, size_t len)
 {
+    memset(s_mqtt_payload, 0, sizeof(s_mqtt_payload));
     memcpy(s_mqtt_payload, source, len);
     s_mqtt_payload_updated = true;
     memset(source, 0, len); // Clear source after copying

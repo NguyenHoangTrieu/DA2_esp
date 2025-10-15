@@ -34,6 +34,8 @@ static int s_retry_num = 0;
 static char s_wifi_ssid[33] = DEFAULT_ESP_WIFI_SSID; // Buffer for current SSID
 static char s_wifi_pass[65] = DEFAULT_ESP_WIFI_PASS; // Buffer for current password
 static uint8_t s_wifi_connected = 0;               // Connection status flag
+static volatile uint8_t s_reconnect_request = 0;  // Flag for reconnection request
+static wifi_config_t s_pending_config = {0};      // Pending WiFi config
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -45,26 +47,38 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+        // Check if this is a requested reconnection with new credentials
+        if (s_reconnect_request) {
+            s_reconnect_request = 0;  // Reset flag
+            s_retry_num = 0;          // Reset retry counter for new connection
+            
+            // Apply the new configuration
+            ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &s_pending_config));
+            esp_wifi_connect();
+            ESP_LOGI(TAG, "Connecting to new AP: %s", s_pending_config.sta.ssid);
+        }
+        else if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "Retrying to connect to the AP");
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGI(TAG,"Connect to the AP failed");
+        
+        ESP_LOGI(TAG, "Connect to the AP failed");
         ESP_LOGI(TAG, "Disconnected from WiFi MQTT suspended, WiFi scan resumed");
-        mqtt_handle_suspend(); // Suspend MQTT task on disconnect
+        mqtt_handle_suspend();
         s_wifi_connected = 0;
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
-        mqtt_handle_resume(); // Resume MQTT task on successful connection
+        mqtt_handle_resume();
         s_wifi_connected = 1;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
+
 
 /*
  * Initialize WiFi in STA mode and connect.
@@ -161,34 +175,44 @@ static void wifi_uart_task(void *arg)
         else {
             scan_counter = 0;
         }
-        int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
+         int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
         if (len > 0) {
             data[len] = '\0';
             char *colon_ptr = strchr((char *)data, ':');
             if (colon_ptr) {
                 int ssid_len = colon_ptr - (char *)data;
                 int pass_len = strlen((char *)data) - ssid_len - 1;
+                
                 if (ssid_len > 0 && ssid_len < 33 && pass_len >= 0 && pass_len < 65) {
                     strncpy(s_wifi_ssid, (char *)data, ssid_len);
                     s_wifi_ssid[ssid_len] = '\0';
                     strncpy(s_wifi_pass, colon_ptr + 1, pass_len);
                     s_wifi_pass[pass_len] = '\0';
+                    
                     ESP_LOGI(TAG, "Received command: SSID='%s', PASS='%s'", s_wifi_ssid, s_wifi_pass);
-
-                    // Connect to new WiFi network with parsed credentials
-                    wifi_config_t wifi_config = {0};
-                    strncpy((char *)wifi_config.sta.ssid, s_wifi_ssid, sizeof(wifi_config.sta.ssid));
-                    strncpy((char *)wifi_config.sta.password, s_wifi_pass, sizeof(wifi_config.sta.password));
-                    wifi_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
-                    wifi_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
-                    strcpy((char *)wifi_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
-
+                    
+                    // Prepare new configuration
+                    memset(&s_pending_config, 0, sizeof(wifi_config_t));
+                    strncpy((char *)s_pending_config.sta.ssid, s_wifi_ssid, 
+                            sizeof(s_pending_config.sta.ssid));
+                    strncpy((char *)s_pending_config.sta.password, s_wifi_pass, 
+                            sizeof(s_pending_config.sta.password));
+                    s_pending_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
+                    s_pending_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
+                    strcpy((char *)s_pending_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
-                    wifi_config.sta.disable_wpa3_compatible_mode = 0;
+                    s_pending_config.sta.disable_wpa3_compatible_mode = 0;
 #endif
-                    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-                    ESP_ERROR_CHECK(esp_wifi_disconnect()); // Ensures disconnect before reconnect
-                    ESP_ERROR_CHECK(esp_wifi_connect());
+                    
+                    // Set reconnection flag and trigger disconnect
+                    s_reconnect_request = 1;
+                    esp_err_t ret = esp_wifi_disconnect();
+                    
+                    if (ret == ESP_ERR_WIFI_NOT_STARTED) {
+                        ESP_LOGE(TAG, "WiFi not started");
+                    } else if (ret != ESP_OK) {
+                        ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
+                    }
                 }
             } else {
                 ESP_LOGI(TAG, "Invalid format. Usage: SSID:PASSWORD");
