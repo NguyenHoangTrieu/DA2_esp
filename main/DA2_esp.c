@@ -77,6 +77,7 @@ void app_main(void)
 
     // Start USB tasks
     usb_host_lib_task_start();
+    ulTaskNotifyTake(false, 1000); // Wait until the USB host library is installed
     class_driver_task_start();
     usb_otg_rw_task_start();
     jtag_task_start();
@@ -98,9 +99,9 @@ void app_main(void)
                     change = 0;
                     ESP_LOGI(TAG, "Button pressed, switch to USB Host");
                     jtag_task_stop();
-                    usb_host_lib_task_start();
-                    class_driver_task_start();
-                    usb_otg_rw_task_start();
+                    usb_host_lib_task_resume();
+                    class_driver_task_resume();
+                    usb_otg_rw_task_resume();
                     led_show_blue();
                 }
             }
