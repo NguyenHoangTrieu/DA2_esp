@@ -29,6 +29,8 @@ typedef struct {
     app_event_group_t event_group;
 } app_event_queue_t;
 
+static uint32_t last_isr_tick = 0;
+
 static void gpio45_isr_handler(void *arg) {
     uint32_t now = xTaskGetTickCountFromISR();
     if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
