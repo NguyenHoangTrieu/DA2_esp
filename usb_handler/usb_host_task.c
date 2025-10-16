@@ -450,8 +450,6 @@ void usb_host_lib_deinit(void){
  * @param[in] arg  Not used
  */
 void usb_host_lib_task(void *arg) {
-  // Install the USB Host Library
-  usb_host_lib_init();
   bool has_clients = true;
   bool has_devices = false;
   while (has_clients) {
