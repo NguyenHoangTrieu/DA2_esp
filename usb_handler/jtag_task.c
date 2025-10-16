@@ -60,6 +60,7 @@ void jtag_task_resume(void)
     usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
     usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
+    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
     if (jtag_task_hdl != NULL) {
         vTaskResume(jtag_task_hdl);
     }
@@ -68,6 +69,7 @@ void jtag_task_resume(void)
 void jtag_task_stop(void)
 {
     usb_serial_jtag_driver_uninstall();
+    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG deinit done");
     if (jtag_task_hdl != NULL) {
         vTaskSuspend(jtag_task_hdl);
     }
