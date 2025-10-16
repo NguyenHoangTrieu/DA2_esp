@@ -84,7 +84,6 @@ void class_driver_task(void *arg);
 void usb_otg_rw_task(void *arg);
 void parse_and_cache_endpoints(usb_device_t *dev);
 void claim_interface(usb_device_t *device_obj);
-void usb_host_lib_task_start(void *arg);
 // Class driver task control functions
 void class_driver_task_start(void);
 void class_driver_task_resume(void);
