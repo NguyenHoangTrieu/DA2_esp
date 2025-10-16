@@ -498,6 +498,7 @@ void class_driver_task_start(void){
 
 void class_driver_task_resume(void){
   class_driver_init();
+  ESP_LOGI(TAG, "Class Driver init done");
   if(class_driver_task_hdl != NULL){
     vTaskResume(class_driver_task_hdl);
   }
@@ -505,6 +506,7 @@ void class_driver_task_resume(void){
 
 void class_driver_task_stop(void){
   class_driver_deinit();
+  ESP_LOGI(TAG, "Class Driver deinit done");
   if(class_driver_task_hdl != NULL){
     vTaskSuspend(class_driver_task_hdl);
   }
@@ -527,6 +529,7 @@ void usb_host_lib_task_start(void){
 
 void usb_host_lib_task_resume(void){
   usb_host_lib_init();
+  ESP_LOGI(TAG, "USB Host init done");
   if(usb_host_task_hdl != NULL){
     vTaskResume(usb_host_task_hdl);
   }
@@ -534,6 +537,7 @@ void usb_host_lib_task_resume(void){
 
 void usb_host_lib_task_stop(void){
   usb_host_lib_deinit();
+  ESP_LOGI(TAG, "USB Host deinit done");
   if(usb_host_task_hdl != NULL){
     vTaskSuspend(usb_host_task_hdl);
   }
