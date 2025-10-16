@@ -8,6 +8,7 @@ static uint8_t num_connected_devices = 0;
 static TaskHandle_t usb_host_task_hdl = NULL;
 static TaskHandle_t class_driver_task_hdl = NULL;
 usb_host_client_handle_t class_driver_client_hdl = NULL;
+bool usb_host_lib_close = false;
 
 /**
  * @brief Client event callback function for handling USB host events
@@ -360,9 +361,7 @@ void class_driver_init(void){
 }
 
 void class_driver_deinit(void){
-    if(class_driver_client_hdl != NULL){
-        ESP_ERROR_CHECK(usb_host_client_deregister(class_driver_client_hdl));
-    }
+    class_driver_client_deregister();
 }
 
 // =============================================================================
@@ -384,8 +383,6 @@ void class_driver_deinit(void){
  * @param arg Task parameter (unused in this implementation)
  */
 void class_driver_task(void *arg) {
-  class_driver_init();
-
   while (1) {
     // Driver has unhandled devices, handle all devices first
     ESP_LOGI(TAG, "Class Driver Active");
@@ -416,7 +413,7 @@ void class_driver_task(void *arg) {
   ESP_LOGI(TAG, "Deregistering Class Client");
   ESP_ERROR_CHECK(usb_host_client_deregister(
       class_driver_client_hdl)); // Deregister client from USB Host Library
-  vTaskSuspend(NULL); // Suspend task after cleanup
+  vTaskDelete(NULL); // Delete task after cleanup
 }
 
 void usb_host_lib_init(void){
@@ -435,8 +432,7 @@ void usb_host_lib_init(void){
 }
 
 void usb_host_lib_deinit(void){
-  ESP_LOGI(TAG, "Uninstalling USB Host Library");
-  ESP_ERROR_CHECK(usb_host_uninstall());
+  usb_host_lib_close = true;
 }
 
 // =============================================================================
@@ -452,7 +448,7 @@ void usb_host_lib_deinit(void){
 void usb_host_lib_task(void *arg) {
   bool has_clients = true;
   bool has_devices = false;
-  while (has_clients) {
+  while (has_clients && !usb_host_lib_close) {
     uint32_t event_flags;
     ESP_ERROR_CHECK(usb_host_lib_handle_events(portMAX_DELAY, &event_flags));
     if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
@@ -472,11 +468,10 @@ void usb_host_lib_task(void *arg) {
       has_clients = false;
     }
   }
-  ESP_LOGI(TAG, "No more clients and devices, uninstall USB Host library");
-
+  ESP_LOGI(TAG, "No more clients and devices or close task, uninstall USB Host library");
   // Uninstall the USB Host Library
-  usb_host_lib_deinit();
-  vTaskSuspend(NULL);
+  ESP_ERROR_CHECK(usb_host_uninstall());
+  vTaskDelete(NULL);
 }
 
 // =============================================================================
@@ -499,9 +494,6 @@ void class_driver_task_start(void){
 void class_driver_task_stop(void){
   class_driver_deinit();
   ESP_LOGI(TAG, "Class Driver deinit done");
-  if(class_driver_task_hdl != NULL){
-    vTaskDelete(class_driver_task_hdl);
-  }
 }
 
 // =============================================================================
@@ -524,7 +516,4 @@ void usb_host_lib_task_start(void){
 void usb_host_lib_task_stop(void){
   usb_host_lib_deinit();
   ESP_LOGI(TAG, "USB Host deinit done");
-  if(usb_host_task_hdl != NULL){
-    vTaskDelete(usb_host_task_hdl);
-  }
 }
