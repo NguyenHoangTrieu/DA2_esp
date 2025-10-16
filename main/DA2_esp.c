@@ -86,6 +86,7 @@ void app_main(void)
                 ESP_LOGI(TAG, "Button pressed, switch to jtag");
                 class_driver_task_stop();
                 usb_host_lib_task_stop();
+                vTaskDelay(pdMS_TO_TICKS(100)); // Wait for tasks to close
                 jtag_task_start();
                 // usb_otg_rw_task_stop();
                 led_show_red();
