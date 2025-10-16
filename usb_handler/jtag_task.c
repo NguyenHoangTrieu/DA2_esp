@@ -67,6 +67,7 @@ void jtag_task_resume(void)
 
 void jtag_task_stop(void)
 {
+    usb_serial_jtag_driver_uninstall();
     if (jtag_task_hdl != NULL) {
         vTaskSuspend(jtag_task_hdl);
     }
