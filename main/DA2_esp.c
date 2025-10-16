@@ -73,12 +73,12 @@ void app_main(void)
     uint8_t change = 0;
 
     // Start USB tasks
+    jtag_task_start();
+    jtag_task_stop();
     usb_host_lib_task_start();
     ulTaskNotifyTake(false, 1000); // Wait until the USB host library is installed
     class_driver_task_start();
     // usb_otg_rw_task_start();
-    jtag_task_start();
-    jtag_task_stop();
 
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notify from ISR (button press)
