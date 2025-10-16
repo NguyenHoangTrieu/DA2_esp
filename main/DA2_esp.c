@@ -87,6 +87,7 @@ void app_main(void)
 
     while (1) {
         if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
+            ESP_LOGI(TAG, "Event received: %d", evt_queue.event_group);
             if (APP_EVENT_PUSH == evt_queue.event_group) {
                 // User pressed button
                 if (change == 0) {
