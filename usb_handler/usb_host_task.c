@@ -439,7 +439,7 @@ void usb_host_lib_task(void *arg) {
            host_config.peripheral_map);
 
   // Signalize the app_main, the USB host library has been installed
-  xTaskNotifyGive(arg);
+  xTaskNotifyGive(main_task_handle);
 
   bool has_clients = true;
   bool has_devices = false;
