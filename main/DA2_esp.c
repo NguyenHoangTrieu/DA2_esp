@@ -93,6 +93,7 @@ void app_main(void)
                 change = 0;
                 ESP_LOGI(TAG, "Button pressed, switch to USB Host");
                 jtag_task_stop();
+                vTaskDelay(pdMS_TO_TICKS(100)); // Wait for jtag task to close
                 usb_host_lib_task_start();
                 class_driver_task_start();
                 // usb_otg_rw_task_resume();
