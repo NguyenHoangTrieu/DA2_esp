@@ -79,7 +79,7 @@ void app_main(void)
     jtag_task_start();
     vTaskDelay(pdMS_TO_TICKS(10));
     jtag_task_stop();
-    vTaskdelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(10));
     usb_host_lib_task_start();
     class_driver_task_start();
     usb_otg_rw_task_start();
