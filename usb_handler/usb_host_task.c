@@ -510,6 +510,7 @@ void usb_host_lib_task_start(void){
                                          &usb_host_task_hdl,
                                          0);
   assert(task_created == pdTRUE);
+  ulTaskNotifyTake(false, 1000); // Wait until the USB host library is installed
 }
 
 void usb_host_lib_task_resume(void){
