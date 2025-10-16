@@ -358,6 +358,7 @@ void class_driver_init(void){
   }
 
   s_driver_obj = &m_driver_obj;
+  s_driver_obj->mux_protected.flags.shutdown = 0;
 }
 
 void class_driver_deinit(void){
