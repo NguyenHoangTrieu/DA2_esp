@@ -1,78 +1,148 @@
 /*
- * DA2_esp.c - Main entry point for ESP32-P4 modular application.
- * This file sets up NVS, WiFi scan, WiFi UART connect, and MQTT send.
- * The scan task runs until WiFi connects via UART command, after which it is suspended.
- * If connection fails or is lost, scan resumes. MQTT sending only happens when WiFi is up.
- * All logic is modular; all comments are in English for clarity.
+ * ESP32-S3 USB Host Flash Bridge (Rewritten)
+ * Receives firmware from PC via UART and flashes target ESP32 WROOM via USB Host
+ * Uses native USB Host Library without CDC-ACM component dependency
  */
 
-#include "wifi_scan.h"
-#include "sensor_handler.h"
-#include "wifi_connect.h"
-#include "mqtt_handler.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "esp_log.h"
+#include "usb_flash_handler.h"
+#include "rbg_handler.h"
 
-#define C6_RESET_GPIO   GPIO_NUM_54
-static const char *TAG = "DA2_esp_main";
+static const char *TAG = "MAIN APP";
 
-/* Software reset ESP32-C6 slave via GPIO54 */
-static void reset_c6_slave(void)
+QueueHandle_t app_event_queue = NULL;
+
+/**
+ * @brief APP event group
+ *
+ * APP_EVENT            - General event, which is APP_QUIT_PIN press event in this example.
+ */
+typedef enum {
+    APP_EVENT = 0,
+} app_event_group_t;
+
+/**
+ * @brief APP event queue
+ *
+ * This event is used for delivering events from callback to a task.
+ */
+typedef struct {
+    app_event_group_t event_group;
+} app_event_queue_t;
+
+/**
+ * @brief BOOT button pressed callback
+ *
+ * Signal application to exit the Host lib task
+ *
+ * @param[in] arg Unused
+ */
+static void gpio_cb(void *arg)
 {
-    ESP_LOGI(TAG, "Performing software reset of ESP32-C6 slave...");
-    
-    // Configure GPIO54 as output
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << C6_RESET_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+    const app_event_queue_t evt_queue = {
+        .event_group = APP_EVENT,
     };
-    gpio_config(&io_conf);
-    
-    // Perform reset sequence - multiple toggles for robust reset
-    for (int i = 0; i < 3; i++) {
-        gpio_set_level(C6_RESET_GPIO, 0);  // Assert reset (LOW)
-        vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(C6_RESET_GPIO, 1);  // De-assert reset (HIGH)
-        vTaskDelay(pdMS_TO_TICKS(100));
+
+    BaseType_t xTaskWoken = pdFALSE;
+
+    if (app_event_queue) {
+        xQueueSendFromISR(app_event_queue, &evt_queue, &xTaskWoken);
     }
-    
-    // Final reset - hold low for 500ms then release
-    gpio_set_level(C6_RESET_GPIO, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    gpio_set_level(C6_RESET_GPIO, 1);
-    
-    // Wait for C6 to boot up completely (critical timing)
-    ESP_LOGI(TAG, "Waiting for ESP32-C6 to boot up...");
-    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds for C6 bootloader + app init
-    
-    ESP_LOGI(TAG, "ESP32-C6 slave reset completed");
+
+    if (xTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
 }
 
+// =============================================================================
+// Main Application Entry Point
+// =============================================================================
+
+/**
+ * @brief Main application entry point
+ */
 void app_main(void)
 {
-    // Initialize NVS (required by WiFi)
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    ESP_LOGI(TAG, "USB host library example");
+
+    // Init BOOT button: Pressing the button simulates app request to exit
+    // It will uninstall the class driver and USB Host Lib
+    const gpio_config_t input_pin = {
+        .pin_bit_mask = BIT64(APP_QUIT_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&input_pin));
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(APP_QUIT_PIN, gpio_cb, NULL));
+    init_led_strip();
+    led_on();
+    app_event_queue = xQueueCreate(10, sizeof(app_event_queue_t));
+    app_event_queue_t evt_queue;
+
+    TaskHandle_t host_lib_task_hdl, class_driver_task_hdl;
+
+    // Create usb host lib task
+    BaseType_t task_created;
+    task_created = xTaskCreatePinnedToCore(usb_host_lib_task,
+                                           "usb_host",
+                                           4096,
+                                           xTaskGetCurrentTaskHandle(),
+                                           HOST_LIB_TASK_PRIORITY,
+                                           &host_lib_task_hdl,
+                                           0);
+    assert(task_created == pdTRUE);
+
+    // Wait until the USB host library is installed
+    ulTaskNotifyTake(false, 1000);
+
+    // Create class driver task
+    task_created = xTaskCreatePinnedToCore(class_driver_task,
+                                           "class",
+                                           5 * 1024,
+                                           NULL,
+                                           CLASS_TASK_PRIORITY,
+                                           &class_driver_task_hdl,
+                                           0);
+    assert(task_created == pdTRUE);
+
+    task_created = xTaskCreatePinnedToCore(usb_otg_rw_task,
+                                           "usb_otg_rw",
+                                           4 * 1024,
+                                           NULL,
+                                           CLASS_TASK_PRIORITY,
+                                           NULL,
+                                           0);
+    assert(task_created == pdTRUE);
+    // Add a short delay to let the tasks run
+    vTaskDelay(10);
+
+    while (1) {
+        if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
+            if (APP_EVENT == evt_queue.event_group) {
+                // User pressed button
+                usb_host_lib_info_t lib_info;
+                ESP_ERROR_CHECK(usb_host_lib_info(&lib_info));
+                if (lib_info.num_devices != 0) {
+                    ESP_LOGW(TAG, "Shutdown with attached devices.");
+                }
+                // End while cycle
+                break;
+            }
+        }
     }
-    ESP_ERROR_CHECK(ret);
 
-    // CRITICAL: Reset ESP32-C6 slave before WiFi initialization
-    // This ensures C6 is in a known good state after P4 reset
-    ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
-    reset_c6_slave();
+    // Deregister client
+    class_driver_client_deregister();
+    vTaskDelay(10);
 
-    ESP_LOGI(TAG, "Starting WiFi UART connect task (waiting for connect command)...");
-    wifi_connect_task_start();
+    // Delete the tasks
+    vTaskDelete(class_driver_task_hdl);
+    vTaskDelete(host_lib_task_hdl);
 
-    ESP_LOGI(TAG, "Starting MQTT handler (suspended by default, resumes on WiFi connect)...");
-    mqtt_handle_start();
-
-    ESP_LOGI(TAG, "Starting sensor handler task (reads sensors, controls relay, builds telemetry)...");
-    sensor_handler_start();
+    // Delete interrupt and queue
+    gpio_isr_handler_remove(APP_QUIT_PIN);
+    xQueueReset(app_event_queue);
+    vQueueDelete(app_event_queue);
+    ESP_LOGI(TAG, "End of the example");
 }
