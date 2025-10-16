@@ -9,7 +9,6 @@
 
 static const char *TAG = "MAIN APP";
 
-QueueHandle_t app_event_queue = NULL;
 TaskHandle_t main_task_handle = NULL;
 
 /**
@@ -32,12 +31,9 @@ typedef struct {
 
 static void gpio45_isr_handler(void *arg) {
     // Handle GPIO45 interrupt here
-    const app_event_queue_t evt_queue = {
-        .event_group = APP_EVENT_PUSH,
-    };
     BaseType_t xTaskWoken = pdFALSE;
-    if (app_event_queue) {
-        xQueueSendFromISR(app_event_queue, &evt_queue, &xTaskWoken);
+    if (main_task_handle) {
+        vTaskNotifyGiveFromISR(main_task_handle, &xTaskWoken);
     }
     if (xTaskWoken == pdTRUE) {
         portYIELD_FROM_ISR();
@@ -59,6 +55,7 @@ void setup_gpio45_interrupt(void) {
     ESP_ERROR_CHECK(gpio_isr_handler_add(45, gpio45_isr_handler, NULL));
 }
 
+
 // =============================================================================
 // Main Application Entry Point
 // =============================================================================
@@ -72,9 +69,7 @@ void app_main(void)
     init_led_strip();
     led_on();
     setup_gpio45_interrupt();
-    app_event_queue = xQueueCreate(10, sizeof(app_event_queue_t));
     main_task_handle = xTaskGetCurrentTaskHandle();
-    app_event_queue_t evt_queue;
     uint8_t change = 0;
 
     // Start USB tasks
@@ -86,27 +81,26 @@ void app_main(void)
     jtag_task_stop();
 
     while (1) {
-        if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
-            ESP_LOGI(TAG, "Event received: %d", evt_queue.event_group);
-            if (APP_EVENT_PUSH == evt_queue.event_group) {
-                // User pressed button
-                if (change == 0) {
-                    change = 1;
-                    ESP_LOGI(TAG, "Button pressed, switch to jtag");
-                    jtag_task_resume();
-                    usb_otg_rw_task_stop();
-                    usb_host_lib_task_stop();
-                    class_driver_task_stop();
-                    led_show_red();
-                } else {
-                    change = 0;
-                    ESP_LOGI(TAG, "Button pressed, switch to USB Host");
-                    jtag_task_stop();
-                    usb_host_lib_task_resume();
-                    class_driver_task_resume();
-                    usb_otg_rw_task_resume();
-                    led_show_blue();
-                }
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notify from ISR (button press)
+        ESP_LOGI(TAG, "Event received: %d", APP_EVENT_PUSH);
+        if (APP_EVENT_PUSH == APP_EVENT_PUSH) {
+            // User pressed button
+            if (change == 0) {
+                change = 1;
+                ESP_LOGI(TAG, "Button pressed, switch to jtag");
+                jtag_task_resume();
+                usb_otg_rw_task_stop();
+                usb_host_lib_task_stop();
+                class_driver_task_stop();
+                led_show_red();
+            } else {
+                change = 0;
+                ESP_LOGI(TAG, "Button pressed, switch to USB Host");
+                jtag_task_stop();
+                usb_host_lib_task_resume();
+                class_driver_task_resume();
+                usb_otg_rw_task_resume();
+                led_show_blue();
             }
         }
     }
