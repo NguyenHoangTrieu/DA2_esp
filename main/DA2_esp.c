@@ -82,7 +82,6 @@ void app_main(void)
 
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notify from ISR (button press)
-        ESP_LOGI(TAG, "Event received: %d", APP_EVENT_PUSH);
         if (APP_EVENT_PUSH == APP_EVENT_PUSH) {
             // User pressed button
             if (change == 0) {
