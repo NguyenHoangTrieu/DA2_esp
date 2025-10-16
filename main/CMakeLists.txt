@@ -7,7 +7,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../usb_flash_handler/uart_task.c" 
                                 "../usb_flash_handler/usb_host_task.c"
                                 "../usb_flash_handler/rw_task.c"
-                    PRIV_REQUIRES esp_wifi 
+                    PRIV_REQUIRES 
+                                esp_wifi 
                                 nvs_flash 
                                 mqtt 
                                 esp_adc 
