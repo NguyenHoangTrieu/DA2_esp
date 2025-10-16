@@ -413,14 +413,8 @@ void usb_otg_rw_task_start(void) {
     assert(task_created == pdTRUE);
 }
 
-void usb_otg_rw_task_resume(void) {
-    if (usb_otg_rw_task_hdl != NULL) {
-        vTaskResume(usb_otg_rw_task_hdl);
-    }
-}
-
 void usb_otg_rw_task_stop(void) {
     if (usb_otg_rw_task_hdl != NULL) {
-        vTaskSuspend(usb_otg_rw_task_hdl);
+        vTaskDelete(usb_otg_rw_task_hdl);
     }
 }

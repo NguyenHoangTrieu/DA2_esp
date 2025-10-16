@@ -484,6 +484,8 @@ void usb_host_lib_task(void *arg) {
 // =============================================================================
 
 void class_driver_task_start(void){
+  class_driver_init();
+  ESP_LOGI(TAG, "Class Driver init done");
   BaseType_t task_created;
   // Create class driver task
   task_created = xTaskCreatePinnedToCore(class_driver_task,
@@ -496,25 +498,19 @@ void class_driver_task_start(void){
   assert(task_created == pdTRUE);
 }
 
-void class_driver_task_resume(void){
-  class_driver_init();
-  ESP_LOGI(TAG, "Class Driver init done");
-  if(class_driver_task_hdl != NULL){
-    vTaskResume(class_driver_task_hdl);
-  }
-}
-
 void class_driver_task_stop(void){
   class_driver_deinit();
   ESP_LOGI(TAG, "Class Driver deinit done");
   if(class_driver_task_hdl != NULL){
-    vTaskSuspend(class_driver_task_hdl);
+    vTaskDelete(class_driver_task_hdl);
   }
 }
 
 // =============================================================================
 
 void usb_host_lib_task_start(void){
+  usb_host_lib_init();
+  ESP_LOGI(TAG, "USB Host init done");
   BaseType_t task_created;
   // Create usb host lib task
   task_created = xTaskCreatePinnedToCore(usb_host_lib_task,
@@ -527,18 +523,10 @@ void usb_host_lib_task_start(void){
   assert(task_created == pdTRUE);
 }
 
-void usb_host_lib_task_resume(void){
-  usb_host_lib_init();
-  ESP_LOGI(TAG, "USB Host init done");
-  if(usb_host_task_hdl != NULL){
-    vTaskResume(usb_host_task_hdl);
-  }
-}
-
 void usb_host_lib_task_stop(void){
   usb_host_lib_deinit();
   ESP_LOGI(TAG, "USB Host deinit done");
   if(usb_host_task_hdl != NULL){
-    vTaskSuspend(usb_host_task_hdl);
+    vTaskDelete(usb_host_task_hdl);
   }
 }
