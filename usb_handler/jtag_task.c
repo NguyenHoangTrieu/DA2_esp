@@ -8,18 +8,10 @@
 #define BUF_SIZE (1024)
 
 static TaskHandle_t jtag_task_hdl = NULL;
+static usb_serial_jtag_driver_config_t usb_serial_jtag_config;
 
 static void jtag_task(void *arg)
 {
-    // Configure USB SERIAL JTAG
-    usb_serial_jtag_driver_config_t usb_serial_jtag_config = {
-        .rx_buffer_size = BUF_SIZE,
-        .tx_buffer_size = BUF_SIZE,
-    };
-
-    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
-    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
-
     // Configure a temporary buffer for the incoming data
     uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
     if (data == NULL) {
@@ -46,6 +38,14 @@ void jtag_task_start(void)
 {
     BaseType_t task_created;
     // Create jtag task
+        // Configure USB SERIAL JTAG
+    usb_serial_jtag_config = {
+        .rx_buffer_size = BUF_SIZE,
+        .tx_buffer_size = BUF_SIZE,
+    };
+
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
+    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
     task_created = xTaskCreatePinnedToCore(jtag_task,
                                            "usb_serial_jtag_echo",
                                            4096,

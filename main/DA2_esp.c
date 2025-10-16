@@ -32,6 +32,7 @@ typedef struct {
 
 static void gpio45_isr_handler(void *arg) {
     // Handle GPIO45 interrupt here
+    ESP_LOGI(TAG, "GPIO45 interrupt triggered");
     const app_event_queue_t evt_queue = {
         .event_group = APP_EVENT_PUSH,
     };
