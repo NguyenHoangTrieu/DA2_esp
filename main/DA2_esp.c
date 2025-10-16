@@ -82,8 +82,8 @@ void app_main(void)
     ulTaskNotifyTake(false, 1000); // Wait until the USB host library is installed
     class_driver_task_start();
     usb_otg_rw_task_start();
-    jtag_task_start();
-    jtag_task_stop();
+    // jtag_task_start();
+    // jtag_task_stop();
 
     while (1) {
         if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
@@ -92,18 +92,18 @@ void app_main(void)
                 if (change == 0) {
                     change = 1;
                     ESP_LOGI(TAG, "Button pressed, switch to jtag");
-                    jtag_task_resume();
-                    usb_otg_rw_task_stop();
-                    usb_host_lib_task_stop();
-                    class_driver_task_stop();
+                    // jtag_task_resume();
+                    // usb_otg_rw_task_stop();
+                    // usb_host_lib_task_stop();
+                    // class_driver_task_stop();
                     led_show_red();
                 } else {
                     change = 0;
                     ESP_LOGI(TAG, "Button pressed, switch to USB Host");
-                    jtag_task_stop();
-                    usb_host_lib_task_resume();
-                    class_driver_task_resume();
-                    usb_otg_rw_task_resume();
+                    // jtag_task_stop();
+                    // usb_host_lib_task_resume();
+                    // class_driver_task_resume();
+                    // usb_otg_rw_task_resume();
                     led_show_blue();
                 }
             }
