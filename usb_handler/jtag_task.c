@@ -39,13 +39,12 @@ void jtag_task_start(void)
     BaseType_t task_created;
     // Create jtag task
         // Configure USB SERIAL JTAG
-    usb_serial_jtag_config = {
-        .rx_buffer_size = BUF_SIZE,
-        .tx_buffer_size = BUF_SIZE,
-    };
+    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
+    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
 
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
     ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
+    
     task_created = xTaskCreatePinnedToCore(jtag_task,
                                            "usb_serial_jtag_echo",
                                            4096,
