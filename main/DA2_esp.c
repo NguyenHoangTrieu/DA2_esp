@@ -30,13 +30,16 @@ typedef struct {
 } app_event_queue_t;
 
 static void gpio45_isr_handler(void *arg) {
-    // Handle GPIO45 interrupt here
-    BaseType_t xTaskWoken = pdFALSE;
-    if (main_task_handle) {
-        vTaskNotifyGiveFromISR(main_task_handle, &xTaskWoken);
-    }
-    if (xTaskWoken == pdTRUE) {
-        portYIELD_FROM_ISR();
+    uint32_t now = xTaskGetTickCountFromISR();
+    if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
+        last_isr_tick = now;
+        BaseType_t xTaskWoken = pdFALSE;
+        if (main_task_handle) {
+            vTaskNotifyGiveFromISR(main_task_handle, &xTaskWoken);
+        }
+        if (xTaskWoken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
     }
 }
 
