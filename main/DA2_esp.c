@@ -82,8 +82,8 @@ void app_main(void)
     ulTaskNotifyTake(false, 1000); // Wait until the USB host library is installed
     class_driver_task_start();
     usb_otg_rw_task_start();
-    jtag_task_start();
-    jtag_task_stop();
+    // jtag_task_start();
+    // jtag_task_stop();
 
     while (1) {
         if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
