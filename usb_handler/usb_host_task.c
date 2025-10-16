@@ -497,12 +497,14 @@ void class_driver_task_start(void){
 }
 
 void class_driver_task_resume(void){
+  class_driver_init();
   if(class_driver_task_hdl != NULL){
     vTaskResume(class_driver_task_hdl);
   }
 }
 
 void class_driver_task_stop(void){
+  class_driver_deinit();
   if(class_driver_task_hdl != NULL){
     vTaskSuspend(class_driver_task_hdl);
   }
