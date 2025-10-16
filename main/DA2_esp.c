@@ -84,9 +84,9 @@ void app_main(void)
             if (change == 0) {
                 change = 1;
                 ESP_LOGI(TAG, "Button pressed, switch to jtag");
-                jtag_task_start();
                 usb_host_lib_task_stop();
                 class_driver_task_stop();
+                jtag_task_start();
                 // usb_otg_rw_task_stop();
                 led_show_red();
             } else {
