@@ -10,7 +10,9 @@ idf_component_register(SRCS "DA2_esp.c"
                                 nvs_flash
                                 mqtt 
                                 esp_adc 
-                                esp_driver_i2c 
+                                esp_driver_i2c
+                                esp_driver_uart
+                                esp_driver_gpio 
                                 esp_driver_rmt 
                                 usb
                                 mbedtls
