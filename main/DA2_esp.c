@@ -45,7 +45,7 @@ static void gpio45_isr_handler(void *arg) {
 
 void setup_gpio45_interrupt(void) {
     gpio_config_t gpio45_cfg = {
-        .pin_bit_mask = BIT(45),
+        .pin_bit_mask = BIT64(45),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .intr_type = GPIO_INTR_NEGEDGE
