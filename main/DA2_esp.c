@@ -86,13 +86,13 @@ void app_main(void)
                 // User pressed button
                 if (change == 0) {
                     change = 1;
+                    ESP_LOGI(TAG, "Button pressed, switch to jtag");
                     led_show_red();
                 } else {
                     change = 0;
+                    ESP_LOGI(TAG, "Button pressed, switch to USB Host");
                     led_show_blue();
                 }
-                // End while cycle
-                break;
             }
         }
     }
