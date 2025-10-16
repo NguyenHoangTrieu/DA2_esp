@@ -4,7 +4,7 @@
  * Uses native USB Host Library without CDC-ACM component dependency
  */
 
-#include "usb_flash_handler.h"
+#include "usb_handler.h"
 #include "rbg_handler.h"
 
 static const char *TAG = "MAIN APP";
