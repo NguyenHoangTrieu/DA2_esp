@@ -10,6 +10,7 @@
 static const char *TAG = "MAIN APP";
 
 QueueHandle_t app_event_queue = NULL;
+TaskHandle_t main_task_handle = NULL;
 
 /**
  * @brief APP event group
@@ -72,6 +73,7 @@ void app_main(void)
     led_on();
     setup_gpio45_interrupt();
     app_event_queue = xQueueCreate(10, sizeof(app_event_queue_t));
+    main_task_handle = xTaskGetCurrentTaskHandle();
     app_event_queue_t evt_queue;
     uint8_t change = 0;
 

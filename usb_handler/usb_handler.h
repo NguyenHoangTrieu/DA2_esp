@@ -17,6 +17,7 @@
 #include "rbg_handler.h"
 #include "sdkconfig.h"
 #include "esp_check.h"
+#include "DA2_esp.h"
 
 #define CLIENT_NUM_EVENT_MSG        5
 #define CONFIG_APP_QUIT_PIN       5
