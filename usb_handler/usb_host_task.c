@@ -416,9 +416,6 @@ void class_driver_task(void *arg) {
   ESP_LOGI(TAG, "Deregistering Class Client");
   ESP_ERROR_CHECK(usb_host_client_deregister(
       class_driver_client_hdl)); // Deregister client from USB Host Library
-  if (mux_lock != NULL) {
-    vSemaphoreDelete(mux_lock); // Delete mutex to free resources
-  }
   vTaskSuspend(NULL); // Suspend task after cleanup
 }
 
