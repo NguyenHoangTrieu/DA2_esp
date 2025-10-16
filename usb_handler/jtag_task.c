@@ -57,6 +57,9 @@ void jtag_task_start(void)
 
 void jtag_task_resume(void)
 {
+    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
+    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
     if (jtag_task_hdl != NULL) {
         vTaskResume(jtag_task_hdl);
     }

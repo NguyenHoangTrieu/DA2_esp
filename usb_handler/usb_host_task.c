@@ -6,6 +6,7 @@ static usb_device_t connected_devices[DEV_MAX_COUNT];
 static uint8_t num_connected_devices = 0;
 static TaskHandle_t usb_host_task_hdl = NULL;
 static TaskHandle_t class_driver_task_hdl = NULL;
+usb_host_client_handle_t class_driver_client_hdl = NULL;
 
 /**
  * @brief Client event callback function for handling USB host events
@@ -323,6 +324,47 @@ void class_driver_client_deregister(void) {
           .client_hdl)); // Unblock client to allow graceful shutdown
 }
 
+void class_driver_init(void){
+  class_driver_t driver_obj = {0};
+
+  ESP_LOGI(TAG, "Registering Client");
+
+  SemaphoreHandle_t mux_lock =
+      xSemaphoreCreateMutex(); // Create mutex for thread synchronization
+  if (mux_lock == NULL) {
+    ESP_LOGE(TAG, "Unable to create class driver mutex");
+    vTaskSuspend(NULL); // Suspend task if mutex creation fails
+    return;
+  }
+  usb_host_client_config_t client_config = {
+    .is_synchronous = false, // Synchronous clients currently not supported.
+                              // Set this to false
+    .max_num_event_msg = CLIENT_NUM_EVENT_MSG,
+    .async =
+        {
+            .client_event_callback = client_event_cb,
+            .callback_arg = (void *)&driver_obj,
+        },
+  };
+  ESP_ERROR_CHECK(usb_host_client_register(
+      &client_config,
+      &class_driver_client_hdl)); // Register client with USB Host Library
+  driver_obj.constant.mux_lock = mux_lock;
+  driver_obj.constant.client_hdl = class_driver_client_hdl;
+
+  for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
+    driver_obj.mux_protected.device[i].client_hdl = class_driver_client_hdl;
+  }
+
+  s_driver_obj = &driver_obj;
+}
+
+void class_driver_deinit(void){
+    if(class_driver_client_hdl != NULL){
+        ESP_ERROR_CHECK(usb_host_client_deregister(class_driver_client_hdl));
+    }
+}
+
 // =============================================================================
 // Task Implementations
 // =============================================================================
@@ -342,59 +384,25 @@ void class_driver_client_deregister(void) {
  * @param arg Task parameter (unused in this implementation)
  */
 void class_driver_task(void *arg) {
-  class_driver_t driver_obj = {0};
-  usb_host_client_handle_t class_driver_client_hdl = NULL;
-
-  ESP_LOGI(TAG, "Registering Client");
-
-  SemaphoreHandle_t mux_lock =
-      xSemaphoreCreateMutex(); // Create mutex for thread synchronization
-  if (mux_lock == NULL) {
-    ESP_LOGE(TAG, "Unable to create class driver mutex");
-    vTaskSuspend(NULL); // Suspend task if mutex creation fails
-    return;
-  }
-
-  usb_host_client_config_t client_config = {
-      .is_synchronous = false, // Synchronous clients currently not supported.
-                               // Set this to false
-      .max_num_event_msg = CLIENT_NUM_EVENT_MSG,
-      .async =
-          {
-              .client_event_callback = client_event_cb,
-              .callback_arg = (void *)&driver_obj,
-          },
-  };
-  ESP_ERROR_CHECK(usb_host_client_register(
-      &client_config,
-      &class_driver_client_hdl)); // Register client with USB Host Library
-
-  driver_obj.constant.mux_lock = mux_lock;
-  driver_obj.constant.client_hdl = class_driver_client_hdl;
-
-  for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-    driver_obj.mux_protected.device[i].client_hdl = class_driver_client_hdl;
-  }
-
-  s_driver_obj = &driver_obj;
+  class_driver_init();
 
   while (1) {
     // Driver has unhandled devices, handle all devices first
     ESP_LOGI(TAG, "Class Driver Active");
-    if (driver_obj.mux_protected.flags.unhandled_devices) {
-      xSemaphoreTake(driver_obj.constant.mux_lock,
+    if (s_driver_obj->mux_protected.flags.unhandled_devices) {
+      xSemaphoreTake(s_driver_obj->constant.mux_lock,
                      portMAX_DELAY); // Acquire mutex for thread safety
       for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-        if (driver_obj.mux_protected.device[i].actions) {
+        if (s_driver_obj->mux_protected.device[i].actions) {
           class_driver_device_handle(
-              &driver_obj.mux_protected.device[i]); // Process device actions
+              &s_driver_obj->mux_protected.device[i]); // Process device actions
         }
       }
-      driver_obj.mux_protected.flags.unhandled_devices = 0;
-      xSemaphoreGive(driver_obj.constant.mux_lock); // Release mutex
+      s_driver_obj->mux_protected.flags.unhandled_devices = 0;
+      xSemaphoreGive(s_driver_obj->constant.mux_lock); // Release mutex
     } else {
       // Driver is active, handle client events
-      if (driver_obj.mux_protected.flags.shutdown == 0) {
+      if (s_driver_obj->mux_protected.flags.shutdown == 0) {
         usb_host_client_handle_events(
             class_driver_client_hdl,
             portMAX_DELAY); // Wait for and handle USB client events
@@ -414,17 +422,7 @@ void class_driver_task(void *arg) {
   vTaskSuspend(NULL); // Suspend task after cleanup
 }
 
-// =============================================================================
-// Task Implementations
-// =============================================================================
-
-/**
- * @brief Start USB Host install and handle common USB host library events while
- * app pin not low
- *
- * @param[in] arg  Not used
- */
-void usb_host_lib_task(void *arg) {
+void usb_host_lib_init(void){
   ESP_LOGI(TAG, "Installing USB Host Library");
   usb_host_config_t host_config = {
       .skip_phy_setup = false,
@@ -437,10 +435,26 @@ void usb_host_lib_task(void *arg) {
   ESP_ERROR_CHECK(usb_host_install(&host_config));
   ESP_LOGI(TAG, "USB Host installed with peripheral map 0x%x",
            host_config.peripheral_map);
+}
 
-  // Signalize the app_main, the USB host library has been installed
-  xTaskNotifyGive(main_task_handle);
+void usb_host_lib_deinit(void){
+  ESP_LOGI(TAG, "Uninstalling USB Host Library");
+  ESP_ERROR_CHECK(usb_host_uninstall());
+}
 
+// =============================================================================
+// Task Implementations
+// =============================================================================
+
+/**
+ * @brief Start USB Host install and handle common USB host library events while
+ * app pin not low
+ *
+ * @param[in] arg  Not used
+ */
+void usb_host_lib_task(void *arg) {
+  // Install the USB Host Library
+  usb_host_lib_init();
   bool has_clients = true;
   bool has_devices = false;
   while (has_clients) {
@@ -466,7 +480,7 @@ void usb_host_lib_task(void *arg) {
   ESP_LOGI(TAG, "No more clients and devices, uninstall USB Host library");
 
   // Uninstall the USB Host Library
-  ESP_ERROR_CHECK(usb_host_uninstall());
+  usb_host_lib_deinit();
   vTaskSuspend(NULL);
 }
 
@@ -513,12 +527,14 @@ void usb_host_lib_task_start(void){
 }
 
 void usb_host_lib_task_resume(void){
+  usb_host_lib_init();
   if(usb_host_task_hdl != NULL){
     vTaskResume(usb_host_task_hdl);
   }
 }
 
 void usb_host_lib_task_stop(void){
+  usb_host_lib_deinit();
   if(usb_host_task_hdl != NULL){
     vTaskSuspend(usb_host_task_hdl);
   }
