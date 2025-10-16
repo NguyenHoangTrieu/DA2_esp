@@ -4,8 +4,8 @@ static const char *TAG = "ESP32_FLASH_BRIDGE";
 class_driver_t *s_driver_obj;
 static usb_device_t connected_devices[DEV_MAX_COUNT];
 static uint8_t num_connected_devices = 0;
-TaskHandle_t usb_host_task_hdl = NULL;
-TaskHandle_t class_driver_task_hdl = NULL;
+static TaskHandle_t usb_host_task_hdl = NULL;
+static TaskHandle_t class_driver_task_hdl = NULL;
 
 /**
  * @brief Client event callback function for handling USB host events
@@ -470,7 +470,9 @@ void usb_host_lib_task(void *arg) {
   vTaskSuspend(NULL);
 }
 
-void class_driver_start(void){
+// =============================================================================
+
+void class_driver_task_start(void){
   BaseType_t task_created;
   // Create class driver task
   task_created = xTaskCreatePinnedToCore(class_driver_task,
@@ -483,4 +485,41 @@ void class_driver_start(void){
   assert(task_created == pdTRUE);
 }
 
-void 
+void class_driver_task_resume(void){
+  if(class_driver_task_hdl != NULL){
+    vTaskResume(class_driver_task_hdl);
+  }
+}
+
+void class_driver_task_stop(void){
+  if(class_driver_task_hdl != NULL){
+    vTaskSuspend(class_driver_task_hdl);
+  }
+}
+
+// =============================================================================
+
+void usb_host_lib_task_start(void){
+  BaseType_t task_created;
+  // Create usb host lib task
+  task_created = xTaskCreatePinnedToCore(usb_host_lib_task,
+                                         "usb_host",
+                                         4096,
+                                         NULL,
+                                         HOST_LIB_TASK_PRIORITY,
+                                         &usb_host_task_hdl,
+                                         0);
+  assert(task_created == pdTRUE);
+}
+
+void usb_host_lib_task_resume(void){
+  if(usb_host_task_hdl != NULL){
+    vTaskResume(usb_host_task_hdl);
+  }
+}
+
+void usb_host_lib_task_stop(void){
+  if(usb_host_task_hdl != NULL){
+    vTaskSuspend(usb_host_task_hdl);
+  }
+}

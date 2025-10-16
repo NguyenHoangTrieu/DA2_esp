@@ -1,6 +1,7 @@
 #include "usb_handler.h"
 
 static const char *TAG = "USB_OTG_RW";
+static TaskHandle_t usb_otg_rw_task_hdl = NULL;
 
 #define USB_QUEUE_SIZE 10
 #define USB_BUFFER_SIZE 64 // Adjust to endpoint MPS
@@ -396,5 +397,30 @@ void usb_otg_rw_task(void *arg) {
             led_toggle_white();
         }
         vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+// =============================================================================
+
+void usb_otg_rw_task_start(void) {
+    BaseType_t task_created = xTaskCreatePinnedToCore(usb_otg_rw_task,
+                                           "usb_otg_rw",
+                                           4 * 1024,
+                                           NULL,
+                                           RW_TASK_PRIORITY,
+                                           &usb_otg_rw_task_hdl,
+                                           0);
+    assert(task_created == pdTRUE);
+}
+
+void usb_otg_rw_task_resume(void) {
+    if (usb_otg_rw_task_hdl != NULL) {
+        vTaskResume(usb_otg_rw_task_hdl);
+    }
+}
+
+void usb_otg_rw_task_stop(void) {
+    if (usb_otg_rw_task_hdl != NULL) {
+        vTaskSuspend(usb_otg_rw_task_hdl);
     }
 }

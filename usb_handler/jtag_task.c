@@ -3,19 +3,13 @@
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
-
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/usb_serial_jtag.h"
-#include "sdkconfig.h"
-#include "esp_log.h"
-#include "esp_check.h"
+#include "usb_handler.h"
 
 #define BUF_SIZE (1024)
-#define ECHO_TASK_STACK_SIZE (4096)
 
-static void echo_task(void *arg)
+static TaskHandle_t jtag_task_hdl = NULL;
+
+static void jtag_task(void *arg)
 {
     // Configure USB SERIAL JTAG
     usb_serial_jtag_driver_config_t usb_serial_jtag_config = {
@@ -46,7 +40,32 @@ static void echo_task(void *arg)
     }
 }
 
-void app_main(void)
+// =============================================================================
+
+void jtag_task_start(void)
 {
-    xTaskCreate(echo_task, "USB SERIAL JTAG_echo_task", ECHO_TASK_STACK_SIZE, NULL, 10, NULL);
+    BaseType_t task_created;
+    // Create jtag task
+    task_created = xTaskCreatePinnedToCore(jtag_task,
+                                           "usb_serial_jtag_echo",
+                                           4096,
+                                           NULL,
+                                           JTAG_TASK_PRIORITY,
+                                           &jtag_task_hdl,
+                                           0);
+    assert(task_created == pdTRUE);
+}
+
+void jtag_task_resume(void)
+{
+    if (jtag_task_hdl != NULL) {
+        vTaskResume(jtag_task_hdl);
+    }
+}
+
+void jtag_task_stop(void)
+{
+    if (jtag_task_hdl != NULL) {
+        vTaskSuspend(jtag_task_hdl);
+    }
 }

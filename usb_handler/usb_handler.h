@@ -1,6 +1,8 @@
 #ifndef USB_FLASH_HANDLER_H
 #define USB_FLASH_HANDLER_H
 
+#include <stdio.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -8,18 +10,22 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
 #include "driver/gpio.h"
 #include "usb/usb_host.h"
 #include "mbedtls/md5.h"
-#include <string.h>
 #include "rbg_handler.h"
+#include "sdkconfig.h"
+#include "esp_check.h"
 
 #define CLIENT_NUM_EVENT_MSG        5
 #define CONFIG_APP_QUIT_PIN       5
 
-#define HOST_LIB_TASK_PRIORITY    2
+#define HOST_LIB_TASK_PRIORITY  2
 #define CLASS_TASK_PRIORITY     3
-#define APP_QUIT_PIN                CONFIG_APP_QUIT_PIN
+#define RW_TASK_PRIORITY        3
+#define JTAG_TASK_PRIORITY      3
+#define APP_QUIT_PIN            CONFIG_APP_QUIT_PIN
 
 typedef enum {
     ACTION_OPEN_DEV         = (1 << 0),
@@ -73,10 +79,27 @@ extern esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_
 extern esp_err_t usb_cdc_receive_data(usb_device_t *dev, uint8_t *data, size_t max_len, size_t *actual_len);
 extern void class_driver_client_deregister(void);
 
-extern void usb_host_lib_task(void *arg);
-extern void class_driver_task(void *arg);
-extern void usb_otg_rw_task(void *arg);
-extern void parse_and_cache_endpoints(usb_device_t *dev);
-extern void claim_interface(usb_device_t *device_obj);
+void usb_host_lib_task(void *arg);
+void class_driver_task(void *arg);
+void usb_otg_rw_task(void *arg);
+void parse_and_cache_endpoints(usb_device_t *dev);
+void claim_interface(usb_device_t *device_obj);
+void usb_host_lib_task_start(void *arg);
+// Class driver task control functions
+void class_driver_task_start(void);
+void class_driver_task_resume(void);
+void class_driver_task_stop(void);
+// USB host library task control functions
+void usb_host_lib_task_start(void);
+void usb_host_lib_task_resume(void);
+void usb_host_lib_task_stop(void);
+// RW task control functions
+void usb_otg_rw_task_start(void);
+void usb_otg_rw_task_resume(void);
+void usb_otg_rw_task_stop(void);
+// JTAG task control functions
+void jtag_task_start(void);
+void jtag_task_resume(void);
+void jtag_task_stop(void);
 
 #endif // USB_FLASH_HANDLER_H
