@@ -501,6 +501,7 @@ void class_driver_task_stop(void){
 void usb_host_lib_task_start(void){
   usb_host_lib_init();
   ESP_LOGI(TAG, "USB Host init done");
+  usb_host_lib_close = false;
   BaseType_t task_created;
   // Create usb host lib task
   task_created = xTaskCreatePinnedToCore(usb_host_lib_task,

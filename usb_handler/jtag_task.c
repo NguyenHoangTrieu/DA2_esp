@@ -9,9 +9,17 @@
 
 static TaskHandle_t jtag_task_hdl = NULL;
 static usb_serial_jtag_driver_config_t usb_serial_jtag_config;
+static bool close_jtag_task = false;
 
 static void jtag_task(void *arg)
-{
+{           
+    // Configure USB SERIAL JTAG
+    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
+    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
+
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
+    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
+    
     // Configure a temporary buffer for the incoming data
     uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
     if (data == NULL) {
@@ -19,7 +27,7 @@ static void jtag_task(void *arg)
         return;
     }
 
-    while (1) {
+    while (!close_jtag_task) {
 
         int len = usb_serial_jtag_read_bytes(data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
 
@@ -30,21 +38,18 @@ static void jtag_task(void *arg)
             ESP_LOG_BUFFER_HEXDUMP("Recv str: ", data, len, ESP_LOG_INFO);
         }
     }
+    usb_serial_jtag_driver_uninstall();
+    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG deinit done");
+    vTaskDelete(NULL);
 }
 
 // =============================================================================
 
 void jtag_task_start(void)
 {
+    close_jtag_task = false;
     BaseType_t task_created;
     // Create jtag task
-        // Configure USB SERIAL JTAG
-    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
-    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
-
-    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
-    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG init done");
-    
     task_created = xTaskCreatePinnedToCore(jtag_task,
                                            "usb_serial_jtag_echo",
                                            4096,
@@ -57,9 +62,5 @@ void jtag_task_start(void)
 
 void jtag_task_stop(void)
 {
-    usb_serial_jtag_driver_uninstall();
-    ESP_LOGI("usb_serial_jtag echo", "USB_SERIAL_JTAG deinit done");
-    if (jtag_task_hdl != NULL) {
-        vTaskDelete(jtag_task_hdl);
-    }
+    close_jtag_task = true;
 }
