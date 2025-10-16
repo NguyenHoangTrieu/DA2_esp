@@ -343,7 +343,7 @@ void class_driver_init(void){
     .async =
         {
             .client_event_callback = client_event_cb,
-            .callback_arg = (void *)&driver_obj,
+            .callback_arg = (void *)&m_driver_obj,
         },
   };
   ESP_ERROR_CHECK(usb_host_client_register(
