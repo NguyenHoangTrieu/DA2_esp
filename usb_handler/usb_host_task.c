@@ -2,6 +2,7 @@
 
 static const char *TAG = "ESP32_FLASH_BRIDGE";
 class_driver_t *s_driver_obj;
+class_driver_t m_driver_obj = {0};
 static usb_device_t connected_devices[DEV_MAX_COUNT];
 static uint8_t num_connected_devices = 0;
 static TaskHandle_t usb_host_task_hdl = NULL;
@@ -325,7 +326,6 @@ void class_driver_client_deregister(void) {
 }
 
 void class_driver_init(void){
-  class_driver_t driver_obj = {0};
 
   ESP_LOGI(TAG, "Registering Client");
 
@@ -349,14 +349,14 @@ void class_driver_init(void){
   ESP_ERROR_CHECK(usb_host_client_register(
       &client_config,
       &class_driver_client_hdl)); // Register client with USB Host Library
-  driver_obj.constant.mux_lock = mux_lock;
-  driver_obj.constant.client_hdl = class_driver_client_hdl;
+  m_driver_obj.constant.mux_lock = mux_lock;
+  m_driver_obj.constant.client_hdl = class_driver_client_hdl;
 
   for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-    driver_obj.mux_protected.device[i].client_hdl = class_driver_client_hdl;
+    m_driver_obj.mux_protected.device[i].client_hdl = class_driver_client_hdl;
   }
 
-  s_driver_obj = &driver_obj;
+  s_driver_obj = &m_driver_obj;
 }
 
 void class_driver_deinit(void){
@@ -389,20 +389,20 @@ void class_driver_task(void *arg) {
   while (1) {
     // Driver has unhandled devices, handle all devices first
     ESP_LOGI(TAG, "Class Driver Active");
-    if (s_driver_obj->mux_protected.flags.unhandled_devices) {
-      xSemaphoreTake(s_driver_obj->constant.mux_lock,
+    if (m_driver_obj.mux_protected.flags.unhandled_devices) {
+      xSemaphoreTake(m_driver_obj.constant.mux_lock,
                      portMAX_DELAY); // Acquire mutex for thread safety
       for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-        if (s_driver_obj->mux_protected.device[i].actions) {
+        if (m_driver_obj.mux_protected.device[i].actions) {
           class_driver_device_handle(
-              &s_driver_obj->mux_protected.device[i]); // Process device actions
+              &m_driver_obj.mux_protected.device[i]); // Process device actions
         }
       }
-      s_driver_obj->mux_protected.flags.unhandled_devices = 0;
-      xSemaphoreGive(s_driver_obj->constant.mux_lock); // Release mutex
+      m_driver_obj.mux_protected.flags.unhandled_devices = 0;
+      xSemaphoreGive(m_driver_obj.constant.mux_lock); // Release mutex
     } else {
       // Driver is active, handle client events
-      if (s_driver_obj->mux_protected.flags.shutdown == 0) {
+      if (m_driver_obj.mux_protected.flags.shutdown == 0) {
         usb_host_client_handle_events(
             class_driver_client_hdl,
             portMAX_DELAY); // Wait for and handle USB client events
