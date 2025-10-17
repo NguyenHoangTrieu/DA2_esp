@@ -1,6 +1,5 @@
 # ESP-IDF specific
 build/
-managed_components/
 .vscode/
 .devcontainer/
 
