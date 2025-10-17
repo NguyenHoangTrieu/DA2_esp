@@ -80,7 +80,7 @@ void app_main(void)
     // Start USB tasks
     usb_host_lib_task_start();
     class_driver_task_start();
-    // usb_otg_rw_task_start();
+    usb_otg_rw_task_start();
 
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notify from ISR (button press)
@@ -89,10 +89,10 @@ void app_main(void)
             if (change == 0) {
                 change = 1;
                 ESP_LOGI(TAG, "Button pressed, switch to jtag");
+                usb_otg_rw_task_stop();
                 class_driver_task_stop();
                 usb_host_lib_task_stop();
                 jtag_task_start();
-                // usb_otg_rw_task_stop();
                 led_show_yellow();
             } else {
                 change = 0;
@@ -101,7 +101,7 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(100)); // Wait for jtag task to close
                 usb_host_lib_task_start();
                 class_driver_task_start();
-                // usb_otg_rw_task_resume();
+                usb_otg_rw_task_start();
                 led_show_orange();
             }
         }
