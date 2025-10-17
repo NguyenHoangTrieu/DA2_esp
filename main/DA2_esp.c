@@ -93,7 +93,7 @@ void app_main(void)
                 usb_host_lib_task_stop();
                 jtag_task_start();
                 // usb_otg_rw_task_stop();
-                led_show_red();
+                led_show_yellow();
             } else {
                 change = 0;
                 ESP_LOGI(TAG, "Button pressed, switch to USB Host");
@@ -102,7 +102,7 @@ void app_main(void)
                 usb_host_lib_task_start();
                 class_driver_task_start();
                 // usb_otg_rw_task_resume();
-                led_show_blue();
+                led_show_purple();
             }
         }
     }
