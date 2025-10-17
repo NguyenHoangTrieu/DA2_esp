@@ -74,19 +74,8 @@ sanity_build_coprocessor_idf_master:
   image: espressif/idf:latest
   parallel:
     matrix:
-      - IDF_TARGET: ["esp32c6", "esp32c5"]
+      - IDF_TARGET: ["esp32c6", "esp32c5", "esp32c61"]
         SLAVE_CI_FILE: ["sdio", "spi", "spi_hd", "uart", "dpp"]
-
-# for C61, build for sdio only for now
-sanity_build_coprocessor_idf_master_c61:
-  rules:
-    - !reference [.default_rules, rules]
-  extends: .build_template_coprocessor
-  image: espressif/idf:latest
-  parallel:
-    matrix:
-      - IDF_TARGET: ["esp32c61"]
-        SLAVE_CI_FILE: ["sdio"]
 
 ###
 ### build ESP-Hosted examples
@@ -136,7 +125,8 @@ sanity_build_wifi_examples:
         EXAMPLE_TO_BUILD: ["host_wifi_easy_connect_dpp_enrollee",
         "host_wifi_itwt",
         "host_transport_config",
-        "host_network_split__power_save"]
+        "host_network_split__power_save",
+        "host_performs_slave_ota"]
 
 # build an example using the various transports
 # this is to verify transport builds as expected on the host
