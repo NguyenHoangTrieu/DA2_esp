@@ -97,7 +97,7 @@ void led_show_red(void) { show_led_color(255, 0, 0); }       // Red: error
 void led_show_white(void) { show_led_color(255, 255, 255); } // White: IDLE
 void led_off(void) { show_led_color(0, 0, 0); }
 void led_show_yellow(void) { show_led_color(255, 255, 0); } // Yellow
-void led_show_purple(void) { show_led_color(128, 0, 128); } // Purple
+void led_show_brown(void) { show_led_color(165, 42, 42); } // Brown
 
 void led_toggle_white(void) {
   static bool led_on = false;
