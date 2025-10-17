@@ -95,6 +95,8 @@ void led_show_green(void) {
 } // Green: flash successful
 void led_show_red(void) { show_led_color(255, 0, 0); }       // Red: error
 void led_show_white(void) { show_led_color(255, 255, 255); } // White: IDLE
+void led_show_yellow(void) { show_led_color(255, 255, 0); }  // Yellow: warning
+void led_show_orange(void) { show_led_color(255, 165, 0); }  // Orange: busy
 void led_off(void) { show_led_color(0, 0, 0); }
 
 void led_toggle_white(void) {

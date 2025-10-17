@@ -2,6 +2,7 @@
 
 static const char *TAG = "USB_OTG_RW";
 static TaskHandle_t usb_otg_rw_task_hdl = NULL;
+static bool close_usb_otg_rw_task = false;
 
 #define USB_QUEUE_SIZE 10
 #define USB_BUFFER_SIZE 64 // Adjust to endpoint MPS
@@ -335,7 +336,7 @@ void usb_otg_rw_task(void *arg) {
     static usb_stream_t usb_stream; // Persistent stream object; works across reconnect
     static uint8_t configured = 0;
 
-    while (true) {
+    while (!close_usb_otg_rw_task) {
         usb_device_t *dev = NULL;
 
         // Critical section to select the first opened USB device
@@ -398,11 +399,14 @@ void usb_otg_rw_task(void *arg) {
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+    ESP_LOGI("USB_OTG_RW", "USB OTG RW task exiting.");
+    vTaskDelete(NULL);
 }
 
 // =============================================================================
 
 void usb_otg_rw_task_start(void) {
+    close_usb_otg_rw_task = false;
     BaseType_t task_created = xTaskCreatePinnedToCore(usb_otg_rw_task,
                                            "usb_otg_rw",
                                            4 * 1024,
@@ -414,7 +418,5 @@ void usb_otg_rw_task_start(void) {
 }
 
 void usb_otg_rw_task_stop(void) {
-    if (usb_otg_rw_task_hdl != NULL) {
-        vTaskDelete(usb_otg_rw_task_hdl);
-    }
+    close_usb_otg_rw_task = true;
 }
