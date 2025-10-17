@@ -1,78 +1,109 @@
 /*
- * DA2_esp.c - Main entry point for ESP32-P4 modular application.
- * This file sets up NVS, WiFi scan, WiFi UART connect, and MQTT send.
- * The scan task runs until WiFi connects via UART command, after which it is suspended.
- * If connection fails or is lost, scan resumes. MQTT sending only happens when WiFi is up.
- * All logic is modular; all comments are in English for clarity.
+ * ESP32-S3 USB Host Flash Bridge (Rewritten)
+ * Receives firmware from PC via UART and flashes target ESP32 WROOM via USB Host
+ * Uses native USB Host Library without CDC-ACM component dependency
  */
 
-#include "wifi_scan.h"
-#include "sensor_handler.h"
-#include "wifi_connect.h"
-#include "mqtt_handler.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "esp_log.h"
+#include "usb_handler.h"
+#include "rbg_handler.h"
 
-#define C6_RESET_GPIO   GPIO_NUM_54
-static const char *TAG = "DA2_esp_main";
+static const char *TAG = "MAIN APP";
 
-/* Software reset ESP32-C6 slave via GPIO54 */
-static void reset_c6_slave(void)
-{
-    ESP_LOGI(TAG, "Performing software reset of ESP32-C6 slave...");
-    
-    // Configure GPIO54 as output
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << C6_RESET_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf);
-    
-    // Perform reset sequence - multiple toggles for robust reset
-    for (int i = 0; i < 3; i++) {
-        gpio_set_level(C6_RESET_GPIO, 0);  // Assert reset (LOW)
-        vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(C6_RESET_GPIO, 1);  // De-assert reset (HIGH)
-        vTaskDelay(pdMS_TO_TICKS(100));
+TaskHandle_t main_task_handle = NULL;
+
+/**
+ * @brief APP event group
+ *
+ * APP_EVENT            - General event, which is APP_QUIT_PIN press event in this example.
+ */
+typedef enum {
+    APP_EVENT_PUSH = 0,
+} app_event_group_t;
+
+/**
+ * @brief APP event queue
+ *
+ * This event is used for delivering events from callback to a task.
+ */
+typedef struct {
+    app_event_group_t event_group;
+} app_event_queue_t;
+
+static uint32_t last_isr_tick = 0;
+
+static void gpio45_isr_handler(void *arg) {
+    uint32_t now = xTaskGetTickCountFromISR();
+    if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
+        last_isr_tick = now;
+        BaseType_t xTaskWoken = pdFALSE;
+        if (main_task_handle) {
+            vTaskNotifyGiveFromISR(main_task_handle, &xTaskWoken);
+        }
+        if (xTaskWoken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
     }
-    
-    // Final reset - hold low for 500ms then release
-    gpio_set_level(C6_RESET_GPIO, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    gpio_set_level(C6_RESET_GPIO, 1);
-    
-    // Wait for C6 to boot up completely (critical timing)
-    ESP_LOGI(TAG, "Waiting for ESP32-C6 to boot up...");
-    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds for C6 bootloader + app init
-    
-    ESP_LOGI(TAG, "ESP32-C6 slave reset completed");
 }
 
+void setup_gpio45_interrupt(void) {
+    gpio_config_t gpio45_cfg = {
+        .pin_bit_mask = BIT64(45),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE
+    };
+    // Configure GPIO45 and install ISR
+    ESP_ERROR_CHECK(gpio_config(&gpio45_cfg));
+    // Install GPIO ISR service
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
+    // Attach the interrupt handler for GPIO45
+    ESP_ERROR_CHECK(gpio_isr_handler_add(45, gpio45_isr_handler, NULL));
+}
+
+
+// =============================================================================
+// Main Application Entry Point
+// =============================================================================
+
+/**
+ * @brief Main application entry point
+ */
 void app_main(void)
 {
-    // Initialize NVS (required by WiFi)
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    ESP_LOGI(TAG, "USB host library example");
+    init_led_strip();
+    led_on();
+    setup_gpio45_interrupt();
+    main_task_handle = xTaskGetCurrentTaskHandle();
+    uint8_t change = 0;
+
+    // Start USB tasks
+    usb_host_lib_task_start();
+    class_driver_task_start();
+    // usb_otg_rw_task_start();
+
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // Wait for notify from ISR (button press)
+        if (APP_EVENT_PUSH == APP_EVENT_PUSH) {
+            // User pressed button
+            if (change == 0) {
+                change = 1;
+                ESP_LOGI(TAG, "Button pressed, switch to jtag");
+                class_driver_task_stop();
+                usb_host_lib_task_stop();
+                jtag_task_start();
+                // usb_otg_rw_task_stop();
+                led_show_red();
+            } else {
+                change = 0;
+                ESP_LOGI(TAG, "Button pressed, switch to USB Host");
+                jtag_task_stop();
+                vTaskDelay(pdMS_TO_TICKS(100)); // Wait for jtag task to close
+                usb_host_lib_task_start();
+                class_driver_task_start();
+                // usb_otg_rw_task_resume();
+                led_show_blue();
+            }
+        }
     }
-    ESP_ERROR_CHECK(ret);
-
-    // CRITICAL: Reset ESP32-C6 slave before WiFi initialization
-    // This ensures C6 is in a known good state after P4 reset
-    ESP_LOGI(TAG, "Starting ESP32-P4 with ESP32-C6 slave reset sequence");
-    reset_c6_slave();
-
-    ESP_LOGI(TAG, "Starting WiFi UART connect task (waiting for connect command)...");
-    wifi_connect_task_start();
-
-    ESP_LOGI(TAG, "Starting MQTT handler (suspended by default, resumes on WiFi connect)...");
-    mqtt_handle_start();
-
-    ESP_LOGI(TAG, "Starting sensor handler task (reads sensors, controls relay, builds telemetry)...");
-    sensor_handler_start();
 }
