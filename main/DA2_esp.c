@@ -102,7 +102,7 @@ void app_main(void)
                 usb_host_lib_task_start();
                 class_driver_task_start();
                 // usb_otg_rw_task_resume();
-                led_show_brown();
+                led_show_orange();
             }
         }
     }

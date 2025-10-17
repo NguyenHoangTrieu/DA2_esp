@@ -23,5 +23,5 @@ void led_show_green(void);
 void led_show_white(void);
 void led_toggle_white(void);
 void led_show_yellow(void);
-void led_show_brown(void);
+void led_show_orange(void);
 #endif // RBG_HANDLER_H
