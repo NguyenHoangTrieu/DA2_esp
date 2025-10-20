@@ -43,16 +43,10 @@ void __attribute__((noreturn)) call_start_cpu0(void)
     
     // Put slave into bootloader mode
     enter_slave_bootloader_mode();
-    
-    // Start UART bridge passthrough for slave flashing
-    if (uart_flash_bridge_mode()) {
-        esp_rom_printf("[%s] Slave flash completed successfully\n", TAG);
-        // Reset slave to normal boot mode
-        reset_slave_normal_mode();
-    } else {
-        reset_slave_normal_mode();
-        esp_rom_printf("[%s] Slave flash failed or timeout\n", TAG);
-    }
+
+    // Start UART flash bridge
+    esp_rom_printf("[%s] Starting UART flash bridge\n", TAG);
+    uart_bridge_passthrough();
 
 #ifdef CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP
     // If this boot is a wake up from the deep sleep then go to the short way,
