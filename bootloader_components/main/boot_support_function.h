@@ -11,8 +11,11 @@
 #include "soc/gpio_reg.h"
 #include "soc/rtc_cntl_reg.h"
 #include "hal/gpio_ll.h"
-#include "hal/uart_hal.h"         // HAL UART
+#include "hal/uart_ll.h"         // HAL UART
 #include "soc/uart_struct.h"     // UART hardware struct
+#include "soc/periph_defs.h"
+#include "esp_private/periph_ctrl.h"
+#include "hal/clk_gate_ll.h"
 #include "esp_rom_gpio.h"
 #include "esp_rom_uart.h"
 
@@ -60,12 +63,8 @@ void uart_bridge_passthrough(void);
 // UART configuration functions
 void configure_uart1_for_slave(void);
 void configure_uart2_debug(void);
-int uart1_tx_one_char(uint8_t c);
+void uart1_tx_one_char(uint8_t c);
 int uart1_rx_one_char(uint8_t *c);
-
-// Debug UART functions
-void uart2_debug_print(const char* prefix, uint8_t* data, uint32_t len);
-void uart2_debug_hex(uint8_t byte);
 
 // Boot partition selection
 int select_partition_number(bootloader_state_t *bs);

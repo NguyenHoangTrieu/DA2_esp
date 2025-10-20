@@ -23,9 +23,6 @@ int uart0_rx_one_char(uint8_t *c) {
 }
 
 void uart0_tx_one_char(uint8_t c) {
-    while (uart_ll_get_txfifo_len(&UART0) >= 127) {
-        ;
-    }
     uart_ll_write_txfifo(&UART0, &c, 1);
 }
 
@@ -108,10 +105,15 @@ void reset_slave_normal_mode(void)
 // Configure UART1 for slave communication using LL
 void configure_uart1_for_slave(void)
 {
-    uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
-    if (!uart) return;
+    periph_ll_enable_clk_clear_rst(PERIPH_UART1_MODULE);
 
-    const uint32_t sclk_freq = 80000000;
+    uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
+    if (!uart){
+        esp_rom_printf("[%s] UART1 hardware not found!\n", TAG);
+        return;
+    }
+
+    const uint32_t sclk_freq = 40000000;
     const uint32_t baud_rate = UART_BAUD_RATE;
 
     // Reset FIFOs using LL
@@ -139,42 +141,27 @@ void configure_uart1_for_slave(void)
     // Map GPIOs
     esp_rom_gpio_connect_out_signal(SLAVE_RX_PIN, U1TXD_OUT_IDX, false, false);
     esp_rom_gpio_pad_select_gpio(SLAVE_RX_PIN);
-    esp_rom_gpio_pad_pullup_only(SLAVE_RX_PIN);
 
     esp_rom_gpio_connect_in_signal(SLAVE_TX_PIN, U1RXD_IN_IDX, false);
     esp_rom_gpio_pad_select_gpio(SLAVE_TX_PIN);
-    esp_rom_gpio_pad_pullup_only(SLAVE_TX_PIN);
 
     esp_rom_printf("[%s] UART1: %d baud, 8N1, TX=GPIO%d, RX=GPIO%d\n",
                    TAG, baud_rate, SLAVE_RX_PIN, SLAVE_TX_PIN);
 }
 
 // UART1 TX one byte using LL
-int uart1_tx_one_char(uint8_t c)
+void uart1_tx_one_char(uint8_t c)
 {
     uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
-    uint32_t timeout = 0;
-
-    while (uart_ll_get_txfifo_len(uart) < 1) {
-        if (timeout++ > 100000) {
-            return -1;
-        }
-        esp_rom_delay_us(1);
-    }
-
     uart_ll_write_txfifo(uart, &c, 1);
-    return 0;
 }
 
 // UART1 RX one byte using LL
-int uart1_rx_one_char(uint8_t *c)
-{
+int uart1_rx_one_char(uint8_t *c){
     uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
-
     if (uart_ll_get_rxfifo_len(uart) == 0) {
         return -1;
     }
-
     uart_ll_read_rxfifo(uart, c, 1);
     return 0;
 }
@@ -182,10 +169,16 @@ int uart1_rx_one_char(uint8_t *c)
 // Configure UART2 for debug using LL
 void configure_uart2_debug(void)
 {
-    uart_dev_t *uart = uart_ll_get_hw(UART_NUM_DEBUG);
-    if (!uart) return;
+    
+    periph_ll_enable_clk_clear_rst(PERIPH_UART2_MODULE);
 
-    const uint32_t sclk_freq = 80000000;
+    uart_dev_t *uart = uart_ll_get_hw(UART_NUM_DEBUG);
+    if (!uart) {
+        esp_rom_printf("[%s] UART2 hardware not found!\n", TAG);
+        return;
+    }
+
+    const uint32_t sclk_freq = 40000000;
     const uint32_t baud_rate = UART_BAUD_RATE;
 
     // Reset FIFOs
@@ -213,67 +206,23 @@ void configure_uart2_debug(void)
     // Map GPIO
     esp_rom_gpio_connect_out_signal(DEBUG_UART_TX_PIN, U2TXD_OUT_IDX, false, false);
     esp_rom_gpio_pad_select_gpio(DEBUG_UART_TX_PIN);
-    esp_rom_gpio_pad_pullup_only(DEBUG_UART_TX_PIN);
 
     esp_rom_printf("[%s] UART2: %d baud, 8N1, TX=GPIO%d\n",
                    TAG, baud_rate, DEBUG_UART_TX_PIN);
 }
 
 // UART2 TX one byte using LL
-int uart2_tx_one_char(uint8_t c)
+void uart2_tx_one_char(uint8_t c)
 {
     uart_dev_t *uart = uart_ll_get_hw(UART_NUM_DEBUG);
-    uint32_t timeout = 0;
-
-    while (uart_ll_get_txfifo_len(uart) >= 127) {
-        if (timeout++ > 10000) {
-            return -1;
-        }
-        esp_rom_delay_us(1);
-    }
-
     uart_ll_write_txfifo(uart, &c, 1);
-    return 0;
 }
 
 // UART2 print string
 void uart2_print_string(const char* str)
 {
-    while (*str) {
-        uart2_tx_one_char(*str++);
-    }
-}
-
-// UART2 print hex byte
-void uart2_debug_hex(uint8_t byte)
-{
-    const char hex[] = "0123456789ABCDEF";
-    uart2_tx_one_char(hex[(byte >> 4) & 0xF]);
-    uart2_tx_one_char(hex[byte & 0xF]);
-    uart2_tx_one_char(' ');
-}
-
-// UART2 print debug data
-void uart2_debug_print(const char* prefix, uint8_t* data, uint32_t len)
-{
-    if (len == 0) return;
-
-    uart2_print_string(prefix);
-    uart2_print_string(" ");
-
-    for (uint32_t i = 0; i < len && i < 16; i++) {
-        uart2_debug_hex(data[i]);
-    }
-
-    if (len > 16) {
-        uart2_print_string("... (");
-        if (len >= 100) uart2_tx_one_char('0' + (len / 100));
-        if (len >= 10) uart2_tx_one_char('0' + ((len / 10) % 10));
-        uart2_tx_one_char('0' + (len % 10));
-        uart2_print_string(" bytes)");
-    }
-
-    uart2_print_string("\r\n");
+    int data_len = strlen(str);
+    uart_ll_write_txfifo(uart_ll_get_hw(UART_NUM_DEBUG), (const uint8_t*)str, data_len);
 }
 
 /**
@@ -282,9 +231,6 @@ void uart2_debug_print(const char* prefix, uint8_t* data, uint32_t len)
 void uart_bridge_passthrough(void)
 {
     uint8_t byte;
-    uint8_t debug_buffer[32];
-    uint32_t debug_buf_idx = 0;
-    uint32_t bytes_forwarded = 0;
     uint32_t pc_to_slave = 0;
     uint32_t slave_to_pc = 0;
     bool flash_in_progress = false;
@@ -293,60 +239,29 @@ void uart_bridge_passthrough(void)
     uint32_t max_idle = 5000;
 
     configure_uart1_for_slave();
-    configure_uart2_debug();
-
     esp_rom_printf("[%s] UART bridge active\n", TAG);
-    uart2_print_string("[DEBUG] Bridge started\r\n");
 
     while (1) {
         bool data_activity = false;
-
         // Forward: PC -> Slave
-        debug_buf_idx = 0;
-        while (uart0_rx_one_char(&byte) == 0) {
-            if (debug_buf_idx < sizeof(debug_buffer)) {
-                debug_buffer[debug_buf_idx++] = byte;
+        if (uart0_rx_one_char(&byte) == 0) {
+            uart1_tx_one_char(byte);
+            pc_to_slave++;
+            data_activity = true;
+            if (byte == SLIP_END) {
+                flash_in_progress = true;
             }
-
-            if (uart1_tx_one_char(byte) == 0) {
-                pc_to_slave++;
-                data_activity = true;
-                if (byte == SLIP_END) {
-                    flash_in_progress = true;
-                }
-            } else {
-                esp_rom_printf("[%s] TX timeout!\n", TAG);
-                break;
-            }
-        }
-
-        if (debug_buf_idx > 0) {
-            uart2_debug_print("[PC->SLV]", debug_buffer, debug_buf_idx);
         }
 
         // Forward: Slave -> PC
-        debug_buf_idx = 0;
-        while (uart1_rx_one_char(&byte) == 0) {
-            if (debug_buf_idx < sizeof(debug_buffer)) {
-                debug_buffer[debug_buf_idx++] = byte;
-            }
-
+        if (uart1_rx_one_char(&byte) == 0) {
             uart0_tx_one_char(byte);
             slave_to_pc++;
             data_activity = true;
         }
 
-        if (debug_buf_idx > 0) {
-            uart2_debug_print("[SLV->PC]", debug_buffer, debug_buf_idx);
-        }
-
         if (data_activity) {
             idle_counter = 0;
-            if ((pc_to_slave + slave_to_pc - bytes_forwarded) >= 1000) {
-                esp_rom_printf("[%s] Progress: PC->SLV=%d, SLV->PC=%d\n",
-                               TAG, pc_to_slave, slave_to_pc);
-                bytes_forwarded = pc_to_slave + slave_to_pc;
-            }
         } else {
             idle_counter++;
             wdt_feed_counter++;
@@ -355,7 +270,7 @@ void uart_bridge_passthrough(void)
             if (flash_in_progress && idle_counter > max_idle) {
                 esp_rom_printf("[%s] Flash done: %d/%d bytes\n",
                                TAG, pc_to_slave, slave_to_pc);
-                uart2_print_string("[DEBUG] Bridge ended\r\n");
+                reset_slave_normal_mode();
                 return;
             }
 
@@ -366,7 +281,6 @@ void uart_bridge_passthrough(void)
 
             if (idle_counter > 30000) {
                 esp_rom_printf("[%s] Timeout\n", TAG);
-                uart2_print_string("[DEBUG] Timeout\r\n");
                 reset_slave_normal_mode();
                 return;
             }
