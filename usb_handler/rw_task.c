@@ -198,6 +198,11 @@ esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_t len,
     return ESP_ERR_INVALID_ARG;
   }
 
+  if (dev->ep_out_addr == 0x00) {
+    ESP_LOGE("USBOTG", "Invalid OUT endpoint address (0x00)");
+    return ESP_ERR_INVALID_ARG;
+  }
+
   err = usb_host_transfer_alloc(len, 0, &transfer);
   if (err != ESP_OK) {
     ESP_LOGE("USBOTG", "Failed to allocate transfer struct");
@@ -350,6 +355,11 @@ void usb_otg_rw_task(void *arg) {
         xSemaphoreGive(s_driver_obj->constant.mux_lock);
 
         if (dev != NULL) {
+            if (dev->ep_out_addr == 0x00 || dev->ep_in_addr == 0x00) {
+                ESP_LOGW("USB_OTG_RW", "Device addr %d is not a valid serial device. Skipping.", dev->dev_addr);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
             // One-time configuration for a newly detected device
             if (configured == 0) {
                 ch340_set_baudrate(dev);
