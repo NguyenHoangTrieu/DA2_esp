@@ -331,7 +331,7 @@
 							"left": 424,
 							"top": 224,
 							"width": 832,
-							"height": 496,
+							"height": 608,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwcnOEYn2+Lk="
@@ -445,6 +445,12 @@
 								},
 								{
 									"$ref": "AAAAAAGZwd1i7Ysx6zQ="
+								},
+								{
+									"$ref": "AAAAAAGZweCb74ug9qE="
+								},
+								{
+									"$ref": "AAAAAAGaAlpwyx4CW6g="
 								}
 							],
 							"font": "Arial;13;0",
@@ -453,7 +459,7 @@
 							"left": 424,
 							"top": 864,
 							"width": 832,
-							"height": 240,
+							"height": 320,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwcpQWIoUuBE="
@@ -563,10 +569,10 @@
 									"$ref": "AAAAAAGZweDCfIu7qvg="
 								},
 								{
-									"$ref": "AAAAAAGZweCb74ug9qE="
+									"$ref": "AAAAAAGZ3GTPUIUIqoo="
 								},
 								{
-									"$ref": "AAAAAAGZ3GTPUIUIqoo="
+									"$ref": "AAAAAAGaAjLnER2LcpA="
 								}
 							],
 							"font": "Arial;13;0",
@@ -575,7 +581,7 @@
 							"left": 424,
 							"top": 1224,
 							"width": 832,
-							"height": 232,
+							"height": 288,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwcqZ8YovZDA="
@@ -692,9 +698,6 @@
 								},
 								{
 									"$ref": "AAAAAAGZweMIqIyCTu0="
-								},
-								{
-									"$ref": "AAAAAAGZweD8s4vVT5Y="
 								}
 							],
 							"font": "Arial;13;0",
@@ -1648,7 +1651,7 @@
 											"top": 1310,
 											"width": 214.78271484375,
 											"height": 13,
-											"text": "MCU LAN Communication Handler"
+											"text": "MCU LAN Communication"
 										},
 										{
 											"_type": "LabelView",
@@ -1743,8 +1746,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -46,
-											"top": 1192,
+											"left": -318,
+											"top": 1400,
 											"height": 13
 										},
 										{
@@ -1755,11 +1758,11 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 613,
-											"top": 1310,
-											"width": 105.74267578125,
+											"left": 477,
+											"top": 1414,
+											"width": 204.6708984375,
 											"height": 13,
-											"text": "Ethernet Handler"
+											"text": "Ethernet Module Communication"
 										},
 										{
 											"_type": "LabelView",
@@ -1769,9 +1772,9 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 613,
-											"top": 1325,
-											"width": 105.74267578125,
+											"left": 477,
+											"top": 1429,
+											"width": 204.6708984375,
 											"height": 13,
 											"text": "(from BSP)"
 										},
@@ -1784,17 +1787,17 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -46,
-											"top": 1192,
+											"left": -318,
+											"top": 1400,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 608,
-									"top": 1303,
-									"width": 115.74267578125,
+									"left": 472,
+									"top": 1407,
+									"width": 214.6708984375,
 									"height": 40,
 									"stereotypeLabel": {
 										"$ref": "AAAAAAGZweDCfIu9xyk="
@@ -1816,124 +1819,13 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 608,
-							"top": 1288,
-							"width": 114.74267578125,
-							"height": 64,
+							"left": 472,
+							"top": 1392,
+							"width": 213.6708984375,
+							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZweDCfIu850A="
-							}
-						},
-						{
-							"_type": "UMLPackageView",
-							"_id": "AAAAAAGZweCb74ug9qE=",
-							"_parent": {
-								"$ref": "AAAAAAGZwcXYk4lSKaU="
-							},
-							"model": {
-								"$ref": "AAAAAAGZwde1m4q3PCY="
-							},
-							"subViews": [
-								{
-									"_type": "UMLNameCompartmentView",
-									"_id": "AAAAAAGZweCb74uhYCw=",
-									"_parent": {
-										"$ref": "AAAAAAGZweCb74ug9qE="
-									},
-									"model": {
-										"$ref": "AAAAAAGZwde1m4q3PCY="
-									},
-									"subViews": [
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweCb74uinsk=",
-											"_parent": {
-												"$ref": "AAAAAAGZweCb74uhYCw="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 30,
-											"top": 1256,
-											"height": 13
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweCb74ujGfc=",
-											"_parent": {
-												"$ref": "AAAAAAGZweCb74uhYCw="
-											},
-											"font": "Arial;13;1",
-											"parentStyle": true,
-											"left": 485,
-											"top": 1310,
-											"width": 76.6005859375,
-											"height": 13,
-											"text": "LTE Handler"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweCb74ukMyI=",
-											"_parent": {
-												"$ref": "AAAAAAGZweCb74uhYCw="
-											},
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 485,
-											"top": 1325,
-											"width": 76.6005859375,
-											"height": 13,
-											"text": "(from BSP)"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweCb74ulfuI=",
-											"_parent": {
-												"$ref": "AAAAAAGZweCb74uhYCw="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 30,
-											"top": 1256,
-											"height": 13,
-											"horizontalAlignment": 1
-										}
-									],
-									"font": "Arial;13;0",
-									"parentStyle": true,
-									"left": 480,
-									"top": 1303,
-									"width": 86.6005859375,
-									"height": 40,
-									"stereotypeLabel": {
-										"$ref": "AAAAAAGZweCb74uinsk="
-									},
-									"nameLabel": {
-										"$ref": "AAAAAAGZweCb74ujGfc="
-									},
-									"namespaceLabel": {
-										"$ref": "AAAAAAGZweCb74ukMyI="
-									},
-									"propertyLabel": {
-										"$ref": "AAAAAAGZweCb74ulfuI="
-									}
-								}
-							],
-							"containerView": {
-								"$ref": "AAAAAAGZwcqZ8YouWEE="
-							},
-							"font": "Arial;13;0",
-							"parentStyle": false,
-							"containerChangeable": true,
-							"left": 480,
-							"top": 1288,
-							"width": 85.6005859375,
-							"height": 64,
-							"showNamespace": true,
-							"nameCompartment": {
-								"$ref": "AAAAAAGZweCb74uhYCw="
 							}
 						},
 						{
@@ -3266,117 +3158,6 @@
 						},
 						{
 							"_type": "UMLPackageView",
-							"_id": "AAAAAAGZweD8s4vVT5Y=",
-							"_parent": {
-								"$ref": "AAAAAAGZwcXYk4lSKaU="
-							},
-							"model": {
-								"$ref": "AAAAAAGZwddZdYqvYLE="
-							},
-							"subViews": [
-								{
-									"_type": "UMLNameCompartmentView",
-									"_id": "AAAAAAGZweD8s4vWw7Y=",
-									"_parent": {
-										"$ref": "AAAAAAGZweD8s4vVT5Y="
-									},
-									"model": {
-										"$ref": "AAAAAAGZwddZdYqvYLE="
-									},
-									"subViews": [
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweD8s4vXvkw=",
-											"_parent": {
-												"$ref": "AAAAAAGZweD8s4vWw7Y="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": -411,
-											"top": 2281,
-											"height": 13
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweD8s4vYMN0=",
-											"_parent": {
-												"$ref": "AAAAAAGZweD8s4vWw7Y="
-											},
-											"font": "Arial;13;1",
-											"parentStyle": true,
-											"left": 477,
-											"top": 1702,
-											"width": 137.55078125,
-											"height": 13,
-											"text": "WiFi Driver"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweD8s4vZJIM=",
-											"_parent": {
-												"$ref": "AAAAAAGZweD8s4vWw7Y="
-											},
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 477,
-											"top": 1717,
-											"width": 137.55078125,
-											"height": 13,
-											"text": "(from Driver)"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGZweD8s4vaDuo=",
-											"_parent": {
-												"$ref": "AAAAAAGZweD8s4vWw7Y="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": -411,
-											"top": 2281,
-											"height": 13,
-											"horizontalAlignment": 1
-										}
-									],
-									"font": "Arial;13;0",
-									"parentStyle": true,
-									"left": 472,
-									"top": 1695,
-									"width": 147.55078125,
-									"height": 40,
-									"stereotypeLabel": {
-										"$ref": "AAAAAAGZweD8s4vXvkw="
-									},
-									"nameLabel": {
-										"$ref": "AAAAAAGZweD8s4vYMN0="
-									},
-									"namespaceLabel": {
-										"$ref": "AAAAAAGZweD8s4vZJIM="
-									},
-									"propertyLabel": {
-										"$ref": "AAAAAAGZweD8s4vaDuo="
-									}
-								}
-							],
-							"containerView": {
-								"$ref": "AAAAAAGZwc1G+IpYRqI="
-							},
-							"font": "Arial;13;0",
-							"parentStyle": false,
-							"containerChangeable": true,
-							"left": 472,
-							"top": 1680,
-							"width": 146.55078125,
-							"height": 63,
-							"showNamespace": true,
-							"nameCompartment": {
-								"$ref": "AAAAAAGZweD8s4vWw7Y="
-							}
-						},
-						{
-							"_type": "UMLPackageView",
 							"_id": "AAAAAAGZ3GTPUIUIqoo=",
 							"_parent": {
 								"$ref": "AAAAAAGZwcXYk4lSKaU="
@@ -3404,7 +3185,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -221,
+											"left": -285,
 											"top": 252,
 											"height": 13
 										},
@@ -3416,7 +3197,7 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 773,
+											"left": 741,
 											"top": 1310,
 											"width": 151,
 											"height": 13,
@@ -3430,7 +3211,7 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 773,
+											"left": 741,
 											"top": 1325,
 											"width": 151,
 											"height": 13,
@@ -3445,7 +3226,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -221,
+											"left": -285,
 											"top": 252,
 											"height": 13,
 											"horizontalAlignment": 1
@@ -3453,7 +3234,7 @@
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 768,
+									"left": 736,
 									"top": 1303,
 									"width": 161,
 									"height": 40,
@@ -3477,7 +3258,7 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 768,
+							"left": 736,
 							"top": 1288,
 							"width": 160,
 							"height": 64,
@@ -3595,6 +3376,663 @@
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZ3IOzHoXMqRA="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaAirfWx1Q9RA=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaAio+Uh0TuUI="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaAirfWx1RYtI=",
+									"_parent": {
+										"$ref": "AAAAAAGaAirfWx1Q9RA="
+									},
+									"model": {
+										"$ref": "AAAAAAGaAio+Uh0TuUI="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAirfWx1SoRo=",
+											"_parent": {
+												"$ref": "AAAAAAGaAirfWx1RYtI="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -92,
+											"top": -20,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAirfWx1T+2Q=",
+											"_parent": {
+												"$ref": "AAAAAAGaAirfWx1RYtI="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 469,
+											"top": 1046,
+											"width": 105.74267578125,
+											"height": 13,
+											"text": "ESP_WIFI"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAirfWx1U/2o=",
+											"_parent": {
+												"$ref": "AAAAAAGaAirfWx1RYtI="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 469,
+											"top": 1061,
+											"width": 105.74267578125,
+											"height": 13,
+											"text": "(from Middleware)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAirfWx1VoJs=",
+											"_parent": {
+												"$ref": "AAAAAAGaAirfWx1RYtI="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -92,
+											"top": -20,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 464,
+									"top": 1039,
+									"width": 115.74267578125,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaAirfWx1SoRo="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaAirfWx1T+2Q="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaAirfWx1U/2o="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaAirfWx1VoJs="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 464,
+							"top": 1024,
+							"width": 114.74267578125,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaAirfWx1RYtI="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaAiw8kh1t7P8=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGZwddZdYqvYLE="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaAiw8kh1ubZA=",
+									"_parent": {
+										"$ref": "AAAAAAGaAiw8kh1t7P8="
+									},
+									"model": {
+										"$ref": "AAAAAAGZwddZdYqvYLE="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAiw8kh1vmBc=",
+											"_parent": {
+												"$ref": "AAAAAAGaAiw8kh1ubZA="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -44,
+											"top": -44,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAiw8kh1wu/A=",
+											"_parent": {
+												"$ref": "AAAAAAGaAiw8kh1ubZA="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1710,
+											"width": 103,
+											"height": 13,
+											"text": "WiFi Driver"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAiw8kh1xL44=",
+											"_parent": {
+												"$ref": "AAAAAAGaAiw8kh1ubZA="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1725,
+											"width": 103,
+											"height": 13,
+											"text": "(from Driver)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAiw8kh1yyE8=",
+											"_parent": {
+												"$ref": "AAAAAAGaAiw8kh1ubZA="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -44,
+											"top": -44,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 472,
+									"top": 1703,
+									"width": 113,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaAiw8kh1vmBc="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaAiw8kh1wu/A="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaAiw8kh1xL44="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaAiw8kh1yyE8="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 472,
+							"top": 1688,
+							"width": 112,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaAiw8kh1ubZA="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaAjNuRR2n0KE=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaAjMtcx2i4C8="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaAjNuRh2opl8=",
+									"_parent": {
+										"$ref": "AAAAAAGaAjNuRR2n0KE="
+									},
+									"model": {
+										"$ref": "AAAAAAGaAjMtcx2i4C8="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjNuRh2pxtI=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjNuRh2opl8="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -86,
+											"top": -36,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjNuRh2qTNM=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjNuRh2opl8="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 629,
+											"top": 1046,
+											"width": 112.947265625,
+											"height": 13,
+											"text": "MCU LAN Handler"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjNuRh2r9NI=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjNuRh2opl8="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 629,
+											"top": 1061,
+											"width": 112.947265625,
+											"height": 13,
+											"text": "(from Middleware)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjNuRh2sUHY=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjNuRh2opl8="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -86,
+											"top": -36,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 624,
+									"top": 1039,
+									"width": 122.947265625,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaAjNuRh2pxtI="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaAjNuRh2qTNM="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaAjNuRh2r9NI="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaAjNuRh2sUHY="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 624,
+							"top": 1024,
+							"width": 121.947265625,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaAjNuRh2opl8="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGZweCb74ug9qE=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGZwde1m4q3PCY="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGZweCb74uhYCw=",
+									"_parent": {
+										"$ref": "AAAAAAGZweCb74ug9qE="
+									},
+									"model": {
+										"$ref": "AAAAAAGZwde1m4q3PCY="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGZweCb74uinsk=",
+											"_parent": {
+												"$ref": "AAAAAAGZweCb74uhYCw="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 1246,
+											"top": 456,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGZweCb74ujGfc=",
+											"_parent": {
+												"$ref": "AAAAAAGZweCb74uhYCw="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 813,
+											"top": 1046,
+											"width": 183,
+											"height": 13,
+											"text": "LTE Handler"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGZweCb74ukMyI=",
+											"_parent": {
+												"$ref": "AAAAAAGZweCb74uhYCw="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 813,
+											"top": 1061,
+											"width": 183,
+											"height": 13,
+											"text": "(from Middleware)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGZweCb74ulfuI=",
+											"_parent": {
+												"$ref": "AAAAAAGZweCb74uhYCw="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 1246,
+											"top": 456,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 808,
+									"top": 1039,
+									"width": 193,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGZweCb74uinsk="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGZweCb74ujGfc="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGZweCb74ukMyI="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGZweCb74ulfuI="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcpQWIoTW4o="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 808,
+							"top": 1024,
+							"width": 192,
+							"height": 56,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGZweCb74uhYCw="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaAjLnER2LcpA=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaAjKg0x2GkSs="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaAjLnER2MdW0=",
+									"_parent": {
+										"$ref": "AAAAAAGaAjLnER2LcpA="
+									},
+									"model": {
+										"$ref": "AAAAAAGaAjKg0x2GkSs="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjLnER2NMOg=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjLnER2MdW0="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -12,
+											"top": -312,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjLnER2OtvU=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjLnER2MdW0="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1318,
+											"width": 162.8671875,
+											"height": 13,
+											"text": "SIM7600 Communication"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjLnER2PNH0=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjLnER2MdW0="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1333,
+											"width": 162.8671875,
+											"height": 13,
+											"text": "(from BSP)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAjLnER2Q6rs=",
+											"_parent": {
+												"$ref": "AAAAAAGaAjLnER2MdW0="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -12,
+											"top": -312,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 472,
+									"top": 1311,
+									"width": 172.8671875,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaAjLnER2NMOg="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaAjLnER2OtvU="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaAjLnER2PNH0="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaAjLnER2Q6rs="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcqZ8YouWEE="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 472,
+							"top": 1296,
+							"width": 171.8671875,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaAjLnER2MdW0="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaAlpwyx4CW6g=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaAlpApR39yDY="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaAlpwyx4DXnk=",
+									"_parent": {
+										"$ref": "AAAAAAGaAlpwyx4CW6g="
+									},
+									"model": {
+										"$ref": "AAAAAAGaAlpApR39yDY="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAlpwzB4E1wI=",
+											"_parent": {
+												"$ref": "AAAAAAGaAlpwyx4DXnk="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 987,
+											"top": -227,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAlpwzB4FwSc=",
+											"_parent": {
+												"$ref": "AAAAAAGaAlpwyx4DXnk="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 1045,
+											"top": 1046,
+											"width": 151,
+											"height": 13,
+											"text": "Ethernet Handler"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAlpwzB4GahY=",
+											"_parent": {
+												"$ref": "AAAAAAGaAlpwyx4DXnk="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 1045,
+											"top": 1061,
+											"width": 151,
+											"height": 13,
+											"text": "(from Middleware)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaAlpwzB4HGaQ=",
+											"_parent": {
+												"$ref": "AAAAAAGaAlpwyx4DXnk="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 987,
+											"top": -227,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 1040,
+									"top": 1039,
+									"width": 161,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaAlpwzB4E1wI="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaAlpwzB4FwSc="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaAlpwzB4GahY="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaAlpwzB4HGaQ="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcpQWIoTW4o="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 1040,
+							"top": 1024,
+							"width": 160,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaAlpwyx4DXnk="
 							}
 						}
 					]
@@ -9715,6 +10153,252 @@
 									"name": "FreeRTOS API"
 								}
 							]
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaAio+Uh0TuUI=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "ESP_WIFI",
+							"ownedElements": [
+								{
+									"_type": "UMLClass",
+									"_id": "AAAAAAGaAiqd7B1LEdw=",
+									"_parent": {
+										"$ref": "AAAAAAGaAio+Uh0TuUI="
+									},
+									"name": "ESP_WIFI API"
+								}
+							]
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaAjMtcx2i4C8=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "MCU LAN Handler"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaAlUR0x2/XQY=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "SIM7600 Handler"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGZwde1m4q3PCY=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "LTE Handler",
+							"ownedElements": [
+								{
+									"_type": "UMLClassDiagram",
+									"_id": "AAAAAAGZwm3ZJYag8y0=",
+									"_parent": {
+										"$ref": "AAAAAAGZwde1m4q3PCY="
+									},
+									"name": "Class Diagram",
+									"ownedViews": [
+										{
+											"_type": "UMLClassView",
+											"_id": "AAAAAAGZwm+egoctjhk=",
+											"_parent": {
+												"$ref": "AAAAAAGZwm3ZJYag8y0="
+											},
+											"model": {
+												"$ref": "AAAAAAGZwm96VYcoDYQ="
+											},
+											"subViews": [
+												{
+													"_type": "UMLNameCompartmentView",
+													"_id": "AAAAAAGZwm+egocuwTE=",
+													"_parent": {
+														"$ref": "AAAAAAGZwm+egoctjhk="
+													},
+													"model": {
+														"$ref": "AAAAAAGZwm96VYcoDYQ="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGZwm+egocvCaA=",
+															"_parent": {
+																"$ref": "AAAAAAGZwm+egocuwTE="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"height": 13
+														},
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGZwm+egocwPfU=",
+															"_parent": {
+																"$ref": "AAAAAAGZwm+egocuwTE="
+															},
+															"font": "Arial;13;1",
+															"parentStyle": true,
+															"left": 446,
+															"top": 354,
+															"width": 114.90234375,
+															"height": 13,
+															"text": "LTE Handler Class"
+														},
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGZwm+egocxEYc=",
+															"_parent": {
+																"$ref": "AAAAAAGZwm+egocuwTE="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"width": 110.2841796875,
+															"height": 13,
+															"text": "(from LTE Handler)"
+														},
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGZwm+egocyepA=",
+															"_parent": {
+																"$ref": "AAAAAAGZwm+egocuwTE="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"height": 13,
+															"horizontalAlignment": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": true,
+													"left": 441,
+													"top": 347,
+													"width": 124.90234375,
+													"height": 25,
+													"stereotypeLabel": {
+														"$ref": "AAAAAAGZwm+egocvCaA="
+													},
+													"nameLabel": {
+														"$ref": "AAAAAAGZwm+egocwPfU="
+													},
+													"namespaceLabel": {
+														"$ref": "AAAAAAGZwm+egocxEYc="
+													},
+													"propertyLabel": {
+														"$ref": "AAAAAAGZwm+egocyepA="
+													}
+												},
+												{
+													"_type": "UMLAttributeCompartmentView",
+													"_id": "AAAAAAGZwm+egoczoRU=",
+													"_parent": {
+														"$ref": "AAAAAAGZwm+egoctjhk="
+													},
+													"model": {
+														"$ref": "AAAAAAGZwm96VYcoDYQ="
+													},
+													"font": "Arial;13;0",
+													"parentStyle": true,
+													"left": 441,
+													"top": 372,
+													"width": 124.90234375,
+													"height": 10
+												},
+												{
+													"_type": "UMLOperationCompartmentView",
+													"_id": "AAAAAAGZwm+egoc0Al0=",
+													"_parent": {
+														"$ref": "AAAAAAGZwm+egoctjhk="
+													},
+													"model": {
+														"$ref": "AAAAAAGZwm96VYcoDYQ="
+													},
+													"font": "Arial;13;0",
+													"parentStyle": true,
+													"left": 441,
+													"top": 382,
+													"width": 124.90234375,
+													"height": 10
+												},
+												{
+													"_type": "UMLReceptionCompartmentView",
+													"_id": "AAAAAAGZwm+egoc1HZ8=",
+													"_parent": {
+														"$ref": "AAAAAAGZwm+egoctjhk="
+													},
+													"model": {
+														"$ref": "AAAAAAGZwm96VYcoDYQ="
+													},
+													"visible": false,
+													"font": "Arial;13;0",
+													"parentStyle": true,
+													"width": 10,
+													"height": 10
+												},
+												{
+													"_type": "UMLTemplateParameterCompartmentView",
+													"_id": "AAAAAAGZwm+eg4c2mfA=",
+													"_parent": {
+														"$ref": "AAAAAAGZwm+egoctjhk="
+													},
+													"model": {
+														"$ref": "AAAAAAGZwm96VYcoDYQ="
+													},
+													"visible": false,
+													"font": "Arial;13;0",
+													"parentStyle": true,
+													"width": 10,
+													"height": 10
+												}
+											],
+											"font": "Arial;13;0",
+											"parentStyle": false,
+											"containerChangeable": true,
+											"left": 441,
+											"top": 347,
+											"width": 123.90234375,
+											"height": 45,
+											"nameCompartment": {
+												"$ref": "AAAAAAGZwm+egocuwTE="
+											},
+											"attributeCompartment": {
+												"$ref": "AAAAAAGZwm+egoczoRU="
+											},
+											"operationCompartment": {
+												"$ref": "AAAAAAGZwm+egoc0Al0="
+											},
+											"receptionCompartment": {
+												"$ref": "AAAAAAGZwm+egoc1HZ8="
+											},
+											"templateParameterCompartment": {
+												"$ref": "AAAAAAGZwm+eg4c2mfA="
+											}
+										}
+									]
+								},
+								{
+									"_type": "UMLClass",
+									"_id": "AAAAAAGZwm96VYcoDYQ=",
+									"_parent": {
+										"$ref": "AAAAAAGZwde1m4q3PCY="
+									},
+									"name": "LTE Handler Class"
+								}
+							]
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaAlpApR39yDY=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "Ethernet Handler"
 						}
 					]
 				},
@@ -9732,7 +10416,7 @@
 							"_parent": {
 								"$ref": "AAAAAAGZwciCp4nplqw="
 							},
-							"name": "MCU LAN Communication Handler",
+							"name": "MCU LAN Communication",
 							"ownedElements": [
 								{
 									"_type": "UMLClassDiagram",
@@ -9936,7 +10620,7 @@
 							"_parent": {
 								"$ref": "AAAAAAGZwciCp4nplqw="
 							},
-							"name": "Ethernet Handler",
+							"name": "Ethernet Module Communication",
 							"ownedElements": [
 								{
 									"_type": "UMLClassDiagram",
@@ -10136,210 +10820,6 @@
 						},
 						{
 							"_type": "UMLPackage",
-							"_id": "AAAAAAGZwde1m4q3PCY=",
-							"_parent": {
-								"$ref": "AAAAAAGZwciCp4nplqw="
-							},
-							"name": "LTE Handler",
-							"ownedElements": [
-								{
-									"_type": "UMLClassDiagram",
-									"_id": "AAAAAAGZwm3ZJYag8y0=",
-									"_parent": {
-										"$ref": "AAAAAAGZwde1m4q3PCY="
-									},
-									"name": "Class Diagram",
-									"ownedViews": [
-										{
-											"_type": "UMLClassView",
-											"_id": "AAAAAAGZwm+egoctjhk=",
-											"_parent": {
-												"$ref": "AAAAAAGZwm3ZJYag8y0="
-											},
-											"model": {
-												"$ref": "AAAAAAGZwm96VYcoDYQ="
-											},
-											"subViews": [
-												{
-													"_type": "UMLNameCompartmentView",
-													"_id": "AAAAAAGZwm+egocuwTE=",
-													"_parent": {
-														"$ref": "AAAAAAGZwm+egoctjhk="
-													},
-													"model": {
-														"$ref": "AAAAAAGZwm96VYcoDYQ="
-													},
-													"subViews": [
-														{
-															"_type": "LabelView",
-															"_id": "AAAAAAGZwm+egocvCaA=",
-															"_parent": {
-																"$ref": "AAAAAAGZwm+egocuwTE="
-															},
-															"visible": false,
-															"font": "Arial;13;0",
-															"parentStyle": true,
-															"height": 13
-														},
-														{
-															"_type": "LabelView",
-															"_id": "AAAAAAGZwm+egocwPfU=",
-															"_parent": {
-																"$ref": "AAAAAAGZwm+egocuwTE="
-															},
-															"font": "Arial;13;1",
-															"parentStyle": true,
-															"left": 446,
-															"top": 354,
-															"width": 114.90234375,
-															"height": 13,
-															"text": "LTE Handler Class"
-														},
-														{
-															"_type": "LabelView",
-															"_id": "AAAAAAGZwm+egocxEYc=",
-															"_parent": {
-																"$ref": "AAAAAAGZwm+egocuwTE="
-															},
-															"visible": false,
-															"font": "Arial;13;0",
-															"parentStyle": true,
-															"width": 110.2841796875,
-															"height": 13,
-															"text": "(from LTE Handler)"
-														},
-														{
-															"_type": "LabelView",
-															"_id": "AAAAAAGZwm+egocyepA=",
-															"_parent": {
-																"$ref": "AAAAAAGZwm+egocuwTE="
-															},
-															"visible": false,
-															"font": "Arial;13;0",
-															"parentStyle": true,
-															"height": 13,
-															"horizontalAlignment": 1
-														}
-													],
-													"font": "Arial;13;0",
-													"parentStyle": true,
-													"left": 441,
-													"top": 347,
-													"width": 124.90234375,
-													"height": 25,
-													"stereotypeLabel": {
-														"$ref": "AAAAAAGZwm+egocvCaA="
-													},
-													"nameLabel": {
-														"$ref": "AAAAAAGZwm+egocwPfU="
-													},
-													"namespaceLabel": {
-														"$ref": "AAAAAAGZwm+egocxEYc="
-													},
-													"propertyLabel": {
-														"$ref": "AAAAAAGZwm+egocyepA="
-													}
-												},
-												{
-													"_type": "UMLAttributeCompartmentView",
-													"_id": "AAAAAAGZwm+egoczoRU=",
-													"_parent": {
-														"$ref": "AAAAAAGZwm+egoctjhk="
-													},
-													"model": {
-														"$ref": "AAAAAAGZwm96VYcoDYQ="
-													},
-													"font": "Arial;13;0",
-													"parentStyle": true,
-													"left": 441,
-													"top": 372,
-													"width": 124.90234375,
-													"height": 10
-												},
-												{
-													"_type": "UMLOperationCompartmentView",
-													"_id": "AAAAAAGZwm+egoc0Al0=",
-													"_parent": {
-														"$ref": "AAAAAAGZwm+egoctjhk="
-													},
-													"model": {
-														"$ref": "AAAAAAGZwm96VYcoDYQ="
-													},
-													"font": "Arial;13;0",
-													"parentStyle": true,
-													"left": 441,
-													"top": 382,
-													"width": 124.90234375,
-													"height": 10
-												},
-												{
-													"_type": "UMLReceptionCompartmentView",
-													"_id": "AAAAAAGZwm+egoc1HZ8=",
-													"_parent": {
-														"$ref": "AAAAAAGZwm+egoctjhk="
-													},
-													"model": {
-														"$ref": "AAAAAAGZwm96VYcoDYQ="
-													},
-													"visible": false,
-													"font": "Arial;13;0",
-													"parentStyle": true,
-													"width": 10,
-													"height": 10
-												},
-												{
-													"_type": "UMLTemplateParameterCompartmentView",
-													"_id": "AAAAAAGZwm+eg4c2mfA=",
-													"_parent": {
-														"$ref": "AAAAAAGZwm+egoctjhk="
-													},
-													"model": {
-														"$ref": "AAAAAAGZwm96VYcoDYQ="
-													},
-													"visible": false,
-													"font": "Arial;13;0",
-													"parentStyle": true,
-													"width": 10,
-													"height": 10
-												}
-											],
-											"font": "Arial;13;0",
-											"parentStyle": false,
-											"containerChangeable": true,
-											"left": 441,
-											"top": 347,
-											"width": 123.90234375,
-											"height": 45,
-											"nameCompartment": {
-												"$ref": "AAAAAAGZwm+egocuwTE="
-											},
-											"attributeCompartment": {
-												"$ref": "AAAAAAGZwm+egoczoRU="
-											},
-											"operationCompartment": {
-												"$ref": "AAAAAAGZwm+egoc0Al0="
-											},
-											"receptionCompartment": {
-												"$ref": "AAAAAAGZwm+egoc1HZ8="
-											},
-											"templateParameterCompartment": {
-												"$ref": "AAAAAAGZwm+eg4c2mfA="
-											}
-										}
-									]
-								},
-								{
-									"_type": "UMLClass",
-									"_id": "AAAAAAGZwm96VYcoDYQ=",
-									"_parent": {
-										"$ref": "AAAAAAGZwde1m4q3PCY="
-									},
-									"name": "LTE Handler Class"
-								}
-							]
-						},
-						{
-							"_type": "UMLPackage",
 							"_id": "AAAAAAGZ3GS4uoUEWi0=",
 							"_parent": {
 								"$ref": "AAAAAAGZwciCp4nplqw="
@@ -10363,6 +10843,14 @@
 									"name": "MPCIe Class"
 								}
 							]
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaAjKg0x2GkSs=",
+							"_parent": {
+								"$ref": "AAAAAAGZwciCp4nplqw="
+							},
+							"name": "SIM7600 Communication"
 						}
 					]
 				},
