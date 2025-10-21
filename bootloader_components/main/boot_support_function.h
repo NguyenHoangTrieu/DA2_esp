@@ -25,12 +25,6 @@
 #define SLAVE_RX_PIN 41
 #define SLAVE_TX_PIN 42
 
-// Flash bridge protocol commands
-#define FLASH_BEGIN_CMD 0x02
-#define FLASH_DATA_CMD 0x03
-#define FLASH_END_CMD 0x04
-#define SYNC_CMD 0x08
-
 // UART configuration
 #define UART_NUM_SLAVE 1
 #define UART_NUM_DEBUG 2
@@ -43,9 +37,6 @@
 
 // SLIP protocol constants
 #define SLIP_END 0xC0
-#define SLIP_ESC 0xDB
-#define SLIP_ESC_END 0xDC
-#define SLIP_ESC_ESC 0xDD
 
 #define CONFIG_EXAMPLE_BOOTLOADER_WELCOME_MESSAGE "ESP32 Master-Slave Bootloader"
 

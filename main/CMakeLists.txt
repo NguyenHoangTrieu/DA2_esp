@@ -1,16 +1,16 @@
 idf_component_register(SRCS "DA2_esp.c" 
-                                # "../wifi_handler/wifi_connect.c"
-                                # "../wifi_handler/wifi_scan.c"
-                                # "../mqtt_handler/mqtt_handler.c"
-                                "../rbg_led_ws_handler/rbg_handler.c" 
-                                "../usb_handler/usb_host_task.c"
-                                "../usb_handler/rw_task.c"
-                                "../usb_handler/jtag_task.c"
+                                # "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
+                                # "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
+                                # "../Application/Server_Communication_Handler/mqtt_handler/src/mqtt_handler.c"
+                                "../BSP/rbg_led_ws_handler/rbg_handler.c" 
+                                "../BSP/usb_communication/src/usb_host_task.c"
+                                "../BSP/usb_communication/src/rw_task.c"
+                                "../BSP/usb_communication/src/jtag_task.c"
                     PRIV_REQUIRES 
                                 esp_wifi 
                                 nvs_flash
                                 mqtt 
-                                esp_adc 
+                                esp_adc
                                 esp_driver_i2c
                                 esp_driver_uart
                                 esp_driver_gpio 
@@ -20,7 +20,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 mbedtls
                                 esp_driver_usb_serial_jtag
                     INCLUDE_DIRS "." 
-                                # "../wifi_handler" 
-                                # "../mqtt_handler"
-                                "../rbg_led_ws_handler"
-                                "../usb_handler")
+                                # "../Application/Internet_Communication_Handler/wifi_handler/include" 
+                                # "../Application/Server_Communication_Handler/mqtt_handler/include"
+                                "../BSP/rbg_led_ws_handler"
+                                "../BSP/usb_communication/include")
