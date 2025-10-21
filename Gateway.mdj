@@ -323,6 +323,9 @@
 								},
 								{
 									"$ref": "AAAAAAGZ3IOzHoXLHK4="
+								},
+								{
+									"$ref": "AAAAAAGaBIplzR44dmw="
 								}
 							],
 							"font": "Arial;13;0",
@@ -459,7 +462,7 @@
 							"left": 424,
 							"top": 864,
 							"width": 832,
-							"height": 320,
+							"height": 328,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwcpQWIoUuBE="
@@ -817,7 +820,7 @@
 							"left": 640,
 							"top": 288,
 							"width": 152.9873046875,
-							"height": 64,
+							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwdjXRorZVQE="
@@ -2382,7 +2385,7 @@
 							"left": 824,
 							"top": 288,
 							"width": 140.0126953125,
-							"height": 64,
+							"height": 56,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwdtEw4sSb1I="
@@ -2493,7 +2496,7 @@
 							"left": 488,
 							"top": 288,
 							"width": 111.8671875,
-							"height": 64,
+							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZwdi4p4rAcxI="
@@ -3372,7 +3375,7 @@
 							"left": 1000,
 							"top": 288,
 							"width": 170.38623046875,
-							"height": 64,
+							"height": 56,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGZ3IOzHoXMqRA="
@@ -4033,6 +4036,117 @@
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaAlpwyx4DXnk="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaBIplzR44dmw=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaBIoUVB4z45c="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaBIplzR45XhI=",
+									"_parent": {
+										"$ref": "AAAAAAGaBIplzR44dmw="
+									},
+									"model": {
+										"$ref": "AAAAAAGaBIoUVB4z45c="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaBIplzR46tXg=",
+											"_parent": {
+												"$ref": "AAAAAAGaBIplzR45XhI="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -81,
+											"top": -168,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaBIplzR47th0=",
+											"_parent": {
+												"$ref": "AAAAAAGaBIplzR45XhI="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 501,
+											"top": 750,
+											"width": 135,
+											"height": 13,
+											"text": "Bridge Bootloader"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaBIplzR48P90=",
+											"_parent": {
+												"$ref": "AAAAAAGaBIplzR45XhI="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 501,
+											"top": 765,
+											"width": 135,
+											"height": 13,
+											"text": "(from Application)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaBIplzR49gGk=",
+											"_parent": {
+												"$ref": "AAAAAAGaBIplzR45XhI="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -81,
+											"top": -168,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 496,
+									"top": 743,
+									"width": 145,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaBIplzR46tXg="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaBIplzR47th0="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaBIplzR48P90="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaBIplzR49gGk="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcnOEYn1pXg="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 496,
+							"top": 728,
+							"width": 144,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaBIplzR45XhI="
 							}
 						}
 					]
@@ -5839,6 +5953,14 @@
 								"$ref": "AAAAAAGZwcgzFImw6mI="
 							},
 							"name": "FOTA"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaBIoUVB4z45c=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcgzFImw6mI="
+							},
+							"name": "Bridge Bootloader"
 						}
 					]
 				},
