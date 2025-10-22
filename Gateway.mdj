@@ -2874,7 +2874,7 @@
 											"top": 566,
 											"width": 220.62255859375,
 											"height": 13,
-											"text": "HTTP Handler Task"
+											"text": "HTTP Handler Task - Not yet"
 										},
 										{
 											"_type": "LabelView",
@@ -3096,7 +3096,7 @@
 											"top": 654,
 											"width": 220.62255859375,
 											"height": 13,
-											"text": "CoAP Handler Task"
+											"text": "CoAP Handler Task - Not yet"
 										},
 										{
 											"_type": "LabelView",
@@ -5444,7 +5444,7 @@
 									"_parent": {
 										"$ref": "AAAAAAGZwdBZaYqSftA="
 									},
-									"name": "CoAP Handler Task",
+									"name": "CoAP Handler Task - Not yet",
 									"ownedElements": [
 										{
 											"_type": "UMLClassDiagram",
@@ -5507,7 +5507,7 @@
 									"_parent": {
 										"$ref": "AAAAAAGZwdBZaYqSftA="
 									},
-									"name": "HTTP Handler Task",
+									"name": "HTTP Handler Task - Not yet",
 									"ownedElements": [
 										{
 											"_type": "UMLClassDiagram",
