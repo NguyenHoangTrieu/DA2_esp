@@ -326,6 +326,8 @@ void ch340_set_baudrate(usb_device_t *dev) {
     ESP_LOGI("CH340", "Configured baudrate to 115200 for CH340.");
 }
 
+// =============================================================================
+
 /**
  * @brief Find first available USB device
  * @return Pointer to usb_device_t or NULL if not found
