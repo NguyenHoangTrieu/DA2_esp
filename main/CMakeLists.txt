@@ -7,9 +7,9 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/usb_communication/src/rw_task.c"
                                 "../BSP/usb_communication/src/jtag_task.c"
                     PRIV_REQUIRES 
-                                esp_wifi 
+                                esp_wifi
                                 nvs_flash
-                                mqtt 
+                                mqtt
                                 esp_adc
                                 esp_driver_i2c
                                 esp_driver_uart
@@ -19,8 +19,14 @@ idf_component_register(SRCS "DA2_esp.c"
                                 usb
                                 mbedtls
                                 esp_driver_usb_serial_jtag
+                                esp_http_client
+                                app_update
+                                esp_https_ota
+                                esp_netif
+                                esp_psram
                     INCLUDE_DIRS "." 
                                 # "../Application/Internet_Communication_Handler/wifi_handler/include" 
                                 # "../Application/Server_Communication_Handler/mqtt_handler/include"
                                 "../BSP/rbg_led_ws_handler"
-                                "../BSP/usb_communication/include")
+                                "../BSP/usb_communication/include"
+                    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)

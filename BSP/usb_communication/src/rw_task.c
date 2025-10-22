@@ -326,92 +326,206 @@ void ch340_set_baudrate(usb_device_t *dev) {
     ESP_LOGI("CH340", "Configured baudrate to 115200 for CH340.");
 }
 
-// =============================================================================
-// Task Implementations
-// =============================================================================
+/**
+ * @brief Find first available USB device
+ * @return Pointer to usb_device_t or NULL if not found
+ */
+static usb_device_t* find_first_usb_device(void) {
+    usb_device_t *dev = NULL;
+    
+    // Lock mutex to safely access device list
+    xSemaphoreTake(s_driver_obj->constant.mux_lock, portMAX_DELAY);
+    for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
+        if (s_driver_obj->mux_protected.device[i].dev_hdl != NULL) {
+            dev = &s_driver_obj->mux_protected.device[i];
+            break;
+        }
+    }
+    xSemaphoreGive(s_driver_obj->constant.mux_lock);
+    
+    return dev;
+}
 
 /**
- * @brief Example FreeRTOS task that performs USB OTG read and write operations
- *
- * This task sends a buffer of data to the USB device,
- * then waits to receive a response back in a loop.
+ * @brief Check if device is valid serial device
+ * @param dev USB device pointer
+ * @return true if valid, false otherwise
+ */
+static bool is_valid_serial_device(usb_device_t *dev) {
+    if (dev->ep_out_addr == 0x00 || dev->ep_in_addr == 0x00) {
+        ESP_LOGW(TAG, "Device addr %d is not valid serial. Skipping.", dev->dev_addr);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Configure USB device (baudrate + streaming)
+ * @param dev USB device pointer
+ * @param stream USB stream context pointer
+ * @return ESP_OK on success
+ */
+static esp_err_t configure_usb_device_once(usb_device_t *dev, usb_stream_t *stream) {
+    ch340_set_baudrate(dev);
+    ESP_LOGI(TAG, "CH340 baudrate set");
+    
+    esp_err_t ret = start_usb_cdc_streaming(dev, stream);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start streaming: %d", ret);
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Check if device still connected
+ * @param dev USB device pointer
+ * @return ESP_OK if valid, error code otherwise
+ */
+static esp_err_t check_device_validity(usb_device_t *dev) {
+    usb_device_info_t dev_info;
+    esp_err_t err = usb_host_device_info(dev->dev_hdl, &dev_info);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Device invalid (err: %d)", err);
+    }
+    
+    return err;
+}
+
+/**
+ * @brief Send data via USB CDC
+ * @param dev USB device pointer
+ * @param data Data buffer
+ * @param len Data length
+ * @return ESP_OK on success
+ */
+static esp_err_t send_usb_data(usb_device_t *dev, const uint8_t *data, size_t len) {
+    led_show_blue();
+    
+    esp_err_t ret = usb_cdc_send_data(dev, data, len, 100);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Sent %d bytes", (int)len);
+    } else {
+        ESP_LOGE(TAG, "Send error: %d", ret);
+        led_show_red();
+    }
+    
+    return ret;
+}
+
+/**
+ * @brief Receive and process USB data (non-blocking)
+ * @param stream USB stream context pointer
+ */
+static void receive_and_process_usb_data(usb_stream_t *stream) {
+    stream_data_t *rx = NULL;
+    
+    // Poll queue for received data
+    while (xQueueReceive(stream->data_queue, &rx, 0) == pdTRUE) {
+        ESP_LOGI(TAG, "Received %d bytes:", (int)rx->len);
+        
+        for (size_t i = 0; i < rx->len; ++i) {
+            printf("%c", rx->data[i]);
+        }
+        
+        free(rx->data);
+        free(rx);
+    }
+}
+
+/**
+ * @brief Handle connected USB device
+ * @param dev USB device pointer
+ * @param stream USB stream context
+ * @param configured Configuration flag pointer
+ * @param tx_data Transmit data buffer
+ * @param tx_len Transmit data length
+ * @return ESP_OK on success
+ */
+static esp_err_t handle_connected_device(usb_device_t *dev, 
+                                         usb_stream_t *stream,
+                                         uint8_t *configured,
+                                         const uint8_t *tx_data,
+                                         size_t tx_len) {
+    // Validate serial device
+    if (!is_valid_serial_device(dev)) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        return ESP_FAIL;
+    }
+    
+    // Configure device on first detection
+    if (*configured == 0) {
+        esp_err_t ret = configure_usb_device_once(dev, stream);
+        if (ret != ESP_OK) return ret;
+        *configured = 1;
+    }
+    
+    // Check device still valid
+    esp_err_t err = check_device_validity(dev);
+    if (err != ESP_OK) {
+        stream->running = false;
+        *configured = 0;
+        led_show_red();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        return err;
+    }
+    
+    // Send data
+    send_usb_data(dev, tx_data, tx_len);
+    
+    // Receive and process data
+    receive_and_process_usb_data(stream);
+    
+    led_show_green();
+    return ESP_OK;
+}
+
+/**
+ * @brief Handle no device state
+ * @param stream USB stream context
+ * @param configured Configuration flag pointer
+ */
+static void handle_no_device(usb_stream_t *stream, uint8_t *configured) {
+    if (stream->running) {
+        stream->running = false;
+    }
+    
+    *configured = 0;
+    ESP_LOGW(TAG, "No USB device. Task idle.");
+    led_toggle_white();
+}
+
+/**
+ * @brief USB OTG read/write task
+ * @param arg Task parameter (unused)
  */
 void usb_otg_rw_task(void *arg) {
     uint8_t tx_data[] = {'N', 'A', 'T', 'E', ' ', 'H', 'I', 'G', 'G', 'E', 'R', '\n'};
-    static usb_stream_t usb_stream; // Persistent stream object; works across reconnect
+    static usb_stream_t usb_stream;
     static uint8_t configured = 0;
-
+    
     while (!close_usb_otg_rw_task) {
-        usb_device_t *dev = NULL;
-
-        // Critical section to select the first opened USB device
-        xSemaphoreTake(s_driver_obj->constant.mux_lock, portMAX_DELAY);
-        for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-            if (s_driver_obj->mux_protected.device[i].dev_hdl != NULL) {
-                dev = &s_driver_obj->mux_protected.device[i];
-                break;
-            }
-        }
-        xSemaphoreGive(s_driver_obj->constant.mux_lock);
-
+        // Find first USB device
+        usb_device_t *dev = find_first_usb_device();
+        
         if (dev != NULL) {
-            if (dev->ep_out_addr == 0x00 || dev->ep_in_addr == 0x00) {
-                ESP_LOGW("USB_OTG_RW", "Device addr %d is not a valid serial device. Skipping.", dev->dev_addr);
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue;
-            }
-            // One-time configuration for a newly detected device
-            if (configured == 0) {
-                ch340_set_baudrate(dev);
-                configured = 1;
-                ESP_LOGI("USB_OTG_RW", "CH340 baudrate set");
-                // Start streaming for this device (setup rx queue)
-                start_usb_cdc_streaming(dev, &usb_stream);
-            }
-            // Check if device is still attached/valid
-            usb_device_info_t dev_info;
-            esp_err_t err = usb_host_device_info(dev->dev_hdl, &dev_info);
-            if (err != ESP_OK) {
-                ESP_LOGE("USB_OTG_RW", "Device invalid (err: %d). Stopping.", err);
-                usb_stream.running = false;
-                configured = 0;
-                led_show_red();
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue; // Device now invalid
-            }
-            // Send data over CDC
-            led_show_blue();
-            esp_err_t send_ret = usb_cdc_send_data(dev, tx_data, sizeof(tx_data), 100);
-            if (send_ret == ESP_OK) {
-                ESP_LOGI("USB_OTG_RW", "Sent %d bytes.", (int)sizeof(tx_data));
-            } else {
-                ESP_LOGE("USB_OTG_RW", "Send error: %d", send_ret);
-                led_show_red();
-            }
-            // Non-blocking receive: poll queue for new data, print any available
-            stream_data_t *rx = NULL;
-            while (xQueueReceive(usb_stream.data_queue, &rx, 0) == pdTRUE) {
-                ESP_LOGI("USB_OTG_RW", "Received %d bytes:", (int)rx->len);
-                for (size_t i = 0; i < rx->len; ++i) {
-                    printf("%c", rx->data[i]);
-                }
-                free(rx->data); free(rx);
-            }
-            led_show_green();
+            // Handle connected device
+            handle_connected_device(dev, &usb_stream, &configured, 
+                                   tx_data, sizeof(tx_data));
         } else {
-            // No device present: clean up state and indicate idle
-            if (usb_stream.running) {
-                usb_stream.running = false;
-            }
-            configured = 0;
-            ESP_LOGW("USB_OTG_RW", "No USB device opened. Task idle.");
-            led_toggle_white();
+            // Handle no device state
+            handle_no_device(&usb_stream, &configured);
         }
+        
         vTaskDelay(pdMS_TO_TICKS(500));
     }
-    ESP_LOGI("USB_OTG_RW", "USB OTG RW task exiting.");
+    
+    ESP_LOGI(TAG, "USB OTG RW task exiting");
     vTaskDelete(NULL);
 }
+
 
 // =============================================================================
 
