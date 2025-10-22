@@ -1,23 +1,23 @@
 #ifndef BOOT_SUPPORT_FUNCTION_H
 #define BOOT_SUPPORT_FUNCTION_H
 
-#include <stdbool.h>
-#include <stdint.h>
-#include "sdkconfig.h"
-#include "esp_log.h"
+#include "bootloader_common.h"
 #include "bootloader_init.h"
 #include "bootloader_utility.h"
-#include "bootloader_common.h"
-#include "soc/gpio_reg.h"
-#include "soc/rtc_cntl_reg.h"
-#include "hal/gpio_ll.h"
-#include "hal/uart_ll.h"         // HAL UART
-#include "soc/uart_struct.h"     // UART hardware struct
-#include "soc/periph_defs.h"
+#include "esp_log.h"
 #include "esp_private/periph_ctrl.h"
-#include "hal/clk_gate_ll.h"
 #include "esp_rom_gpio.h"
 #include "esp_rom_uart.h"
+#include "hal/clk_gate_ll.h"
+#include "hal/gpio_ll.h"
+#include "hal/uart_ll.h" // HAL UART
+#include "sdkconfig.h"
+#include "soc/gpio_reg.h"
+#include "soc/periph_defs.h"
+#include "soc/rtc_cntl_reg.h"
+#include "soc/uart_struct.h" // UART hardware struct
+#include <stdbool.h>
+#include <stdint.h>
 
 // GPIO pin definitions for slave control
 #define SLAVE_BOOT_PIN 39
@@ -38,7 +38,8 @@
 // SLIP protocol constants
 #define SLIP_END 0xC0
 
-#define CONFIG_EXAMPLE_BOOTLOADER_WELCOME_MESSAGE "ESP32 Master-Slave Bootloader"
+#define CONFIG_EXAMPLE_BOOTLOADER_WELCOME_MESSAGE                              \
+  "ESP32 Master-Slave Bootloader"
 
 // Bit macro
 #ifndef BIT
