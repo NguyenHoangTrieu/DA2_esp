@@ -17,7 +17,6 @@
 #include "freertos/task.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
-#include "mqtt_handler.h"
 #include "nvs_flash.h"
 #include "wifi_scan.h"
 

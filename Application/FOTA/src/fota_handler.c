@@ -1,6 +1,6 @@
-#include "FOTA_Handler.h"
+#include "fota_handler.h"
 
-#ifdef CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
+#if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
 /* The interface name value can refer to if_desc in esp_netif_defaults.h */
 #if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF_ETH
 static const char *bind_interface_name = EXAMPLE_NETIF_DESC_ETH;
@@ -52,7 +52,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
 
 void simple_ota_example_task(void *pvParameter) {
   ESP_LOGI(TAG, "Starting OTA example task");
-#ifdef CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
+#if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
   esp_netif_t *netif = get_example_netif_from_desc(bind_interface_name);
   if (netif == NULL) {
     ESP_LOGE(TAG, "Can't find netif from interface description");
@@ -64,14 +64,14 @@ void simple_ota_example_task(void *pvParameter) {
 #endif
   esp_http_client_config_t config = {
       .url = CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL,
-#ifdef CONFIG_EXAMPLE_USE_CERT_BUNDLE
+#if CONFIG_EXAMPLE_USE_CERT_BUNDLE
       .crt_bundle_attach = esp_crt_bundle_attach,
 #else
       .cert_pem = (char *)server_cert_pem_start,
 #endif /* CONFIG_EXAMPLE_USE_CERT_BUNDLE */
       .event_handler = _http_event_handler,
       .keep_alive_enable = true,
-#ifdef CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
+#if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
       .if_name = &ifr,
 #endif
 #if CONFIG_EXAMPLE_TLS_DYN_BUF_RX_STATIC
@@ -83,7 +83,7 @@ void simple_ota_example_task(void *pvParameter) {
 #endif /* CONFIG_EXAMPLE_TLS_DYN_BUF_RX_STATIC */
   };
 
-#ifdef CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL_FROM_STDIN
+#if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL_FROM_STDIN
   char url_buf[OTA_URL_SIZE];
   if (strcmp(config.url, "FROM_STDIN") == 0) {
     example_configure_stdin_stdout();
@@ -97,7 +97,7 @@ void simple_ota_example_task(void *pvParameter) {
   }
 #endif
 
-#ifdef CONFIG_EXAMPLE_SKIP_COMMON_NAME_CHECK
+#if CONFIG_EXAMPLE_SKIP_COMMON_NAME_CHECK
   config.skip_cert_common_name_check = true;
 #endif
 

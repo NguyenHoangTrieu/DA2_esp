@@ -14,6 +14,7 @@ static volatile uint8_t m_mqtt_connected = false;
 static volatile uint8_t s_mqtt_payload_updated = false;
 static char s_mqtt_payload[1024] = {0};
 QueueHandle_t g_server_cmd_queue = NULL;
+static bool mqtt_task_close = false;
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
@@ -67,7 +68,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
  * Suspends automatically if MQTT is disconnected.
  */
 static void mqtt_publish_task(void *arg) {
-  while (1) {
+  while (!mqtt_task_close) {
     // Only publish if MQTT client is connected
     if (m_client && m_mqtt_connected && s_mqtt_payload_updated) {
       esp_mqtt_client_publish(m_client, PUBLISH_TOPIC, s_mqtt_payload, 0, 1, 0);
@@ -76,13 +77,15 @@ static void mqtt_publish_task(void *arg) {
     }
     vTaskDelay(pdMS_TO_TICKS(PUBLISH_INTERVAL));
   }
+  ESP_LOGI(TAG, "MQTT publish task exiting.");
+  vTaskDelete(NULL);
 }
 
 /*
  * Initialize MQTT client and start publishing task (default is suspend).
  * Call this once at startup.
  */
-void mqtt_handle_start(void) {
+void mqtt_handler_task_start(void) {
   esp_mqtt_client_config_t mqtt_cfg = {.broker =
                                            {
                                                .address =
@@ -102,23 +105,13 @@ void mqtt_handle_start(void) {
   // Start publish task and immediately suspend it
   xTaskCreate(mqtt_publish_task, "mqtt_publish_task", 4096, NULL, 5,
               &m_pub_task);
-  vTaskSuspend(m_pub_task);
 }
 
 /*
- * Resume the MQTT publish task after WiFi/MQTT connection is established.
+ * Stop MQTT client and delete publishing task.
  */
-void mqtt_handle_resume(void) {
-  if (m_pub_task)
-    vTaskResume(m_pub_task);
-}
-
-/*
- * Suspend the MQTT publish task when WiFi/MQTT disconnects.
- */
-void mqtt_handle_suspend(void) {
-  if (m_pub_task)
-    vTaskSuspend(m_pub_task);
+void mqtt_handler_task_stop(void) {
+  mqtt_task_close = true;
 }
 
 /* MQTT build telematry data from source to payload buffer and clear the source

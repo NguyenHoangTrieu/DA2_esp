@@ -13,13 +13,10 @@
 #include "mqtt_client.h"
 #include <stddef.h>
 // Start the MQTT handle, launch FreeRTOS publishing task in suspended state.
-void mqtt_handle_start(void);
+void mqtt_handler_task_start(void);
 
-// Called from WiFi connect event: resumes MQTT publishing task.
-void mqtt_handle_resume(void);
-
-// Called from WiFi disconnect event: suspends MQTT publishing task.
-void mqtt_handle_suspend(void);
+// Stop the MQTT handle, delete the publishing task.
+void mqtt_handler_task_stop(void);
 
 // Build telemetry data from source buffer to internal payload buffer and clear
 // source.

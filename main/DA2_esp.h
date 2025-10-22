@@ -1,8 +1,9 @@
 #ifndef DA2_ESP_H
 #define DA2_ESP_H
 
-#include "USB_Handler.h"
+#include "usb_handler.h"
 #include "rbg_handler.h"
 #include "wifi_connect.h"
+#include "fota_handler.h"
 extern TaskHandle_t main_task_handle;
 #endif // DA2_ESP_H

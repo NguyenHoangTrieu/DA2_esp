@@ -9,7 +9,6 @@
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
-#include "protocol_examples_common.h"
 #include "string.h"
 #include "config.h"
 #ifdef CONFIG_EXAMPLE_USE_CERT_BUNDLE
@@ -18,7 +17,6 @@
 
 #include "nvs.h"
 #include "nvs_flash.h"
-#include "protocol_examples_common.h"
 #include <sys/socket.h>
 #if CONFIG_EXAMPLE_CONNECT_WIFI
 #include "esp_wifi.h"
