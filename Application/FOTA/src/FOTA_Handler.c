@@ -144,7 +144,7 @@ static void get_sha256_of_partitions(void) {
   print_sha256(sha_256, "SHA-256 for current firmware: ");
 }
 
-void fota_handler_start(void) {
+void fota_handler_task_start(void) {
   ota_task_close = false;
   get_sha256_of_partitions();
   ESP_ERROR_CHECK(esp_netif_init());
@@ -156,4 +156,4 @@ void fota_handler_start(void) {
               NULL);
 }
 
-void fota_handler_stop(void) { ota_task_close = true; }
+void fota_handler_task_stop(void) { ota_task_close = true; }

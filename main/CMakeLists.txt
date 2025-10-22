@@ -6,6 +6,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/usb_communication/src/usb_host_function.c"
                                 "../BSP/usb_communication/src/rw_function.c"
                                 "../Middleware/Data_Communication_Handler/src/USB_Handler.c"
+                                "../FOTA/src/FOTA_Handler.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash
@@ -30,4 +31,5 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/rbg_led_ws_handler"
                                 "../BSP/usb_communication/include"
                                 "../Middleware/Data_Communication_Handler/include"
+                                "../FOTA/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)

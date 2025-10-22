@@ -87,6 +87,11 @@ void app_main(void) {
   class_driver_task_start();
   usb_otg_rw_task_start();
 
+  // Start Wifi task
+  wifi_connect_task_start();
+  // Start FOTA task
+  fota_handler_task_start();
+
   while (1) {
     ulTaskNotifyTake(pdTRUE,
                      portMAX_DELAY); // Wait for notify from ISR (button press)

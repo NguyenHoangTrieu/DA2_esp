@@ -209,7 +209,6 @@ void usb_otg_rw_task(void *arg) {
         usb_stream.running = false;
       }
       configured = 0;
-      ESP_LOGW("USB_OTG_RW", "No USB device opened. Task idle.");
     }
     vTaskDelay(pdMS_TO_TICKS(500));
   }

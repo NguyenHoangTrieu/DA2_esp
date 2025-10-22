@@ -27,4 +27,7 @@
 #define HASH_LEN 32
 #define OTA_URL_SIZE 256
 
+void fota_handler_task_start(void);
+void fota_handler_task_stop(void);
+
 #endif /* FOTA_HANDLER_H */
