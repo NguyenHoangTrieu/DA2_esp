@@ -3204,7 +3204,7 @@
 											"top": 1310,
 											"width": 151,
 											"height": 13,
-											"text": "Mini PCIe connector"
+											"text": "USB Communication"
 										},
 										{
 											"_type": "LabelView",
@@ -10604,7 +10604,7 @@
 															"parentStyle": true,
 															"width": 239.83984375,
 															"height": 13,
-															"text": "(from MCU LAN Communication Handler)"
+															"text": "(from MCU LAN Communication)"
 														},
 														{
 															"_type": "LabelView",
@@ -10806,9 +10806,9 @@
 															"visible": false,
 															"font": "Arial;13;0",
 															"parentStyle": true,
-															"width": 136.55078125,
+															"width": 227.5888671875,
 															"height": 13,
-															"text": "(from Ethernet Handler)"
+															"text": "(from Ethernet Module Communication)"
 														},
 														{
 															"_type": "LabelView",
@@ -10946,7 +10946,7 @@
 							"_parent": {
 								"$ref": "AAAAAAGZwciCp4nplqw="
 							},
-							"name": "Mini PCIe connector",
+							"name": "USB Communication",
 							"ownedElements": [
 								{
 									"_type": "UMLClassDiagram",
