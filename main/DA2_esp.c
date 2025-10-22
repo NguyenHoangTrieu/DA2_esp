@@ -4,8 +4,7 @@
  * Uses native USB Host Library without CDC-ACM component dependency
  */
 
-#include "usb_handler.h"
-#include "rbg_handler.h"
+#include "DA2_esp.h"
 
 static const char *TAG = "MAIN APP";
 
@@ -90,6 +89,7 @@ void app_main(void)
                 change = 1;
                 ESP_LOGI(TAG, "Button pressed, switch to jtag");
                 usb_otg_rw_task_stop();
+                vTaskDelay(pdMS_TO_TICKS(100));
                 class_driver_task_stop();
                 usb_host_lib_task_stop();
                 jtag_task_start();

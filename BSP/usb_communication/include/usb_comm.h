@@ -1,5 +1,5 @@
-#ifndef USB_FLASH_HANDLER_H
-#define USB_FLASH_HANDLER_H
+#ifndef USB_COMM_H
+#define USB_COMM_H
 
 #include <stdio.h>
 #include <string.h>
@@ -17,7 +17,6 @@
 #include "rbg_handler.h"
 #include "sdkconfig.h"
 #include "esp_check.h"
-#include "DA2_esp.h"
 
 #define CLIENT_NUM_EVENT_MSG        5
 #define CONFIG_APP_QUIT_PIN       5
@@ -75,27 +74,52 @@ typedef struct {
 } class_driver_t;
 
 extern class_driver_t *s_driver_obj;
+#define USB_QUEUE_SIZE 10
+#define USB_BUFFER_SIZE 64 // Adjust to endpoint MPS
+
+// Structure to pass received data from ISR/callback to main USB RW task via
+// queue
+typedef struct {
+  uint8_t *data;
+  size_t len;
+} stream_data_t;
+
+// USB stream context object
+typedef struct {
+  usb_device_t *dev;           // Active device object
+  usb_transfer_t *in_transfer; // Pointer to transfer handle
+  QueueHandle_t data_queue;    // FreeRTOS queue for data
+  bool running;                // Streaming flag
+} usb_stream_t;
+
+extern class_driver_t *s_driver_obj;
+extern class_driver_t m_driver_obj;
+extern usb_host_client_handle_t class_driver_client_hdl;
 
 extern esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_t len, int timeout_ms);
-extern esp_err_t usb_cdc_receive_data(usb_device_t *dev, uint8_t *data, size_t max_len, size_t *actual_len);
 extern void class_driver_client_deregister(void);
 
-void usb_host_lib_task(void *arg);
-void class_driver_task(void *arg);
-void usb_otg_rw_task(void *arg);
-void parse_and_cache_endpoints(usb_device_t *dev);
+// USB CDC read/write functions
+void transfer_cb(usb_transfer_t *transfer);
 void claim_interface(usb_device_t *device_obj);
-// Class driver task control functions
-void class_driver_task_start(void);
-void class_driver_task_stop(void);
-// USB host library task control functions
-void usb_host_lib_task_start(void);
-void usb_host_lib_task_stop(void);
-// RW task control functions
-void usb_otg_rw_task_start(void);
-void usb_otg_rw_task_stop(void);
-// JTAG task control functions
-void jtag_task_start(void);
-void jtag_task_stop(void);
+void cdc_async_receive_cb(usb_transfer_t *transfer);
+void parse_and_cache_endpoints(usb_device_t *dev);
+esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_t len, int timeout_ms);
+esp_err_t start_usb_cdc_streaming(usb_device_t *dev, usb_stream_t *stream);
 
-#endif // USB_FLASH_HANDLER_H
+// USB Host class driver functions
+void client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg);
+void action_open_dev(usb_device_t *device_obj);
+void action_get_info(usb_device_t *device_obj);
+void action_get_dev_desc(usb_device_t *device_obj);
+void action_get_config_desc(usb_device_t *device_obj);
+void action_get_str_desc(usb_device_t *device_obj);
+void action_close_dev(usb_device_t *device_obj);
+void class_driver_device_handle(usb_device_t *device_obj);
+void class_driver_client_deregister(void);
+void class_driver_init(void);
+void class_driver_deinit(void);
+void usb_host_lib_init(void);
+void usb_host_lib_deinit(void);
+
+#endif // USB_COMM_H

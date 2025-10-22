@@ -1,14 +1,9 @@
-#include "usb_handler.h"
+#include "usb_comm.h"
 
-static const char *TAG = "ESP32_FLASH_BRIDGE";
+static const char *TAG = "USB_HOST_FUNCTION";
 class_driver_t *s_driver_obj;
 class_driver_t m_driver_obj = {0};
-static usb_device_t connected_devices[DEV_MAX_COUNT];
-static uint8_t num_connected_devices = 0;
-static TaskHandle_t usb_host_task_hdl = NULL;
-static TaskHandle_t class_driver_task_hdl = NULL;
 usb_host_client_handle_t class_driver_client_hdl = NULL;
-bool usb_host_lib_close = false;
 
 /**
  * @brief Client event callback function for handling USB host events
@@ -22,7 +17,7 @@ bool usb_host_lib_close = false;
  * @param arg User argument passed during client registration (class_driver_t
  * pointer)
  */
-static void client_event_cb(const usb_host_client_event_msg_t *event_msg,
+void client_event_cb(const usb_host_client_event_msg_t *event_msg,
                             void *arg) {
   class_driver_t *driver_obj = (class_driver_t *)arg;
   switch (event_msg->event) {
@@ -70,7 +65,7 @@ static void client_event_cb(const usb_host_client_event_msg_t *event_msg,
  * @param device_obj Pointer to the USB device object containing device address
  * and client handle
  */
-static void action_open_dev(usb_device_t *device_obj) {
+void action_open_dev(usb_device_t *device_obj) {
   assert(device_obj->dev_addr != 0);
   ESP_LOGI(TAG, "Opening device at address %d", device_obj->dev_addr);
   ESP_ERROR_CHECK(usb_host_device_open(
@@ -90,7 +85,7 @@ static void action_open_dev(usb_device_t *device_obj) {
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
-static void action_get_info(usb_device_t *device_obj) {
+void action_get_info(usb_device_t *device_obj) {
   assert(device_obj->dev_hdl != NULL);
   ESP_LOGI(TAG, "Getting device information");
   usb_device_info_t dev_info;
@@ -124,7 +119,7 @@ static void action_get_info(usb_device_t *device_obj) {
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
-static void action_get_dev_desc(usb_device_t *device_obj) {
+void action_get_dev_desc(usb_device_t *device_obj) {
   assert(device_obj->dev_hdl != NULL);
   ESP_LOGI(TAG, "Getting device descriptor");
   const usb_device_desc_t *dev_desc;
@@ -146,7 +141,7 @@ static void action_get_dev_desc(usb_device_t *device_obj) {
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
-static void action_get_config_desc(usb_device_t *device_obj) {
+void action_get_config_desc(usb_device_t *device_obj) {
   assert(device_obj->dev_hdl != NULL);
   ESP_LOGI(TAG, "Getting config descriptor");
   const usb_config_desc_t *config_desc;
@@ -172,7 +167,7 @@ static void action_get_config_desc(usb_device_t *device_obj) {
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
-static void action_get_str_desc(usb_device_t *device_obj) {
+void action_get_str_desc(usb_device_t *device_obj) {
   assert(device_obj->dev_hdl != NULL);
   usb_device_info_t dev_info;
   ESP_ERROR_CHECK(usb_host_device_info(
@@ -203,7 +198,7 @@ static void action_get_str_desc(usb_device_t *device_obj) {
  *
  * @param device_obj Pointer to the USB device object to close
  */
-static void action_close_dev(usb_device_t *device_obj)
+void action_close_dev(usb_device_t *device_obj)
 {
     esp_err_t ret;
     
@@ -265,7 +260,7 @@ static void action_close_dev(usb_device_t *device_obj)
  *
  * @param device_obj Pointer to the USB device object with pending actions
  */
-static void class_driver_device_handle(usb_device_t *device_obj) {
+void class_driver_device_handle(usb_device_t *device_obj) {
   uint8_t actions = device_obj->actions;
   device_obj->actions = 0;
 
@@ -365,58 +360,6 @@ void class_driver_deinit(void){
     class_driver_client_deregister();
 }
 
-// =============================================================================
-// Task Implementations
-// =============================================================================
-
-/**
- * @brief Main task function for the USB class driver
- *
- * This is the main task that runs the USB class driver. It initializes the
- * driver, registers with the USB host library, and enters the main event loop.
- * The task handles two main states:
- * 1. Processing pending device actions when devices need attention
- * 2. Waiting for and handling USB host client events
- *
- * The task runs until shutdown is requested, then properly deregisters
- * the client and cleans up resources.
- *
- * @param arg Task parameter (unused in this implementation)
- */
-void class_driver_task(void *arg) {
-  while (1) {
-    // Driver has unhandled devices, handle all devices first
-    ESP_LOGI(TAG, "Class Driver Active");
-    if (m_driver_obj.mux_protected.flags.unhandled_devices) {
-      xSemaphoreTake(m_driver_obj.constant.mux_lock,
-                     portMAX_DELAY); // Acquire mutex for thread safety
-      for (uint8_t i = 0; i < DEV_MAX_COUNT; i++) {
-        if (m_driver_obj.mux_protected.device[i].actions) {
-          class_driver_device_handle(
-              &m_driver_obj.mux_protected.device[i]); // Process device actions
-        }
-      }
-      m_driver_obj.mux_protected.flags.unhandled_devices = 0;
-      xSemaphoreGive(m_driver_obj.constant.mux_lock); // Release mutex
-    } else {
-      // Driver is active, handle client events
-      if (m_driver_obj.mux_protected.flags.shutdown == 0) {
-        usb_host_client_handle_events(
-            class_driver_client_hdl,
-            portMAX_DELAY); // Wait for and handle USB client events
-      } else {
-        // Shutdown the driver
-        break;
-      }
-    }
-  }
-
-  ESP_LOGI(TAG, "Deregistering Class Client");
-  ESP_ERROR_CHECK(usb_host_client_deregister(
-      class_driver_client_hdl)); // Deregister client from USB Host Library
-  vTaskDelete(NULL); // Delete task after cleanup
-}
-
 void usb_host_lib_init(void){
   ESP_LOGI(TAG, "Installing USB Host Library");
   usb_host_config_t host_config = {
@@ -433,89 +376,4 @@ void usb_host_lib_init(void){
 }
 
 void usb_host_lib_deinit(void){
-  usb_host_lib_close = true;
-}
-
-// =============================================================================
-// Task Implementations
-// =============================================================================
-
-/**
- * @brief Start USB Host install and handle common USB host library events while
- * app pin not low
- *
- * @param[in] arg  Not used
- */
-void usb_host_lib_task(void *arg) {
-  bool has_clients = true;
-  bool has_devices = false;
-  while (has_clients && !usb_host_lib_close) {
-    uint32_t event_flags;
-    ESP_ERROR_CHECK(usb_host_lib_handle_events(portMAX_DELAY, &event_flags));
-    if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
-      ESP_LOGI(TAG, "Get FLAGS_NO_CLIENTS");
-      if (ESP_OK == usb_host_device_free_all()) {
-        ESP_LOGI(
-            TAG,
-            "All devices marked as free, no need to wait FLAGS_ALL_FREE event");
-        has_clients = false;
-      } else {
-        ESP_LOGI(TAG, "Wait for the FLAGS_ALL_FREE");
-        has_devices = true;
-      }
-    }
-    if (has_devices && event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
-      ESP_LOGI(TAG, "Get FLAGS_ALL_FREE");
-      has_clients = false;
-    }
-  }
-  ESP_LOGI(TAG, "No more clients and devices or close task, uninstall USB Host library");
-  // Uninstall the USB Host Library
-  ESP_ERROR_CHECK(usb_host_uninstall());
-  vTaskDelete(NULL);
-}
-
-// =============================================================================
-
-void class_driver_task_start(void){
-  class_driver_init();
-  ESP_LOGI(TAG, "Class Driver init done");
-  BaseType_t task_created;
-  // Create class driver task
-  task_created = xTaskCreatePinnedToCore(class_driver_task,
-                                        "class",
-                                        5 * 1024,
-                                        NULL,
-                                        CLASS_TASK_PRIORITY,
-                                        &class_driver_task_hdl,
-                                        0);
-  assert(task_created == pdTRUE);
-}
-
-void class_driver_task_stop(void){
-  class_driver_deinit();
-  ESP_LOGI(TAG, "Class Driver deinit done");
-}
-
-// =============================================================================
-
-void usb_host_lib_task_start(void){
-  usb_host_lib_init();
-  ESP_LOGI(TAG, "USB Host init done");
-  usb_host_lib_close = false;
-  BaseType_t task_created;
-  // Create usb host lib task
-  task_created = xTaskCreatePinnedToCore(usb_host_lib_task,
-                                         "usb_host",
-                                         4096,
-                                         NULL,
-                                         HOST_LIB_TASK_PRIORITY,
-                                         &usb_host_task_hdl,
-                                         0);
-  assert(task_created == pdTRUE);
-}
-
-void usb_host_lib_task_stop(void){
-  usb_host_lib_deinit();
-  ESP_LOGI(TAG, "USB Host deinit done");
 }
