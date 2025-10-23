@@ -1,14 +1,12 @@
 /*
- * WiFi connection module for ESP32-P4 board.
- * Implements WiFi initialization (station mode), UART credential parsing,
- * and hardware reset control for ESP32-C6 slave chip.
- * All comments are in English for maintainability.
+ * Wifi Connect Handler for esp32s3
  */
 
 #include "wifi_connect.h"
+#include "config_handler.h"
 
-#define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
+#define DEFAULT_ESP_WIFI_SSID "Banh Mi"  // Initial hardcoded SSID
+#define DEFAULT_ESP_WIFI_PASS "22110406" // Initial hardcoded password
 #define EXAMPLE_ESP_MAXIMUM_RETRY 10
 
 // Adjust for the security/auth your AP uses
@@ -22,12 +20,6 @@ static EventGroupHandle_t
     s_wifi_event_group; // FreeRTOS event group to signal WiFi state
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
-
-#define C6_RESET_GPIO GPIO_NUM_54 // GPIO for ESP32-C6 slave reset
-
-#define UART_PORT_NUM UART_NUM_0
-#define UART_BAUD_RATE 115200
-#define UART_BUF_SIZE 256
 
 static const char *TAG = "wifi station";
 static int s_retry_num = 0;
@@ -138,27 +130,17 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
 }
 
 /*
- * FreeRTOS UART task:
- * Listens for WiFi credentials in format SSID:PASSWORD.
- * Updates connection if a valid command is received.
+ * FreeRTOS WiFi config task:
+ * Listens for WiFi credentials from config queue.
+ * Updates connection if a valid config is received.
  */
-static void wifi_uart_task(void *arg) {
-  uart_config_t uart_config = {
-      .baud_rate = UART_BAUD_RATE,
-      .data_bits = UART_DATA_8_BITS,
-      .parity = UART_PARITY_DISABLE,
-      .stop_bits = UART_STOP_BITS_1,
-      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-  };
-  uart_param_config(UART_PORT_NUM, &uart_config);
-  uart_driver_install(UART_PORT_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
-  ESP_LOGI(
-      TAG,
-      "Listening for WiFi SSID/Password over UART (format: SSID:PASSWORD)");
+static void wifi_config_task(void *arg) {
+  ESP_LOGI(TAG, "WiFi config task started, listening for config from queue");
   uint16_t scan_counter = 0;
+  wifi_config_data_t wifi_cfg;
 
-  uint8_t data[UART_BUF_SIZE];
   while (!wifi_connect_task_close) {
+    // Perform scan if not connected
     if (!s_wifi_connected && scan_counter == 200) {
       ESP_LOGI(TAG, "Not connected, performing WiFi scan...");
       perform_scan(); // Scan for available networks if not connected
@@ -168,23 +150,23 @@ static void wifi_uart_task(void *arg) {
     } else {
       scan_counter = 0;
     }
-    int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1,
-                              100 / portTICK_PERIOD_MS);
-    if (len > 0) {
-      data[len] = '\0';
-      char *colon_ptr = strchr((char *)data, ':');
-      if (colon_ptr) {
-        int ssid_len = colon_ptr - (char *)data;
-        int pass_len = strlen((char *)data) - ssid_len - 1;
+
+    // Check for WiFi config from queue
+    if (g_wifi_config_queue != NULL) {
+      if (xQueueReceive(g_wifi_config_queue, &wifi_cfg, pdMS_TO_TICKS(100)) ==
+          pdTRUE) {
+        // Validate SSID and password lengths
+        int ssid_len = strlen(wifi_cfg.ssid);
+        int pass_len = strlen(wifi_cfg.password);
 
         if (ssid_len > 0 && ssid_len < 33 && pass_len >= 0 && pass_len < 65) {
-          strncpy(s_wifi_ssid, (char *)data, ssid_len);
-          s_wifi_ssid[ssid_len] = '\0';
-          strncpy(s_wifi_pass, colon_ptr + 1, pass_len);
-          s_wifi_pass[pass_len] = '\0';
+          strncpy(s_wifi_ssid, wifi_cfg.ssid, sizeof(s_wifi_ssid) - 1);
+          s_wifi_ssid[sizeof(s_wifi_ssid) - 1] = '\0';
+          strncpy(s_wifi_pass, wifi_cfg.password, sizeof(s_wifi_pass) - 1);
+          s_wifi_pass[sizeof(s_wifi_pass) - 1] = '\0';
 
-          ESP_LOGI(TAG, "Received command: SSID='%s', PASS='%s'", s_wifi_ssid,
-                   s_wifi_pass);
+          ESP_LOGI(TAG, "Received config from queue: SSID='%s', PASS='%s'",
+                   s_wifi_ssid, s_wifi_pass);
 
           // Prepare new configuration
           memset(&s_pending_config, 0, sizeof(wifi_config_t));
@@ -210,14 +192,16 @@ static void wifi_uart_task(void *arg) {
           } else if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
           }
+        } else {
+          ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
         }
-      } else {
-        ESP_LOGI(TAG, "Invalid format. Usage: SSID:PASSWORD");
       }
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(100));
     }
-    vTaskDelay(pdMS_TO_TICKS(100));
   }
-  ESP_LOGI(TAG, "WiFi UART task exiting.");
+
+  ESP_LOGI(TAG, "WiFi config task exiting.");
   vTaskDelete(NULL);
 }
 
@@ -225,9 +209,9 @@ void wifi_connect_task_start(void) {
   wifi_connect_task_close = false;
   ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
   wifi_init_sta(s_wifi_ssid, s_wifi_pass);
-  // Start the UART task to listen for WiFi credentials
-  xTaskCreate(wifi_uart_task, "wifi_uart_task", 4096, NULL, 5, NULL);
-  ESP_LOGI(TAG, "WiFi UART task created");
+  // Start the config task to listen for WiFi credentials from queue
+  xTaskCreate(wifi_config_task, "wifi_config_task", 4096, NULL, 5, NULL);
+  ESP_LOGI(TAG, "WiFi config task created");
 }
 
 void wifi_connect_task_stop(void) {

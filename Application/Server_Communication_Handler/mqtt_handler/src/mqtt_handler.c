@@ -1,4 +1,5 @@
 #include "mqtt_handler.h"
+#include "config_handler.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "ZCOjw6KKw5j2EqYV2co6"
@@ -15,6 +16,10 @@ static volatile uint8_t s_mqtt_payload_updated = false;
 static char s_mqtt_payload[1024] = {0};
 QueueHandle_t g_server_cmd_queue = NULL;
 static bool mqtt_task_close = false;
+
+// Current MQTT config (can be updated from queue)
+static char s_broker_uri[128] = BROKER_URI;
+static char s_device_token[65] = DEVICE_TOKEN;
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
@@ -64,8 +69,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 }
 
 /*
- * FreeRTOS task to publish a message every 10 seconds when MQTT is connected.
- * Suspends automatically if MQTT is disconnected.
+ * FreeRTOS task to publish a message every 1 second when MQTT is connected.
  */
 static void mqtt_publish_task(void *arg) {
   while (!mqtt_task_close) {
@@ -82,29 +86,108 @@ static void mqtt_publish_task(void *arg) {
 }
 
 /*
- * Initialize MQTT client and start publishing task (default is suspend).
+ * Re-initialize MQTT client with new config
+ */
+static void mqtt_reinit(void) {
+  // Stop existing client
+  if (m_client) {
+    ESP_LOGI(TAG, "Stopping existing MQTT client");
+    esp_mqtt_client_stop(m_client);
+    esp_mqtt_client_destroy(m_client);
+    m_client = NULL;
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+
+  // Create new client with updated config
+  esp_mqtt_client_config_t mqtt_cfg = {
+      .broker = {
+          .address = {
+              .uri = s_broker_uri,
+          },
+      },
+      .credentials = {
+          .username = s_device_token,
+      }};
+
+  m_client = esp_mqtt_client_init(&mqtt_cfg);
+  if (m_client) {
+    esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID,
+                                    mqtt_event_handler, NULL);
+    esp_mqtt_client_start(m_client);
+    ESP_LOGI(TAG, "MQTT client reinitialized with URI: %s, Token: %s",
+             s_broker_uri, s_device_token);
+  } else {
+    ESP_LOGE(TAG, "Failed to reinitialize MQTT client");
+  }
+}
+
+/*
+ * FreeRTOS task to monitor config queue for MQTT config updates
+ */
+static void mqtt_config_task(void *arg) {
+  mqtt_config_data_t mqtt_cfg;
+
+  ESP_LOGI(TAG, "MQTT config task started, listening for config from queue");
+
+  while (!mqtt_task_close) {
+    // Check for MQTT config from queue
+    if (g_mqtt_config_queue != NULL) {
+      if (xQueueReceive(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(100)) ==
+          pdTRUE) {
+        ESP_LOGI(TAG, "Received MQTT config from queue");
+        ESP_LOGI(TAG, "Broker: %s, Port: %d, Token: %s", mqtt_cfg.broker_uri,
+                 mqtt_cfg.port, mqtt_cfg.device_token);
+
+        // Update configuration
+        strncpy(s_broker_uri, mqtt_cfg.broker_uri, sizeof(s_broker_uri) - 1);
+        s_broker_uri[sizeof(s_broker_uri) - 1] = '\0';
+        strncpy(s_device_token, mqtt_cfg.device_token,
+                sizeof(s_device_token) - 1);
+        s_device_token[sizeof(s_device_token) - 1] = '\0';
+
+        // Reinitialize MQTT client with new config
+        mqtt_reinit();
+      }
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+  }
+
+  ESP_LOGI(TAG, "MQTT config task exiting.");
+  vTaskDelete(NULL);
+}
+
+/*
+ * Initialize MQTT client and start publishing task.
  * Call this once at startup.
  */
 void mqtt_handler_task_start(void) {
-  esp_mqtt_client_config_t mqtt_cfg = {.broker =
-                                           {
-                                               .address =
-                                                   {
-                                                       .uri = BROKER_URI,
-                                                   },
-                                           },
-                                       .credentials = {
-                                           .username = DEVICE_TOKEN,
-                                       }};
+  esp_mqtt_client_config_t mqtt_cfg = {
+      .broker = {
+          .address = {
+              .uri = s_broker_uri,
+          },
+      },
+      .credentials = {
+          .username = s_device_token,
+      }};
+
   m_client = esp_mqtt_client_init(&mqtt_cfg);
   esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler,
                                  NULL);
   esp_mqtt_client_start(m_client);
+
   if (!g_server_cmd_queue)
     g_server_cmd_queue = xQueueCreate(8, 128); // 8 slots, 128 bytes payload
-  // Start publish task and immediately suspend it
+
+  // Start publish task
   xTaskCreate(mqtt_publish_task, "mqtt_publish_task", 4096, NULL, 5,
               &m_pub_task);
+
+  // Start config monitoring task
+  xTaskCreate(mqtt_config_task, "mqtt_config_task", 3072, NULL, 5, NULL);
+
+  ESP_LOGI(TAG, "MQTT handler tasks started");
 }
 
 /*
@@ -112,9 +195,15 @@ void mqtt_handler_task_start(void) {
  */
 void mqtt_handler_task_stop(void) {
   mqtt_task_close = true;
+  if (m_client) {
+    esp_mqtt_client_stop(m_client);
+    esp_mqtt_client_destroy(m_client);
+    m_client = NULL;
+  }
+  ESP_LOGI(TAG, "MQTT handler tasks stopped");
 }
 
-/* MQTT build telematry data from source to payload buffer and clear the source
+/* MQTT build telemetry data from source to payload buffer and clear the source
  */
 void mqtt_build_telemetry_payload(char *source, size_t len) {
   memset(s_mqtt_payload, 0, sizeof(s_mqtt_payload));

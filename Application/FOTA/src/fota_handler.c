@@ -148,7 +148,7 @@ void fota_handler_task_start(void) {
   ota_task_close = false;
   get_sha256_of_partitions();
   ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  // ESP_ERROR_CHECK(esp_event_loop_create_default());
 #if CONFIG_EXAMPLE_CONNECT_WIFI
   esp_wifi_set_ps(WIFI_PS_NONE);
 #endif
