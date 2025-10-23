@@ -5,5 +5,8 @@
 #include "rbg_handler.h"
 #include "wifi_connect.h"
 #include "fota_handler.h"
+#include "uart_handler.h"
+#include "mqtt_handler.h"
+#include "config_handler.h"
 extern TaskHandle_t main_task_handle;
 #endif // DA2_ESP_H

@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "fota_handler.h"
 
 // Command buffer size
 #define CONFIG_CMD_MAX_LEN 256
@@ -18,6 +19,7 @@ typedef enum {
     CONFIG_TYPE_MQTT = 1,      // "MQ" - MQTT configuration  
     CONFIG_TYPE_UART = 2,      // "UR" - UART configuration
     CONFIG_TYPE_USB = 3,       // "US" - USB configuration
+    CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command
     CONFIG_TYPE_UNKNOWN = 0xFF
 } config_type_t;
 
@@ -68,8 +70,6 @@ extern QueueHandle_t g_config_handler_queue;
 // Function prototypes
 void config_handler_task_start(void);
 void config_handler_task_stop(void);
-void config_gateway_task_start(void);
-void config_gateway_task_stop(void);
 
 // Helper functions
 config_type_t config_parse_type(const char *cmd, uint16_t len);

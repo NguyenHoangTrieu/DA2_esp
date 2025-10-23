@@ -1,13 +1,58 @@
 #include "config_handler.h"
-#include "driver/uart.h"
-#include "esp_log.h"
+#include "uart_handler.h"
 
-#define UART_PORT_NUM UART_NUM_0
-#define UART_BAUD_RATE 115200
+// Default UART configuration
+#define DEFAULT_UART_PORT_NUM UART_NUM_0
+#define DEFAULT_UART_BAUD_RATE 115200
+#define DEFAULT_UART_TX_PIN GPIO_NUM_43
+#define DEFAULT_UART_RX_PIN GPIO_NUM_44
 #define UART_BUF_SIZE 512
 
 static const char *TAG = "uart_handler";
 static bool uart_handler_running = false;
+
+// Current UART configuration
+static uart_port_t s_uart_port = DEFAULT_UART_PORT_NUM;
+static uint32_t s_uart_baud = DEFAULT_UART_BAUD_RATE;
+static int s_uart_tx_pin = DEFAULT_UART_TX_PIN;
+static int s_uart_rx_pin = DEFAULT_UART_RX_PIN;
+static bool s_uart_initialized = false;
+
+/**
+ * @brief Reinitialize UART with new configuration
+ */
+static void uart_reinit(uart_port_t port, uint32_t baud_rate, int tx_pin, int rx_pin) {
+    // Delete existing driver if initialized
+    if (s_uart_initialized) {
+        uart_driver_delete(s_uart_port);
+        s_uart_initialized = false;
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // Update configuration
+    s_uart_port = port;
+    s_uart_baud = baud_rate;
+    s_uart_tx_pin = tx_pin;
+    s_uart_rx_pin = rx_pin;
+    
+    // Configure UART
+    uart_config_t uart_config = {
+        .baud_rate = s_uart_baud,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    
+    ESP_ERROR_CHECK(uart_param_config(s_uart_port, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(s_uart_port, s_uart_tx_pin, s_uart_rx_pin, 
+                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(s_uart_port, UART_BUF_SIZE * 2, 0, 0, NULL, 0));
+    
+    s_uart_initialized = true;
+    ESP_LOGI(TAG, "UART reinitialized: Port=%d, Baud=%u, TX=%d, RX=%d", 
+             s_uart_port, s_uart_baud, s_uart_tx_pin, s_uart_rx_pin);
+}
 
 /**
  * @brief UART handler task - receives data from UART and sends to config handler
@@ -17,22 +62,28 @@ static bool uart_handler_running = false;
 static void uart_handler_task(void *arg) {
     uint8_t data[UART_BUF_SIZE];
     
-    // Configure UART
-    uart_config_t uart_config = {
-        .baud_rate = UART_BAUD_RATE,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    };
-    
-    uart_param_config(UART_PORT_NUM, &uart_config);
-    uart_driver_install(UART_PORT_NUM, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
+    // Initialize UART with default config
+    uart_reinit(s_uart_port, s_uart_baud, s_uart_tx_pin, s_uart_rx_pin);
     
     ESP_LOGI(TAG, "UART handler task started, listening for 'CF' prefix commands");
     
     while (uart_handler_running) {
-        int len = uart_read_bytes(UART_PORT_NUM, data, UART_BUF_SIZE - 1, 
+        // Check for UART config updates from queue
+        if (g_uart_config_queue != NULL) {
+            uart_config_data_t uart_cfg;
+            if (xQueueReceive(g_uart_config_queue, &uart_cfg, 0) == pdTRUE) {
+                ESP_LOGI(TAG, "Received UART config from queue");
+                ESP_LOGI(TAG, "Baud: %u, DataBits: %u, StopBits: %u, Parity: %u",
+                         uart_cfg.baud_rate, uart_cfg.data_bits, 
+                         uart_cfg.stop_bits, uart_cfg.parity);
+                
+                // For now, only update baud rate (can extend to pins if needed)
+                uart_reinit(s_uart_port, uart_cfg.baud_rate, s_uart_tx_pin, s_uart_rx_pin);
+            }
+        }
+        
+        // Read UART data
+        int len = uart_read_bytes(s_uart_port, data, UART_BUF_SIZE - 1,
                                   pdMS_TO_TICKS(100));
         
         if (len > 0) {
@@ -76,7 +127,9 @@ static void uart_handler_task(void *arg) {
         }
     }
     
-    uart_driver_delete(UART_PORT_NUM);
+    if (s_uart_initialized) {
+        uart_driver_delete(s_uart_port);
+    }
     ESP_LOGI(TAG, "UART handler task exiting");
     vTaskDelete(NULL);
 }

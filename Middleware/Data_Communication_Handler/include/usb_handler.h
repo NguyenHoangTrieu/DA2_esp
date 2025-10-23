@@ -2,6 +2,7 @@
 #define USB_HANDLER_H
 
 #include "usb_comm.h"
+#include "config_handler.h"
 
 void usb_host_lib_task(void *arg);
 void class_driver_task(void *arg);

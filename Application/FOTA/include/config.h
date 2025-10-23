@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 /* Firmware upgrade URL endpoint */
-#define CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL "https://192.168.0.3:8070/hello_world.bin"
+#define CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL "http://192.168.1.8:8070/DA2_esp.bin"
 
 /* Enable certificate bundle (default: enabled) */
 #define CONFIG_EXAMPLE_USE_CERT_BUNDLE 1

@@ -51,7 +51,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
 }
 
 void simple_ota_example_task(void *pvParameter) {
-  ESP_LOGI(TAG, "Starting OTA example task");
+  ESP_LOGI(TAG, "Starting OTA example task - V1.0");
 #if CONFIG_EXAMPLE_FIRMWARE_UPGRADE_BIND_IF
   esp_netif_t *netif = get_example_netif_from_desc(bind_interface_name);
   if (netif == NULL) {
@@ -111,6 +111,7 @@ void simple_ota_example_task(void *pvParameter) {
     esp_restart();
   } else {
     ESP_LOGE(TAG, "Firmware upgrade failed");
+    fota_handler_task_stop();
   }
   while (!ota_task_close) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);

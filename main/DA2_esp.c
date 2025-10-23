@@ -66,7 +66,7 @@ void setup_gpio45_interrupt(void) {
  * @brief Main application entry point
  */
 void app_main(void) {
-  ESP_LOGI(TAG, "USB host library example");
+  ESP_LOGI(TAG, "Firmware Verision: DA2_esp v1.0.1");
   init_led_strip();
   led_on();
   setup_gpio45_interrupt();
@@ -89,8 +89,8 @@ void app_main(void) {
 
   // Start Wifi task
   wifi_connect_task_start();
-  // Start FOTA task
-  fota_handler_task_start();
+  //Start MQTT task
+  mqtt_handler_task_start();
 
   while (1) {
     ulTaskNotifyTake(pdTRUE,
@@ -99,21 +99,30 @@ void app_main(void) {
       // User pressed button
       if (change == 0) {
         change = 1;
-        ESP_LOGI(TAG, "Button pressed, switch to jtag");
+        ESP_LOGI(TAG, "Button pressed, switch to config mode ");
         usb_otg_rw_task_stop();
         vTaskDelay(pdMS_TO_TICKS(100));
         class_driver_task_stop();
         usb_host_lib_task_stop();
+        // wifi_connect_task_stop();
+        mqtt_handler_task_stop();
+        vTaskDelay(pdMS_TO_TICKS(100)); // Wait for wifi and mqtt task to close
         jtag_task_start();
+        uart_handler_task_start();
+        config_handler_task_start();
         led_show_yellow();
       } else {
         change = 0;
-        ESP_LOGI(TAG, "Button pressed, switch to USB Host");
+        ESP_LOGI(TAG, "Button pressed, switch to normal mode ");
         jtag_task_stop();
+        uart_handler_task_stop();
+        config_handler_task_stop();
         vTaskDelay(pdMS_TO_TICKS(100)); // Wait for jtag task to close
         usb_host_lib_task_start();
         class_driver_task_start();
         usb_otg_rw_task_start();
+        // wifi_connect_task_start();
+        mqtt_handler_task_start();
         led_show_orange();
       }
     }

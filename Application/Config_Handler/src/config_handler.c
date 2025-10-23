@@ -34,6 +34,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_UART;
     } else if (cmd[0] == 'U' && cmd[1] == 'S') {
         return CONFIG_TYPE_USB;
+    } else if (cmd[0] == 'F' && cmd[1] == 'W') {
+        return CONFIG_UPDATE_FIRMWARE;
     }
     
     return CONFIG_TYPE_UNKNOWN;
@@ -173,7 +175,7 @@ esp_err_t config_parse_uart(const char *data, uint16_t len, uart_config_data_t *
     
     // Simple parsing: "UR:baudrate:databits:stopbits:parity"
     int parsed = sscanf(data, "UR:%u:%hhu:%hhu:%hhu", 
-                       &cfg->baud_rate, &cfg->data_bits, 
+                       (unsigned int *)&cfg->baud_rate, &cfg->data_bits, 
                        &cfg->stop_bits, &cfg->parity);
     
     if (parsed != 4) {
@@ -246,7 +248,11 @@ static void config_handler_task(void *arg) {
                     ESP_LOGI(TAG, "USB config received (not implemented yet)");
                     break;
                 }
-                
+                case CONFIG_UPDATE_FIRMWARE: {
+                    ESP_LOGI(TAG, "Firmware update command received");
+                    fota_handler_task_start();
+                    break;
+                }
                 default:
                     ESP_LOGW(TAG, "Unknown config type: %d", cmd.type);
                     break;
