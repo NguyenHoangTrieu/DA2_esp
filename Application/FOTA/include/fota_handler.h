@@ -9,16 +9,23 @@
 #include "esp_ota_ops.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "esp_check.h"
 #include "string.h"
 #include "config.h"
-#ifdef CONFIG_EXAMPLE_USE_CERT_BUNDLE
+
+#ifdef CONFIG_USE_CERT_BUNDLE
 #include "esp_crt_bundle.h"
+#endif
+
+#if CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
+#include "esp_efuse.h"
 #endif
 
 #include "nvs.h"
 #include "nvs_flash.h"
 #include <sys/socket.h>
-#if CONFIG_EXAMPLE_CONNECT_WIFI
+
+#if CONFIG_CONNECT_WIFI
 #include "esp_wifi.h"
 #endif
 
