@@ -166,7 +166,7 @@ static esp_err_t validate_image_header(esp_app_desc_t *new_app_info)
         ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
 
-#ifndef CONFIG_SKIP_VERSION_CHECK
+#if CONFIG_SKIP_VERSION_CHECK
     if (memcmp(new_app_info->version, running_app_info.version, 
                sizeof(new_app_info->version)) == 0) {
         ESP_LOGW(TAG, "Current running version is the same as new. Update cancelled.");
@@ -223,7 +223,7 @@ static void get_sha256_of_partitions(void)
 
 void advanced_ota_task(void *pvParameter) 
 {
-    ESP_LOGI(TAG, "Starting Advanced OTA - V1.0");
+    ESP_LOGI(TAG, "Starting Advanced OTA - V1.0.0");
 
     esp_err_t err;
     esp_err_t ota_finish_err = ESP_OK;
@@ -250,7 +250,8 @@ void advanced_ota_task(void *pvParameter)
 #endif
         .timeout_ms = CONFIG_OTA_RECV_TIMEOUT,
         .keep_alive_enable = true,
-        .buffer_size = 16 * 1024,
+        .buffer_size = 8 * 1024,
+        .buffer_size_tx = 8 * 1024,
 #if CONFIG_FIRMWARE_UPGRADE_BIND_IF
         .if_name = &ifr,
 #endif
