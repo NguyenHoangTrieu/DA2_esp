@@ -1,7 +1,5 @@
 /*
- * MQTT handle module for ESP32-P4 - Demo to send telemetry to ThingsBoard
- * The send task resumes only after WiFi is connected and suspends when WiFi is
- * lost. All comments are in English.
+* MQTT handler module header for ESP32-S3 board.
  */
 
 #ifndef MQTT_HANDLER_H

@@ -1,3 +1,9 @@
+/*
+* Advanced OTA Update Handler for ESP32
+* This module manages over-the-air firmware updates using HTTPS.
+* It includes features such as image validation, event handling,
+* and optional OTA resumption using NVS.
+*/
 #include "fota_handler.h"
 
 #if CONFIG_FIRMWARE_UPGRADE_BIND_IF

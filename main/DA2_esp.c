@@ -1,7 +1,5 @@
 /*
- * ESP32-S3 USB Host Flash Bridge (Rewritten)
- * Receives firmware from PC via UART and flashes target ESP32 WROOM via USB
- * Host Uses native USB Host Library without CDC-ACM component dependency
+ * ESP32-S3 Gateway Main Application
  */
 
 #include "DA2_esp.h"

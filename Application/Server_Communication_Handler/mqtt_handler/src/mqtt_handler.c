@@ -1,3 +1,8 @@
+/*
+ * MQTT handler module for ESP32-S3 board.
+ * Manages MQTT connection, publishing telemetry data, and receiving commands.
+ * Comments are in English for clarity.
+ */
 #include "mqtt_handler.h"
 #include "config_handler.h"
 

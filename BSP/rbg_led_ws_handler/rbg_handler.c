@@ -1,3 +1,8 @@
+/*
+* RBG LED WS2812 Handler for ESP32
+* This module initializes and controls a WS2812 RGB LED using the RMT peripheral.
+* It provides functions to set LED colors and predefined color patterns.
+*/
 #include "rbg_handler.h"
 
 static rmt_channel_handle_t led_chan = NULL;

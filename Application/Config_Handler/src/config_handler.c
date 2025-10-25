@@ -1,3 +1,10 @@
+/*
+ * Config handler module for ESP32-S3 board.
+ * This module processes configuration commands received from the gateway
+ * and routes them to appropriate handlers (WiFi, MQTT, UART, USB, FOTA).
+ * All comments are in English for clarity.
+ */
+
 #include "config_handler.h"
 #include "esp_log.h"
 #include <ctype.h>

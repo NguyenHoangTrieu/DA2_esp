@@ -1,9 +1,3 @@
-/*
- * WiFi Scan/SW reset module header for ESP32-P4-WIFI6-DEV-KIT.
- * This header provides all external declarations from the original file.
- * Every function, macro, and comment is preserved for full feature support.
- */
-
 #ifndef WIFI_SCAN_H
 #define WIFI_SCAN_H
 

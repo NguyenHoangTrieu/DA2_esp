@@ -1,3 +1,6 @@
+/*
+* UART Handler for ESP32S3
+*/
 #include "config_handler.h"
 #include "uart_handler.h"
 

@@ -1,3 +1,11 @@
+/*
+ * Boot support functions for ESP32-S3 bootloader.
+ * This module provides low-level UART and GPIO control functions
+ * to facilitate communication with a slave ESP32 device during
+ * the bootloading process. It includes UART bridging, GPIO
+ * manipulation, and partition selection logic.
+ */
+
 #include "boot_support_function.h"
 
 const char *TAG = "boot-support";

@@ -1,8 +1,6 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+* ESP32 Master-Slave Bootloader
+*/
 #include "boot_support_function.h"
 #include "bootloader_hooks.h"
 

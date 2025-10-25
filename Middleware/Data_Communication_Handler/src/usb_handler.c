@@ -1,7 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
+* USB Handler for ESP32S3
  */
 #include "usb_handler.h"
 
