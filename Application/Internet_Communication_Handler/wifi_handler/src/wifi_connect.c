@@ -184,25 +184,31 @@ static void wifi_config_task(void *arg) {
 #endif
 
           // Set reconnection flag and trigger disconnect
-          s_reconnect_request = 1;
-          esp_err_t ret = esp_wifi_disconnect();
+           s_reconnect_request = 1;
+          if (s_wifi_connected) {
+            esp_err_t ret = esp_wifi_disconnect();
 
-          if (ret == ESP_ERR_WIFI_NOT_STARTED) {
-            ESP_LOGE(TAG, "WiFi not started");
-          } else if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
+            if (ret == ESP_ERR_WIFI_NOT_STARTED) {
+              ESP_LOGE(TAG, "WiFi not started");
+            } else if (ret != ESP_OK) {
+              ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
+            }
+          } else {
+            esp_event_post(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL, 0,
+                           portMAX_DELAY);
           }
-        } else {
-          ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
-        }
+      } else {
+        ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
       }
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(100));
     }
   }
+  else {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
 
-  ESP_LOGI(TAG, "WiFi config task exiting.");
-  vTaskDelete(NULL);
+ESP_LOGI(TAG, "WiFi config task exiting.");
+vTaskDelete(NULL);
 }
 
 void wifi_connect_task_start(void) {
