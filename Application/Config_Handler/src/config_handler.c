@@ -13,10 +13,12 @@ static const char *TAG = "config_handler";
 
 // Queue handles
 QueueHandle_t g_wifi_config_queue = NULL;
+QueueHandle_t g_lte_config_queue = NULL;
 QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_uart_config_queue = NULL;
 QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to WiFi
 
 static bool config_handler_running = false;
 static TaskHandle_t config_handler_task_handle = NULL;
@@ -43,6 +45,10 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_USB;
     } else if (cmd[0] == 'F' && cmd[1] == 'W') {
         return CONFIG_UPDATE_FIRMWARE;
+    } else if (cmd[0] == 'L' && cmd[1] == 'T') {
+        return CONFIG_TYPE_LTE;
+    } else if (cmd[0] == 'I' && cmd[1] == 'N') {
+        return CONFIG_TYPE_INTERNET;
     }
     
     return CONFIG_TYPE_UNKNOWN;
@@ -99,6 +105,67 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
     }
     
     ESP_LOGI(TAG, "Parsed WiFi config - SSID: '%s', Pass: '%s'", cfg->ssid, cfg->password);
+    return ESP_OK;
+}
+
+/**
+ * @brief Parse LTE configuration from command string
+ * Format: "LT:APN:USERNAME:PASSWORD"
+ * Example: "LT:v-internet::\"
+ * Note: Username and password can be empty
+ * @param data Raw command data
+ * @param len Command length
+ * @param cfg Output LTE config structure
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
+    if (!data || !cfg || len < 3) {
+        return ESP_FAIL;
+    }
+
+    memset(cfg, 0, sizeof(lte_config_data_t));
+    
+    // Parse format: "LT:apn:username:password"
+    const char *ptr = data + 3; // Skip "LT:"
+    const char *end = data + len;
+    
+    // Parse APN (required)
+    const char *first_colon = strchr(ptr, ':');
+    if (!first_colon || first_colon >= end) {
+        ESP_LOGE(TAG, "LTE config: missing APN separator");
+        return ESP_FAIL;
+    }
+    
+    int apn_len = first_colon - ptr;
+    if (apn_len <= 0 || apn_len >= sizeof(cfg->apn)) {
+        ESP_LOGE(TAG, "LTE APN length invalid: %d", apn_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->apn, ptr, apn_len);
+    cfg->apn[apn_len] = '\0';
+    
+    // Parse username (optional)
+    ptr = first_colon + 1;
+    const char *second_colon = strchr(ptr, ':');
+    if (second_colon && second_colon < end) {
+        int username_len = second_colon - ptr;
+        if (username_len > 0 && username_len < sizeof(cfg->username)) {
+            memcpy(cfg->username, ptr, username_len);
+            cfg->username[username_len] = '\0';
+        }
+        
+        // Parse password (optional)
+        ptr = second_colon + 1;
+        int password_len = end - ptr;
+        if (password_len > 0 && password_len < sizeof(cfg->password)) {
+            memcpy(cfg->password, ptr, password_len);
+            cfg->password[password_len] = '\0';
+        }
+    }
+    
+    ESP_LOGI(TAG, "Parsed LTE config - APN: '%s', Username: '%s'", 
+             cfg->apn, cfg->username);
     return ESP_OK;
 }
 
@@ -196,6 +263,40 @@ esp_err_t config_parse_uart(const char *data, uint16_t len, uart_config_data_t *
 }
 
 /**
+ * @brief Parse Internet configuration from command string
+ * Format: "IN:TYPE"
+ * Example: "IN:WIFI"
+ * @param data Raw command data
+ * @param len Command length
+ * @param type Output Internet type enum
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
+    if (!data || !type || len < 5) {
+        return ESP_FAIL;
+    }
+    
+    // Simple parsing: "IN:TYPE"
+    const char *ptr = data + 3; // Skip "IN:"
+    if (strncmp(ptr, "WIFI", 4) == 0) {
+        *type = CONFIG_INTERNET_WIFI;
+    } else if (strncmp(ptr, "LTE", 3) == 0) {
+        *type = CONFIG_INTERNET_LTE;
+    } else if (strncmp(ptr, "ETHERNET", 8) == 0) {
+        *type = CONFIG_INTERNET_ETHERNET;
+    } else if (strncmp(ptr, "NBIOT", 5) == 0) {
+        *type = CONFIG_INTERNET_NBIOT;
+    } else {
+        *type = CONFIG_INTERNET_TYPE_UNKNOWN;
+        ESP_LOGE(TAG, "Internet config type unknown");
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "Parsed Internet config type: %d", *type);
+    return ESP_OK;
+}
+
+/**
  * @brief Config handler task - receives raw commands and routes to specific queues
  * @param arg Task argument (unused)
  */
@@ -260,6 +361,26 @@ static void config_handler_task(void *arg) {
                     fota_handler_task_start();
                     break;
                 }
+                case CONFIG_TYPE_INTERNET: {
+                    config_internet_type_t internet_type;
+                    if (config_parse_internet(cmd.raw_data, cmd.data_len, &internet_type) == ESP_OK) {
+                        ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
+                        g_internet_type = internet_type;
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_LTE: {
+                    lte_config_data_t lte_cfg;
+                    if (config_parse_lte(cmd.raw_data, cmd.data_len, &lte_cfg) == ESP_OK) {
+                        if (g_lte_config_queue) {
+                            xQueueSend(g_lte_config_queue, &lte_cfg, pdMS_TO_TICKS(100));
+                            ESP_LOGI(TAG, "LTE config sent to LTE task");
+                        } else {
+                            ESP_LOGW(TAG, "LTE queue not initialized");
+                        }
+                    }
+                    break;
+                }
                 default:
                     ESP_LOGW(TAG, "Unknown config type: %d", cmd.type);
                     break;
@@ -299,6 +420,10 @@ void config_handler_task_start(void) {
     
     if (!g_usb_config_queue) {
         g_usb_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(usb_config_data_t));
+    }
+
+    if (!g_lte_config_queue) {
+        g_lte_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(lte_config_data_t));
     }
     
     config_handler_running = true;

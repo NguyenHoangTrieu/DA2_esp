@@ -204,19 +204,19 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-/**
- * @brief PPP status event handler
- */
-static void ppp_event_handler(void *arg, esp_event_base_t event_base,
-                              int32_t event_id, void *event_data)
-{
-    ESP_LOGD(TAG, "PPP state changed event: %ld", event_id);
+// /**
+//  * @brief PPP status event handler
+//  */
+// static void ppp_event_handler(void *arg, esp_event_base_t event_base,
+//                               int32_t event_id, void *event_data)
+// {
+//     ESP_LOGD(TAG, "PPP state changed event: %ld", event_id);
     
-    if (event_id == NETIF_PPP_ERRORUSER) {
-        esp_netif_t *netif = (esp_netif_t *)event_data;
-        ESP_LOGI(TAG, "User interrupted event from netif: %p", netif);
-    }
-}
+//     if (event_id == NETIF_PPP_ERRORUSER) {
+//         esp_netif_t *netif = (esp_netif_t *)event_data;
+//         ESP_LOGI(TAG, "User interrupted event from netif: %p", netif);
+//     }
+// }
 
 /**
  * @brief Initialize modem (BSP layer)
@@ -227,17 +227,6 @@ static esp_err_t lte_init_modem(void)
     
     /* Create DTE configuration */
     esp_modem_dte_config_t dte_config = ESP_MODEM_DTE_DEFAULT_CONFIG();
-    // dte_config.tx_io_num = LTE_CONFIG_UART_TX_PIN;
-    // dte_config.rx_io_num = LTE_CONFIG_UART_RX_PIN;
-    // dte_config.rts_io_num = LTE_CONFIG_UART_RTS_PIN;
-    // dte_config.cts_io_num = LTE_CONFIG_UART_CTS_PIN;
-    // dte_config.rx_buffer_size = LTE_CONFIG_UART_RX_BUFFER_SIZE;
-    // dte_config.tx_buffer_size = LTE_CONFIG_UART_TX_BUFFER_SIZE;
-    // dte_config.pattern_queue_size = LTE_CONFIG_UART_PATTERN_QUEUE_SIZE;
-    // dte_config.event_queue_size = LTE_CONFIG_UART_EVENT_QUEUE_SIZE;
-    // dte_config.event_task_stack_size = LTE_CONFIG_UART_EVENT_TASK_STACK_SIZE;
-    // dte_config.event_task_priority = LTE_CONFIG_UART_EVENT_TASK_PRIORITY;
-    // dte_config.line_buffer_size = LTE_CONFIG_UART_RX_BUFFER_SIZE * 2;
     
     /* Initialize DTE */
     s_lte_ctx->dte = esp_modem_dte_init(&dte_config);
@@ -504,39 +493,43 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config)
         return ret;
     }
     
-    ret = esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, 
-                                     &ppp_event_handler, NULL);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register PPP event handler");
-        lte_handler_deinit();
-        return ret;
-    }
-    
-    /* Initialize network interface */
-    esp_netif_inherent_config_t base_config = {
-        .flags = ESP_NETIF_FLAG_AUTOUP | ESP_NETIF_DHCP_CLIENT | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED,
-        .lost_ip_event = IP_EVENT_PPP_LOST_IP,
-        .get_ip_event = IP_EVENT_PPP_GOT_IP,
-        .if_key = "PPP_DEF",
-        .if_desc = "ppp",
-        .route_prio = 30
+    // ret = esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, 
+    //                                  &ppp_event_handler, NULL);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to register PPP event handler");
+    //     lte_handler_deinit();
+    //     return ret;
+    // }
+
+    /* Initialize network interface - Simplified approach */
+    static const esp_netif_inherent_config_t s_ppp_base_cfg = {
+    .flags = ESP_NETIF_FLAG_AUTOUP | ESP_NETIF_DHCP_CLIENT | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED,
+    .lost_ip_event = IP_EVENT_PPP_LOST_IP,
+    .get_ip_event = IP_EVENT_PPP_GOT_IP,
+    .if_key = "PPP_DEF",
+    .if_desc = "ppp",
+    .route_prio = 30
     };
 
-    extern const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_ppp;
+    /* Weak reference - will be NULL if not available */
+    extern const esp_netif_netstack_config_t *_g_esp_netif_netstack_default_ppp __attribute__((weak));
 
     esp_netif_config_t netif_cfg = {
-        .base = &base_config,
-        .driver = NULL,
-        .stack = _g_esp_netif_netstack_default_ppp,
+    .base = &s_ppp_base_cfg,
+    .driver = NULL,
+    .stack = _g_esp_netif_netstack_default_ppp,  // Can be NULL, esp_netif will handle it
     };
 
     s_lte_ctx->esp_netif = esp_netif_new(&netif_cfg);
     if (s_lte_ctx->esp_netif == NULL) {
-        ESP_LOGE(TAG, "Failed to create netif");
-        lte_handler_deinit();
-        return ESP_FAIL;
+    ESP_LOGE(TAG, "Failed to create netif");
+    lte_handler_deinit();
+    return ESP_FAIL;
     }
-    
+
+    ESP_LOGI(TAG, "PPP netif created successfully");
+
+
     lte_set_state(LTE_STATE_INITIALIZING);
     
     /* Initialize modem (BSP layer) */
@@ -615,7 +608,7 @@ esp_err_t lte_handler_deinit(void)
     
     /* Unregister event handlers */
     esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler);
-    esp_event_handler_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &ppp_event_handler);
+    // esp_event_handler_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &ppp_event_handler);
     
     /* Free sync primitives */
     if (s_lte_ctx->state_mutex) {

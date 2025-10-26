@@ -36,7 +36,7 @@
 /* UART Configuration */
 
 #ifndef ESP_MODEM_CONFIG_UART_PORT_NUM
-#define ESP_MODEM_CONFIG_UART_PORT_NUM        UART_NUM_1
+#define ESP_MODEM_CONFIG_UART_PORT_NUM        UART_NUM_2
 #endif
 
 #ifndef ESP_MODEM_CONFIG_UART_BAUD_RATE
@@ -61,11 +61,11 @@
 
 
 #ifndef ESP_MODEM_CONFIG_UART_TX_PIN
-#define ESP_MODEM_CONFIG_UART_TX_PIN          25
+#define ESP_MODEM_CONFIG_UART_TX_PIN          20
 #endif
 
 #ifndef ESP_MODEM_CONFIG_UART_RX_PIN
-#define ESP_MODEM_CONFIG_UART_RX_PIN          26
+#define ESP_MODEM_CONFIG_UART_RX_PIN          21
 #endif
 
 #ifndef ESP_MODEM_CONFIG_UART_RTS_PIN

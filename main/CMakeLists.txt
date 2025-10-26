@@ -1,5 +1,6 @@
 idf_component_register(SRCS "DA2_esp.c" 
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
+                                "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
                                 "../Application/Server_Communication_Handler/mqtt_handler/src/mqtt_handler.c"
                                 "../Application/Config_Handler/src/config_handler.c"
@@ -35,7 +36,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 esp_netif
                                 esp_psram
                     INCLUDE_DIRS "." 
-                                "../Application/Internet_Communication_Handler/wifi_handler/include" 
+                                "../Application/Internet_Communication_Handler/wifi_handler/include"
+                                "../Application/Internet_Communication_Handler/lte_handler/include"
                                 "../Application/Server_Communication_Handler/mqtt_handler/include"
                                 "../Application/Config_Handler/include"
                                 "../Middleware/LTE_Handler/include"

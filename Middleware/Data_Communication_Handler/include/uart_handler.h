@@ -1,9 +1,9 @@
 #ifndef UART_HANDLER_H
 #define UART_HANDLER_H
 
-#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 // FreeRTOS includes
 #include "freertos/FreeRTOS.h"
@@ -26,8 +26,15 @@
 #define DEFAULT_UART_RX_PIN GPIO_NUM_44
 #define UART_BUF_SIZE 512
 
+/**
+ * @brief Mode switch callback type
+ * @param mode 0=CONFIG, 1=NORMAL
+ */
+typedef void (*uart_mode_switch_cb_t)(int mode);
+
 // Function prototypes
 void uart_handler_task_start(void);
 void uart_handler_task_stop(void);
+void uart_handler_register_mode_callback(uart_mode_switch_cb_t callback);
 
 #endif // UART_HANDLER_H
