@@ -588,6 +588,15 @@
 								},
 								{
 									"$ref": "AAAAAAGaD43IQV4gteM="
+								},
+								{
+									"$ref": "AAAAAAGaD45Rgl4+naI="
+								},
+								{
+									"$ref": "AAAAAAGaFX5kvE8APQk="
+								},
+								{
+									"$ref": "AAAAAAGaFmpxD08oeMQ="
 								}
 							],
 							"font": "Arial;13;0",
@@ -1433,8 +1442,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -50,
-											"top": 1190,
+											"left": -322,
+											"top": 1204,
 											"height": 13
 										},
 										{
@@ -1445,8 +1454,8 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 989,
-											"top": 1319,
+											"left": 853,
+											"top": 1326,
 											"width": 214.78271484375,
 											"height": 13,
 											"text": "MCU LAN Communication"
@@ -1459,8 +1468,8 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 989,
-											"top": 1334,
+											"left": 853,
+											"top": 1341,
 											"width": 214.78271484375,
 											"height": 13,
 											"text": "(from BSP)"
@@ -1474,16 +1483,16 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -50,
-											"top": 1190,
+											"left": -322,
+											"top": 1204,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 984,
-									"top": 1312,
+									"left": 848,
+									"top": 1319,
 									"width": 224.78271484375,
 									"height": 40,
 									"stereotypeLabel": {
@@ -1506,8 +1515,8 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 984,
-							"top": 1297,
+							"left": 848,
+							"top": 1304,
 							"width": 223.78271484375,
 							"height": 55,
 							"showNamespace": true,
@@ -1544,8 +1553,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -334,
-											"top": 1416,
+											"left": -318,
+											"top": 1352,
 											"height": 13
 										},
 										{
@@ -1556,8 +1565,8 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 469,
-											"top": 1422,
+											"left": 477,
+											"top": 1390,
 											"width": 204.6708984375,
 											"height": 13,
 											"text": "Ethernet Module Communication"
@@ -1570,8 +1579,8 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 469,
-											"top": 1437,
+											"left": 477,
+											"top": 1405,
 											"width": 204.6708984375,
 											"height": 13,
 											"text": "(from BSP)"
@@ -1585,16 +1594,16 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -334,
-											"top": 1416,
+											"left": -318,
+											"top": 1352,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 464,
-									"top": 1415,
+									"left": 472,
+									"top": 1383,
 									"width": 214.6708984375,
 									"height": 40,
 									"stereotypeLabel": {
@@ -1617,8 +1626,8 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 464,
-							"top": 1400,
+							"left": 472,
+							"top": 1368,
 							"width": 213.6708984375,
 							"height": 55,
 							"showNamespace": true,
@@ -2983,7 +2992,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -285,
+											"left": -429,
 											"top": 252,
 											"height": 13
 										},
@@ -2995,7 +3004,7 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 741,
+											"left": 669,
 											"top": 1320,
 											"width": 151,
 											"height": 13,
@@ -3009,7 +3018,7 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 741,
+											"left": 669,
 											"top": 1335,
 											"width": 151,
 											"height": 13,
@@ -3024,7 +3033,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -285,
+											"left": -429,
 											"top": 252,
 											"height": 13,
 											"horizontalAlignment": 1
@@ -3032,7 +3041,7 @@
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 736,
+									"left": 664,
 									"top": 1313,
 									"width": 161,
 									"height": 40,
@@ -3056,7 +3065,7 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 736,
+							"left": 664,
 							"top": 1298,
 							"width": 160,
 							"height": 55,
@@ -3758,7 +3767,7 @@
 											"font": "Arial;13;0",
 											"parentStyle": true,
 											"left": 25,
-											"top": -116,
+											"top": -180,
 											"height": 13
 										},
 										{
@@ -3770,7 +3779,7 @@
 											"font": "Arial;13;1",
 											"parentStyle": true,
 											"left": 709,
-											"top": 1422,
+											"top": 1390,
 											"width": 151,
 											"height": 13,
 											"text": "SDIO Communication"
@@ -3784,7 +3793,7 @@
 											"font": "Arial;13;0",
 											"parentStyle": true,
 											"left": 709,
-											"top": 1437,
+											"top": 1405,
 											"width": 151,
 											"height": 13,
 											"text": "(from BSP)"
@@ -3799,7 +3808,7 @@
 											"font": "Arial;13;0",
 											"parentStyle": true,
 											"left": 25,
-											"top": -116,
+											"top": -180,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
@@ -3807,7 +3816,7 @@
 									"font": "Arial;13;0",
 									"parentStyle": true,
 									"left": 704,
-									"top": 1415,
+									"top": 1383,
 									"width": 161,
 									"height": 40,
 									"stereotypeLabel": {
@@ -3831,7 +3840,7 @@
 							"parentStyle": false,
 							"containerChangeable": true,
 							"left": 704,
-							"top": 1400,
+							"top": 1368,
 							"width": 160,
 							"height": 55,
 							"showNamespace": true,
@@ -3979,8 +3988,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -215,
-											"top": -117,
+											"left": 169,
+											"top": -309,
 											"height": 13
 										},
 										{
@@ -3991,8 +4000,8 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 901,
-											"top": 1422,
+											"left": 1093,
+											"top": 1326,
 											"width": 87,
 											"height": 13,
 											"text": "RTC Driver"
@@ -4005,8 +4014,8 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 901,
-											"top": 1437,
+											"left": 1093,
+											"top": 1341,
 											"width": 87,
 											"height": 13,
 											"text": "(from BSP)"
@@ -4020,16 +4029,16 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -215,
-											"top": -117,
+											"left": 169,
+											"top": -309,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 896,
-									"top": 1415,
+									"left": 1088,
+									"top": 1319,
 									"width": 97,
 									"height": 40,
 									"stereotypeLabel": {
@@ -4052,121 +4061,13 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 896,
-							"top": 1400,
+							"left": 1088,
+							"top": 1304,
 							"width": 96,
 							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaD43IQV4hixY="
-							}
-						},
-						{
-							"_type": "UMLPackageView",
-							"_id": "AAAAAAGaD45Rgl4+naI=",
-							"_parent": {
-								"$ref": "AAAAAAGZwcXYk4lSKaU="
-							},
-							"model": {
-								"$ref": "AAAAAAGaD44b2F4545c="
-							},
-							"subViews": [
-								{
-									"_type": "UMLNameCompartmentView",
-									"_id": "AAAAAAGaD45Rgl4/QNA=",
-									"_parent": {
-										"$ref": "AAAAAAGaD45Rgl4+naI="
-									},
-									"model": {
-										"$ref": "AAAAAAGaD44b2F4545c="
-									},
-									"subViews": [
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaD45Rgl5ACng=",
-											"_parent": {
-												"$ref": "AAAAAAGaD45Rgl4/QNA="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": -212,
-											"top": -42,
-											"height": 13
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaD45Rgl5BVCE=",
-											"_parent": {
-												"$ref": "AAAAAAGaD45Rgl4/QNA="
-											},
-											"font": "Arial;13;1",
-											"parentStyle": true,
-											"left": 1037,
-											"top": 1422,
-											"width": 125.998046875,
-											"height": 13,
-											"text": "IO Expanders Driver"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaD45Rgl5Cjzw=",
-											"_parent": {
-												"$ref": "AAAAAAGaD45Rgl4/QNA="
-											},
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 1037,
-											"top": 1437,
-											"width": 125.998046875,
-											"height": 13,
-											"text": "(from BSP)"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaD45Rgl5D6J8=",
-											"_parent": {
-												"$ref": "AAAAAAGaD45Rgl4/QNA="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": -212,
-											"top": -42,
-											"height": 13,
-											"horizontalAlignment": 1
-										}
-									],
-									"font": "Arial;13;0",
-									"parentStyle": true,
-									"left": 1032,
-									"top": 1415,
-									"width": 135.998046875,
-									"height": 40,
-									"stereotypeLabel": {
-										"$ref": "AAAAAAGaD45Rgl5ACng="
-									},
-									"nameLabel": {
-										"$ref": "AAAAAAGaD45Rgl5BVCE="
-									},
-									"namespaceLabel": {
-										"$ref": "AAAAAAGaD45Rgl5Cjzw="
-									},
-									"propertyLabel": {
-										"$ref": "AAAAAAGaD45Rgl5D6J8="
-									}
-								}
-							],
-							"font": "Arial;13;0",
-							"parentStyle": false,
-							"containerChangeable": true,
-							"left": 1032,
-							"top": 1400,
-							"width": 134.998046875,
-							"height": 55,
-							"showNamespace": true,
-							"nameCompartment": {
-								"$ref": "AAAAAAGaD45Rgl4/QNA="
 							}
 						},
 						{
@@ -5259,6 +5160,339 @@
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaEUZdTd5KSH0="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaD45Rgl4+naI=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaD44b2F4545c="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaD45Rgl4/QNA=",
+									"_parent": {
+										"$ref": "AAAAAAGaD45Rgl4+naI="
+									},
+									"model": {
+										"$ref": "AAAAAAGaD44b2F4545c="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD45Rgl5ACng=",
+											"_parent": {
+												"$ref": "AAAAAAGaD45Rgl4/QNA="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -636,
+											"top": -106,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD45Rgl5BVCE=",
+											"_parent": {
+												"$ref": "AAAAAAGaD45Rgl4/QNA="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 893,
+											"top": 1390,
+											"width": 125.998046875,
+											"height": 13,
+											"text": "IO Expanders Driver"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD45Rgl5Cjzw=",
+											"_parent": {
+												"$ref": "AAAAAAGaD45Rgl4/QNA="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 893,
+											"top": 1405,
+											"width": 125.998046875,
+											"height": 13,
+											"text": "(from BSP)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD45Rgl5D6J8=",
+											"_parent": {
+												"$ref": "AAAAAAGaD45Rgl4/QNA="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -636,
+											"top": -106,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 888,
+									"top": 1383,
+									"width": 135.998046875,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaD45Rgl5ACng="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaD45Rgl5BVCE="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaD45Rgl5Cjzw="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaD45Rgl5D6J8="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcqZ8YouWEE="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 888,
+							"top": 1368,
+							"width": 134.998046875,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaD45Rgl4/QNA="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaFX5kvE8APQk=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaFX4jV077+5Y="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaFX5kvE8BPsc=",
+									"_parent": {
+										"$ref": "AAAAAAGaFX5kvE8APQk="
+									},
+									"model": {
+										"$ref": "AAAAAAGaFX4jV077+5Y="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFX5kvE8CxYU=",
+											"_parent": {
+												"$ref": "AAAAAAGaFX5kvE8BPsc="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -148,
+											"top": 35,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFX5kvE8DqRQ=",
+											"_parent": {
+												"$ref": "AAAAAAGaFX5kvE8BPsc="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 1053,
+											"top": 1390,
+											"width": 126.68359375,
+											"height": 13,
+											"text": "B96 Communicaiton"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFX5kvE8EZ/U=",
+											"_parent": {
+												"$ref": "AAAAAAGaFX5kvE8BPsc="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 1053,
+											"top": 1405,
+											"width": 126.68359375,
+											"height": 13,
+											"text": "(from BSP)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFX5kvE8Ftbs=",
+											"_parent": {
+												"$ref": "AAAAAAGaFX5kvE8BPsc="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -148,
+											"top": 35,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 1048,
+									"top": 1383,
+									"width": 136.68359375,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaFX5kvE8CxYU="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaFX5kvE8DqRQ="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaFX5kvE8EZ/U="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaFX5kvE8Ftbs="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcqZ8YouWEE="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 1048,
+							"top": 1368,
+							"width": 135.68359375,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaFX5kvE8BPsc="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaFmpxD08oeMQ=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaFmpXmk8jdOo="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaFmpxD08p6zs=",
+									"_parent": {
+										"$ref": "AAAAAAGaFmpxD08oeMQ="
+									},
+									"model": {
+										"$ref": "AAAAAAGaFmpXmk8jdOo="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFmpxD08qQzU=",
+											"_parent": {
+												"$ref": "AAAAAAGaFmpxD08p6zs="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -165,
+											"top": -117,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFmpxD08r0o4=",
+											"_parent": {
+												"$ref": "AAAAAAGaFmpxD08p6zs="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1462,
+											"width": 80.45361328125,
+											"height": 13,
+											"text": "ESP MODEM"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFmpxD08stjk=",
+											"_parent": {
+												"$ref": "AAAAAAGaFmpxD08p6zs="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 477,
+											"top": 1477,
+											"width": 80.45361328125,
+											"height": 13,
+											"text": "(from BSP)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaFmpxD08tC00=",
+											"_parent": {
+												"$ref": "AAAAAAGaFmpxD08p6zs="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -165,
+											"top": -117,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 472,
+									"top": 1455,
+									"width": 90.45361328125,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaFmpxD08qQzU="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaFmpxD08r0o4="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaFmpxD08stjk="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaFmpxD08tC00="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwcqZ8YouWEE="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 472,
+							"top": 1440,
+							"width": 89.45361328125,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaFmpxD08p6zs="
 							}
 						}
 					]
@@ -12167,6 +12401,14 @@
 								"$ref": "AAAAAAGZwch5QonghNI="
 							},
 							"name": "MCU LAN Handler"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaFeNT+k8XEbg=",
+							"_parent": {
+								"$ref": "AAAAAAGZwch5QonghNI="
+							},
+							"name": "ESP MODEM"
 						}
 					]
 				},
@@ -16413,7 +16655,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_OPEN_DEV"
+											"name": "ACTION_OPEN_DEV",
+											"type": ""
 										},
 										{
 											"_type": "UMLAttribute",
@@ -16421,7 +16664,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_GET_DEV_INFO"
+											"name": "ACTION_GET_DEV_INFO",
+											"type": ""
 										},
 										{
 											"_type": "UMLAttribute",
@@ -16429,7 +16673,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_GET_DEV_DESC"
+											"name": "ACTION_GET_DEV_DESC",
+											"type": ""
 										},
 										{
 											"_type": "UMLAttribute",
@@ -16437,7 +16682,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_GET_CONFIG_DESC"
+											"name": "ACTION_GET_CONFIG_DESC",
+											"type": ""
 										},
 										{
 											"_type": "UMLAttribute",
@@ -16445,7 +16691,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_GET_STR_DESC"
+											"name": "ACTION_GET_STR_DESC",
+											"type": ""
 										},
 										{
 											"_type": "UMLAttribute",
@@ -16453,7 +16700,8 @@
 											"_parent": {
 												"$ref": "AAAAAAGaEYNky97tIQA="
 											},
-											"name": "ACTION_CLOSE_DEV"
+											"name": "ACTION_CLOSE_DEV",
+											"type": ""
 										}
 									]
 								},
@@ -16657,6 +16905,22 @@
 								"$ref": "AAAAAAGZwciCp4nplqw="
 							},
 							"name": "IO Expanders Driver"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaFX4jV077+5Y=",
+							"_parent": {
+								"$ref": "AAAAAAGZwciCp4nplqw="
+							},
+							"name": "B96 Communicaiton"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaFmpXmk8jdOo=",
+							"_parent": {
+								"$ref": "AAAAAAGZwciCp4nplqw="
+							},
+							"name": "ESP MODEM"
 						}
 					]
 				},
