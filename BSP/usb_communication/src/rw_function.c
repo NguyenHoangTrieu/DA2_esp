@@ -1,3 +1,7 @@
+/*
+* USB Communication Read/Write Functions for ESP32
+*/
+
 #include "usb_comm.h"
 
 static const char *TAG = "USB_RW_FUNCTION";

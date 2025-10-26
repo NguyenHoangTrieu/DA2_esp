@@ -8,5 +8,6 @@
 #include "uart_handler.h"
 #include "mqtt_handler.h"
 #include "config_handler.h"
+#include "lte_connect.h"
 extern TaskHandle_t main_task_handle;
 #endif // DA2_ESP_H

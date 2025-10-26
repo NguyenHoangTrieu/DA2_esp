@@ -1,16 +1,5 @@
-/* Scan Example - Periodic WiFi Scan with FreeRTOS Task
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
-/*
-    This example shows how to scan for available set of APs periodically using
-   FreeRTOS task. Added software reset for ESP32-C6 slave via GPIO54 for
-   Waveshare ESP32-P4-WIFI6-DEV-KIT.
+/* 
+* WiFi Scan for esp32s3
 */
 #include "wifi_scan.h"
 

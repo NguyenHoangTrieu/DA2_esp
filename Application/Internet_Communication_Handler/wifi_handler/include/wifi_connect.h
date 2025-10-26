@@ -1,10 +1,3 @@
-/*
- * WiFi connection module header for ESP32-P4 board.
- * Declares functions to handle WiFi initialization, UART WiFi credential
- * commands, and hardware reset of attached ESP32-C6 slave. All comments are in
- * English for clarity.
- */
-
 #ifndef WIFI_CONNECT_H
 #define WIFI_CONNECT_H
 

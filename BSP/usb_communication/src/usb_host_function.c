@@ -1,3 +1,9 @@
+/*
+* USB Host Function Module for ESP32S3
+* This module implements USB host functionality including device
+* connection handling, device information retrieval, and descriptor parsing.
+*/
+
 #include "usb_comm.h"
 
 static const char *TAG = "USB_HOST_FUNCTION";

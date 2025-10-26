@@ -11,7 +11,7 @@
 #include "esp_https_ota.h"
 #include "esp_check.h"
 #include "string.h"
-#include "config.h"
+#include "fota_config.h"
 
 #ifdef CONFIG_USE_CERT_BUNDLE
 #include "esp_crt_bundle.h"
