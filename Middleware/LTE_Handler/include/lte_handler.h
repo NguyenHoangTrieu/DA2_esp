@@ -221,17 +221,6 @@ esp_err_t lte_handler_get_imsi(char *imsi, size_t max_len);
 esp_err_t lte_handler_get_modem_info(lte_modem_info_t *info);
 
 /**
- * @brief Get esp_netif handle
- * 
- * This allows upper layers to use standard socket API
- * 
- * @return 
- *      - esp_netif handle if initialized
- *      - NULL if not initialized
- */
-esp_netif_t *lte_handler_get_netif(void);
-
-/**
  * @brief Enable/Disable auto-reconnect
  * 
  * @param enable true to enable, false to disable

@@ -5,9 +5,9 @@
 #include "wifi_connect.h"
 #include "config_handler.h"
 
-#define DEFAULT_ESP_WIFI_SSID "Banh Mi"  // Initial hardcoded SSID
-#define DEFAULT_ESP_WIFI_PASS "22110406" // Initial hardcoded password
-#define EXAMPLE_ESP_MAXIMUM_RETRY 10
+#define DEFAULT_ESP_WIFI_SSID "Devil"  // Initial hardcoded SSID
+#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
+#define EXAMPLE_ESP_MAXIMUM_RETRY 3
 
 // Adjust for the security/auth your AP uses
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
@@ -32,6 +32,7 @@ static volatile uint8_t s_reconnect_request =
     0;                                       // Flag for reconnection request
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
+static esp_netif_t* s_wifi_netif = NULL;
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -81,7 +82,11 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
 
   ESP_ERROR_CHECK(esp_netif_init());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  esp_netif_create_default_wifi_sta();
+  if (s_wifi_netif) {
+        esp_netif_destroy(s_wifi_netif);
+        s_wifi_netif = NULL;
+    }
+  s_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -115,7 +120,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   // Wait for either successful connection or maximum retry/failure
   EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                          WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                         pdFALSE, pdFALSE, portMAX_DELAY);
+                                         pdFALSE, pdFALSE, 1000);
 
   if (bits & WIFI_CONNECTED_BIT) {
     ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s", custom_ssid,
@@ -225,4 +230,5 @@ void wifi_connect_task_stop(void) {
   ESP_LOGI(TAG, "Stopping WiFi connection task");
   ESP_ERROR_CHECK(esp_wifi_stop());
   ESP_ERROR_CHECK(esp_wifi_deinit());
+  ESP_ERROR_CHECK(esp_event_loop_delete_default());
 }

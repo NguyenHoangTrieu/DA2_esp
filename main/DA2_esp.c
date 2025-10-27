@@ -120,12 +120,12 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
         
         switch (*current_internet_type) {
         case CONFIG_INTERNET_LTE:
-            lte_connect_task_start();
             wifi_connect_task_stop();
+            lte_connect_task_start();
             break;
         case CONFIG_INTERNET_WIFI:
-            wifi_connect_task_start();
             lte_connect_task_stop();
+            wifi_connect_task_start();
             break;
         default:
             ESP_LOGW(TAG, "Unknown internet type: %d", *current_internet_type);
