@@ -5,7 +5,7 @@
 #include "wifi_connect.h"
 #include "config_handler.h"
 
-#define DEFAULT_ESP_WIFI_SSID "Devil"  // Initial hardcoded SSID
+#define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
 #define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
 #define EXAMPLE_ESP_MAXIMUM_RETRY 3
 
@@ -21,7 +21,7 @@ static EventGroupHandle_t
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
-static const char *TAG = "wifi station";
+static const char *TAG = "wifi connect";
 static int s_retry_num = 0;
 
 static char s_wifi_ssid[33] = DEFAULT_ESP_WIFI_SSID; // Buffer for current SSID
@@ -32,7 +32,7 @@ static volatile uint8_t s_reconnect_request =
     0;                                       // Flag for reconnection request
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
-static esp_netif_t* s_wifi_netif = NULL;
+static esp_netif_t *s_wifi_netif = NULL;
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -41,6 +41,7 @@ static esp_netif_t* s_wifi_netif = NULL;
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+    ESP_LOGI(TAG, "WIFI_EVENT_STA_START");
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -80,12 +81,10 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   s_wifi_event_group = xEventGroupCreate();
 
+  ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
+           custom_pass);
   ESP_ERROR_CHECK(esp_netif_init());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  if (s_wifi_netif) {
-        esp_netif_destroy(s_wifi_netif);
-        s_wifi_netif = NULL;
-    }
   s_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -146,15 +145,15 @@ static void wifi_config_task(void *arg) {
 
   while (!wifi_connect_task_close) {
     // Perform scan if not connected
-    if (!s_wifi_connected && scan_counter == 200) {
-      ESP_LOGI(TAG, "Not connected, performing WiFi scan...");
-      perform_scan(); // Scan for available networks if not connected
-      scan_counter = 0;
-    } else if (!s_wifi_connected) {
-      scan_counter++;
-    } else {
-      scan_counter = 0;
-    }
+    // if (!s_wifi_connected && scan_counter == 200) {
+    //   ESP_LOGI(TAG, "Not connected, performing WiFi scan...");
+    //   perform_scan(); // Scan for available networks if not connected
+    //   scan_counter = 0;
+    // } else if (!s_wifi_connected) {
+    //   scan_counter++;
+    // } else {
+    //   scan_counter = 0;
+    // }
 
     // Check for WiFi config from queue
     if (g_wifi_config_queue != NULL) {
@@ -189,7 +188,7 @@ static void wifi_config_task(void *arg) {
 #endif
 
           // Set reconnection flag and trigger disconnect
-           s_reconnect_request = 1;
+          s_reconnect_request = 1;
           if (s_wifi_connected) {
             esp_err_t ret = esp_wifi_disconnect();
 
@@ -202,18 +201,17 @@ static void wifi_config_task(void *arg) {
             esp_event_post(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL, 0,
                            portMAX_DELAY);
           }
-      } else {
-        ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
+        } else {
+          ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
+        }
       }
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(100));
     }
   }
-  else {
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-}
 
-ESP_LOGI(TAG, "WiFi config task exiting.");
-vTaskDelete(NULL);
+  ESP_LOGI(TAG, "WiFi config task exiting.");
+  vTaskDelete(NULL);
 }
 
 void wifi_connect_task_start(void) {
@@ -221,7 +219,7 @@ void wifi_connect_task_start(void) {
   ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
   wifi_init_sta(s_wifi_ssid, s_wifi_pass);
   // Start the config task to listen for WiFi credentials from queue
-  xTaskCreate(wifi_config_task, "wifi_config_task", 4096, NULL, 5, NULL);
+  xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
   ESP_LOGI(TAG, "WiFi config task created");
 }
 
@@ -231,4 +229,9 @@ void wifi_connect_task_stop(void) {
   ESP_ERROR_CHECK(esp_wifi_stop());
   ESP_ERROR_CHECK(esp_wifi_deinit());
   ESP_ERROR_CHECK(esp_event_loop_delete_default());
+  if (s_wifi_netif) {
+    esp_netif_destroy(s_wifi_netif);
+    s_wifi_netif = NULL;
+    ESP_LOGI(TAG, "Destroyed existing netif");
+  }
 }
