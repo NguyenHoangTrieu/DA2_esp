@@ -179,7 +179,7 @@ static esp_err_t modem_init(void) {
   }
 
   // Register event handler for modem events
-  ESP_ERROR_CHECK(esp_modem_set_event_handler(modem_event_handler, NULL));
+  ESP_ERROR_CHECK(esp_modem_set_event_handler(modem_event_handler, ESP_EVENT_ANY_ID, NULL));
 
   ESP_LOGI(TAG, "DCE init...");
   ctx->dce = MODEM_INIT_FUNC(ctx->dte);

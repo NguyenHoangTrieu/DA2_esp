@@ -93,20 +93,19 @@ modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config);
 /**
  * @brief Register event handler for ESP Modem event loop
  *
- * @param dte modem_dte_t type object
  * @param handler event handler to register
+ * @param event_id event id to register, use ESP_EVENT_ANY_ID to register for all events
  * @param handler_args arguments for registered handler
  * @return esp_err_t
  *      - ESP_OK on success
  *      - ESP_ERR_NO_MEM on allocating memory for the handler failed
  *      - ESP_ERR_INVALID_ARG on invalid combination of event base and event id
  */
-esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, void *handler_args);
+esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, int32_t event_id, void *handler_args);
 
 /**
  * @brief Unregister event handler for ESP Modem event loop
  *
- * @param dte modem_dte_t type object
  * @param handler event handler to unregister
  * @return esp_err_t
  *      - ESP_OK on success

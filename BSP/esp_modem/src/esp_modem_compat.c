@@ -784,7 +784,7 @@ err_dte_mem:
     return NULL;
 }
 
-esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, void *handler_args)
+esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, int32_t event_id, void *handler_args)
 {
     return esp_event_handler_register(ESP_MODEM_EVENT, ESP_EVENT_ANY_ID, handler, handler_args);
 }
