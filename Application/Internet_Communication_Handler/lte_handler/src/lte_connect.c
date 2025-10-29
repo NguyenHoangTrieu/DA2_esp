@@ -120,7 +120,7 @@ void lte_connect_task_start(void)
  */
 void lte_connect_task_stop(void)
 {
-    if (lte_connect_task_handle == NULL) {
+    if (lte_connect_task_close == NULL) {
         return;
     }
     lte_connect_task_close = true;
