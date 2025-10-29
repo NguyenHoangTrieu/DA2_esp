@@ -38,6 +38,6 @@ ENV/
 *.log
 
 # ESP32 specific
-*.bin
+# *.bin
 *.elf
 *.map
