@@ -103,9 +103,8 @@ void esp_modem_netif_teardown(void *h)
     free(driver);
 }
 
-esp_err_t esp_modem_netif_clear_default_handlers(void *h)
+esp_err_t esp_modem_netif_clear_default_handlers()
 {
-    esp_modem_netif_driver_t *driver = h;
     esp_err_t ret;
     ret = esp_modem_remove_event_handler(esp_netif_action_start);
     if (ret != ESP_OK) {
@@ -123,9 +122,8 @@ clear_event_failed:
 
 }
 
-esp_err_t esp_modem_netif_set_default_handlers(void *h, esp_netif_t * esp_netif)
+esp_err_t esp_modem_netif_set_default_handlers(esp_netif_t * esp_netif)
 {
-    esp_modem_netif_driver_t *driver = h;
     esp_err_t ret;
     ret = esp_modem_set_event_handler(esp_netif_action_start, ESP_MODEM_EVENT_PPP_START, esp_netif);
     if (ret != ESP_OK) {
@@ -147,6 +145,6 @@ esp_err_t esp_modem_netif_set_default_handlers(void *h, esp_netif_t * esp_netif)
 
 set_event_failed:
     ESP_LOGE(TAG, "Failed to register event handlers");
-    esp_modem_netif_clear_default_handlers(driver);
+    esp_modem_netif_clear_default_handlers();
     return ESP_FAIL;
 }

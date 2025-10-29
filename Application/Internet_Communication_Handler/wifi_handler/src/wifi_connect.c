@@ -33,7 +33,6 @@ static volatile uint8_t s_reconnect_request =
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
 static esp_netif_t *s_wifi_netif = NULL;
-static bool first_init_done = false;
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -131,7 +130,6 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
-  first_init_done = true;
 }
 
 /*
@@ -141,7 +139,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
  */
 static void wifi_config_task(void *arg) {
   ESP_LOGI(TAG, "WiFi config task started, listening for config from queue");
-  uint16_t scan_counter = 0;
+  // uint16_t scan_counter = 0;
   wifi_config_data_t wifi_cfg;
 
   while (!wifi_connect_task_close) {

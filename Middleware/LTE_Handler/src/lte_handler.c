@@ -368,7 +368,7 @@ esp_err_t lte_handler_deinit(void) {
 
   // Cleanup netif and modem adapter
   if (ctx->modem_netif_adapter) {
-    esp_modem_netif_clear_default_handlers(ctx->modem_netif_adapter);
+    esp_modem_netif_clear_default_handlers();
     esp_modem_netif_teardown(ctx->modem_netif_adapter);
     ctx->modem_netif_adapter = NULL;
   }

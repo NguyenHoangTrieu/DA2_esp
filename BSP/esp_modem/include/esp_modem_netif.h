@@ -24,7 +24,7 @@ void esp_modem_netif_teardown(void *h);
  *
  * @param h pointer to the esp-netif adapter for esp-modem
  */
-esp_err_t esp_modem_netif_clear_default_handlers(void *h);
+esp_err_t esp_modem_netif_clear_default_handlers(void);
 
 /**
  * @brief Setups default handlers for esp-modem lifecycle
@@ -32,7 +32,7 @@ esp_err_t esp_modem_netif_clear_default_handlers(void *h);
  * @param h pointer to the esp-netif adapter for esp-modem
  * @param esp_netif pointer corresponding esp-netif instance
  */
-esp_err_t esp_modem_netif_set_default_handlers(void *h, esp_netif_t * esp_netif);
+esp_err_t esp_modem_netif_set_default_handlers(esp_netif_t * esp_netif);
 
 
 #endif
