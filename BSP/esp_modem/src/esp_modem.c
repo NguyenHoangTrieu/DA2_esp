@@ -673,8 +673,6 @@ static esp_err_t esp_modem_dte_deinit(modem_dte_t *dte)
     return ESP_OK;
 }
 
-
-
 modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config)
 {
     esp_err_t res;
@@ -784,16 +782,14 @@ err_dte_mem:
     return NULL;
 }
 
-esp_err_t esp_modem_set_event_handler(modem_dte_t *dte, esp_event_handler_t handler, int32_t event_id, void *handler_args)
+esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, void *handler_args)
 {
-    esp_modem_dte_t *esp_dte = __containerof(dte, esp_modem_dte_t, parent);
-    return esp_event_handler_register_with(esp_dte->event_loop_hdl, ESP_MODEM_EVENT, event_id, handler, handler_args);
+    return esp_event_handler_register(ESP_MODEM_EVENT, ESP_EVENT_ANY_ID, handler, handler_args);
 }
 
-esp_err_t esp_modem_remove_event_handler(modem_dte_t *dte, esp_event_handler_t handler)
+esp_err_t esp_modem_remove_event_handler(esp_event_handler_t handler)
 {
-    esp_modem_dte_t *esp_dte = __containerof(dte, esp_modem_dte_t, parent);
-    return esp_event_handler_unregister_with(esp_dte->event_loop_hdl, ESP_MODEM_EVENT, ESP_EVENT_ANY_ID, handler);
+    return esp_event_handler_unregister(ESP_MODEM_EVENT, ESP_EVENT_ANY_ID, handler);
 }
 
 esp_err_t esp_modem_start_ppp(modem_dte_t *dte)

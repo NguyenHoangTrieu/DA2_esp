@@ -179,8 +179,7 @@ static esp_err_t modem_init(void) {
   }
 
   // Register event handler for modem events
-  ESP_ERROR_CHECK(esp_modem_set_event_handler(ctx->dte, modem_event_handler,
-                                              ESP_EVENT_ANY_ID, NULL));
+  ESP_ERROR_CHECK(esp_modem_set_event_handler(modem_event_handler, NULL));
 
   ESP_LOGI(TAG, "DCE init...");
   ctx->dce = MODEM_INIT_FUNC(ctx->dte);
@@ -388,6 +387,8 @@ esp_err_t lte_handler_deinit(void) {
     ctx->dte->deinit(ctx->dte);
     ctx->dte = NULL;
   }
+  // Unregister modem event handler
+  esp_modem_remove_event_handler(modem_event_handler);
 
   // Unregister event handlers
   esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event);
