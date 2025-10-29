@@ -299,7 +299,7 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config) {
   set_state(LTE_STATE_INITIALIZING);
   ctx->initialized = true;
   ctx->reconnect_attempts = 0;
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  // ESP_ERROR_CHECK(esp_event_loop_create_default());
   // Initialize ESP netif and register event handlers
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID,
                                              &on_ip_event, NULL));
@@ -393,7 +393,7 @@ esp_err_t lte_handler_deinit(void) {
   esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event);
   esp_event_handler_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID,
                                &on_ppp_changed);
-  esp_event_loop_delete_default();
+  // esp_event_loop_delete_default();
 
   if (ctx->event_group)
     vEventGroupDelete(ctx->event_group);

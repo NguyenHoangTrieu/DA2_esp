@@ -33,6 +33,7 @@ static volatile uint8_t s_reconnect_request =
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
 static esp_netif_t *s_wifi_netif = NULL;
+static bool first_init_done = false;
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -83,9 +84,10 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
 
   ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
            custom_pass);
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
-  s_wifi_netif = esp_netif_create_default_wifi_sta();
+  if (!first_init_done) {
+    ESP_ERROR_CHECK(esp_netif_init());
+    s_wifi_netif = esp_netif_create_default_wifi_sta();
+  }
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -119,7 +121,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   // Wait for either successful connection or maximum retry/failure
   EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                          WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                         pdFALSE, pdFALSE, 1000);
+                                         pdFALSE, pdFALSE, portMAX_DELAY);
 
   if (bits & WIFI_CONNECTED_BIT) {
     ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s", custom_ssid,
@@ -131,6 +133,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
+  first_init_done = true;
 }
 
 /*
@@ -228,10 +231,12 @@ void wifi_connect_task_stop(void) {
   ESP_LOGI(TAG, "Stopping WiFi connection task");
   ESP_ERROR_CHECK(esp_wifi_stop());
   ESP_ERROR_CHECK(esp_wifi_deinit());
-  ESP_ERROR_CHECK(esp_event_loop_delete_default());
-  if (s_wifi_netif) {
-    esp_netif_destroy(s_wifi_netif);
-    s_wifi_netif = NULL;
-    ESP_LOGI(TAG, "Destroyed existing netif");
+  esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                        &event_handler);
+  esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                        &event_handler);
+  if(s_wifi_netif) {
+      esp_netif_destroy(s_wifi_netif);
+      s_wifi_netif = NULL;
   }
 }

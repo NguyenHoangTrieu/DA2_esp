@@ -127,6 +127,12 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
             lte_connect_task_stop();
             wifi_connect_task_start();
             break;
+        case CONFIG_INTERNET_ETHERNET:
+            // lte_connect_task_stop();
+            wifi_connect_task_stop();
+            // Ethernet task start can be added here
+            ESP_LOGI(TAG, "Ethernet selected - no task implemented");
+            break;
         default:
             ESP_LOGW(TAG, "Unknown internet type: %d", *current_internet_type);
             break;
@@ -149,6 +155,8 @@ void app_main(void) {
     setup_gpio45_interrupt();
 
     main_task_handle = xTaskGetCurrentTaskHandle();
+
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
     
     // Register UART mode switch callback
     uart_handler_register_mode_callback(uart_mode_switch_callback);

@@ -376,7 +376,7 @@ static void uart_event_task_entry(void *param)
             }
         }
         /* Drive the event loop */
-        esp_event_loop_run(esp_dte->event_loop_hdl, pdMS_TO_TICKS(50));
+        // esp_event_loop_run(esp_dte->event_loop_hdl, pdMS_TO_TICKS(50));
     }
     vTaskDelete(NULL);
 }
@@ -661,7 +661,7 @@ static esp_err_t esp_modem_dte_deinit(modem_dte_t *dte)
     /* Delete semaphore */
     vSemaphoreDelete(esp_dte->process_sem);
     /* Delete event loop */
-    esp_event_loop_delete(esp_dte->event_loop_hdl);
+    // esp_event_loop_delete(esp_dte->event_loop_hdl);
     /* Uninstall UART Driver */
     uart_driver_delete(esp_dte->uart_port);
     /* Free memory */
@@ -745,11 +745,11 @@ modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config)
 
     MODEM_CHECK(res == ESP_OK, "config uart pattern failed", err_uart_pattern);
     /* Create Event loop */
-    esp_event_loop_args_t loop_args = {
-        .queue_size = ESP_MODEM_EVENT_QUEUE_SIZE,
-        .task_name = NULL
-    };
-    MODEM_CHECK(esp_event_loop_create(&loop_args, &esp_dte->event_loop_hdl) == ESP_OK, "create event loop failed", err_eloop);
+    // esp_event_loop_args_t loop_args = {
+    //     .queue_size = ESP_MODEM_EVENT_QUEUE_SIZE,
+    //     .task_name = NULL
+    // };
+    // MODEM_CHECK(esp_event_loop_create(&loop_args, &esp_dte->event_loop_hdl) == ESP_OK, "create event loop failed", err_eloop);
     /* Create semaphore */
     esp_dte->process_sem = xSemaphoreCreateBinary();
     MODEM_CHECK(esp_dte->process_sem, "create process semaphore failed", err_sem);
@@ -770,8 +770,9 @@ modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config)
 err_tsk_create:
     vSemaphoreDelete(esp_dte->process_sem);
 err_sem:
-    esp_event_loop_delete(esp_dte->event_loop_hdl);
-err_eloop:
+    // esp_event_loop_delete(esp_dte->event_loop_hdl);
+    // nothing_func();
+    // err_eloop:
     uart_disable_pattern_det_intr(esp_dte->uart_port);
 err_uart_pattern:
     uart_driver_delete(esp_dte->uart_port);
