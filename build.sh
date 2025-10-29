@@ -13,9 +13,9 @@ idf.py build
 # cp -r build/DA2_esp.bin /mnt/c/embedded/esp_flash_folder/da2_esp
 # cp -r build/bootloader/bootloader.bin /mnt/c/embedded/esp_flash_folder/da2_esp
 # cp -r build/partition_table/partition-table.bin /mnt/c/embedded/esp_flash_folder/da2_esp
-cp -r build/DA2_esp.bin build_file
-cp -r build/bootloader/bootloader.bin build_file
-cp -r build/partition_table/partition-table.bin build_file
+cp -r build/DA2_esp.bin flash_file
+cp -r build/bootloader/bootloader.bin flash_file
+cp -r build/partition_table/partition-table.bin flash_file
 
 # 4. (Optional) flash firmware to device
 # idf.py -p /dev/ttyUSB0 flash
