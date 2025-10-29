@@ -16,7 +16,7 @@ dependencies:
   #   public: true
   espressif/esp_tinyusb: '*'
   espressif/led_strip: '*'
-  espressif/tinyusb: '*'
+  # espressif/tinyusb: '*'
   # espressif/esp_wifi_remote: '*'
   # espressif/esp_hosted: '*'
   # espressif/esp-extconn: '*'
