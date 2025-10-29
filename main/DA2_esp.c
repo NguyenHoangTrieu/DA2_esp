@@ -128,7 +128,7 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
             wifi_connect_task_start();
             break;
         case CONFIG_INTERNET_ETHERNET:
-            // lte_connect_task_stop();
+            lte_connect_task_stop();
             wifi_connect_task_stop();
             // Ethernet task start can be added here
             ESP_LOGI(TAG, "Ethernet selected - no task implemented");
