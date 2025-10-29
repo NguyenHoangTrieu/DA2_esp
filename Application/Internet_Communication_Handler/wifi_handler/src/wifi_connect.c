@@ -84,10 +84,8 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
 
   ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
            custom_pass);
-  if (!first_init_done) {
-    ESP_ERROR_CHECK(esp_netif_init());
-    s_wifi_netif = esp_netif_create_default_wifi_sta();
-  }
+  ESP_ERROR_CHECK(esp_netif_init());
+  s_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
