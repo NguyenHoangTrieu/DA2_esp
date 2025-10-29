@@ -15,7 +15,7 @@
  * - Mobifone (Vietnam): "m-wap"
  */
 #ifndef CONFIG_COMPONENT_MODEM_APN
-#define CONFIG_COMPONENT_MODEM_APN "m-wap"
+#define CONFIG_COMPONENT_MODEM_APN "m3-world"
 #endif
 
 /**
