@@ -120,6 +120,9 @@ void lte_connect_task_start(void)
  */
 void lte_connect_task_stop(void)
 {
+    if (lte_connect_task_handle == NULL) {
+        return;
+    }
     lte_connect_task_close = true;
     if (lte_config_task_handle != NULL) {
         vTaskDelay(pdMS_TO_TICKS(500)); // Allow task cleanup

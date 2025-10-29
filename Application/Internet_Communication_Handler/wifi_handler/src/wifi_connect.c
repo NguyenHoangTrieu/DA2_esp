@@ -223,6 +223,9 @@ void wifi_connect_task_start(void) {
 }
 
 void wifi_connect_task_stop(void) {
+  if (wifi_connect_task_close) {
+    return;
+  }
   wifi_connect_task_close = true;
   ESP_LOGI(TAG, "Stopping WiFi connection task");
   ESP_ERROR_CHECK(esp_wifi_stop());
