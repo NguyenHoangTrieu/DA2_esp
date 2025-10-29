@@ -323,8 +323,7 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config) {
 
   // Setup modem netif adapter
   ctx->modem_netif_adapter = esp_modem_netif_setup(ctx->dte);
-  esp_modem_netif_set_default_handlers(ctx->modem_netif_adapter,
-                                       ctx->esp_netif);
+  esp_modem_netif_set_default_handlers(ctx->esp_netif);
 
   // Set authentication if configured
 #if defined(CONFIG_LWIP_PPP_PAP_SUPPORT) ||                                    \
