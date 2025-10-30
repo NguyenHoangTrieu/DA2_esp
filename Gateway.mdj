@@ -5427,7 +5427,7 @@
 											"parentStyle": true,
 											"left": 477,
 											"top": 1462,
-											"width": 80.45361328125,
+											"width": 80.802734375,
 											"height": 13,
 											"text": "ESP MODEM"
 										},
@@ -5441,7 +5441,7 @@
 											"parentStyle": true,
 											"left": 477,
 											"top": 1477,
-											"width": 80.45361328125,
+											"width": 80.802734375,
 											"height": 13,
 											"text": "(from BSP)"
 										},
@@ -5464,7 +5464,7 @@
 									"parentStyle": true,
 									"left": 472,
 									"top": 1455,
-									"width": 90.45361328125,
+									"width": 90.802734375,
 									"height": 40,
 									"stereotypeLabel": {
 										"$ref": "AAAAAAGaFmpxD08qQzU="
@@ -5488,7 +5488,7 @@
 							"containerChangeable": true,
 							"left": 472,
 							"top": 1440,
-							"width": 89.45361328125,
+							"width": 89.802734375,
 							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
