@@ -26,8 +26,7 @@
 #define SLAVE_TX_PIN 42
 
 // UART configuration
-#define UART_NUM_SLAVE 1
-#define UART_NUM_DEBUG 2
+#define UART_NUM_SLAVE 2
 #define UART_BAUD_RATE 115200
 #define UART_BUFFER_SIZE 1024
 

@@ -109,13 +109,13 @@ void reset_slave_normal_mode(void) {
   esp_rom_printf("[%s] Slave reset to normal mode\n", TAG);
 }
 
-// Configure UART1 for slave communication using LL
-void configure_uart1_for_slave(void) {
-  periph_ll_enable_clk_clear_rst(PERIPH_UART1_MODULE);
+// Configure UART2 for slave communication using LL
+void configure_uart2_for_slave(void) {
+  periph_ll_enable_clk_clear_rst(PERIPH_UART2_MODULE);
 
   uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
   if (!uart) {
-    esp_rom_printf("[%s] UART1 hardware not found!\n", TAG);
+    esp_rom_printf("[%s] UART2 hardware not found!\n", TAG);
     return;
   }
 
@@ -151,82 +151,24 @@ void configure_uart1_for_slave(void) {
   esp_rom_gpio_connect_in_signal(SLAVE_TX_PIN, U1RXD_IN_IDX, false);
   esp_rom_gpio_pad_select_gpio(SLAVE_TX_PIN);
 
-  esp_rom_printf("[%s] UART1: %d baud, 8N1, TX=GPIO%d, RX=GPIO%d\n", TAG,
+  esp_rom_printf("[%s] UART2: %d baud, 8N1, TX=GPIO%d, RX=GPIO%d\n", TAG,
                  baud_rate, SLAVE_RX_PIN, SLAVE_TX_PIN);
 }
 
-// UART1 TX one byte using LL
-void uart1_tx_one_char(uint8_t c) {
+// UART2 TX one byte using LL
+void uart2_tx_one_char(uint8_t c) {
   uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
   uart_ll_write_txfifo(uart, &c, 1);
 }
 
-// UART1 RX one byte using LL
-int uart1_rx_one_char(uint8_t *c) {
+// UART2 RX one byte using LL
+int uart2_rx_one_char(uint8_t *c) {
   uart_dev_t *uart = uart_ll_get_hw(UART_NUM_SLAVE);
   if (uart_ll_get_rxfifo_len(uart) == 0) {
     return -1;
   }
   uart_ll_read_rxfifo(uart, c, 1);
   return 0;
-}
-
-// Configure UART2 for debug using LL
-void configure_uart2_debug(void) {
-
-  periph_ll_enable_clk_clear_rst(PERIPH_UART2_MODULE);
-
-  uart_dev_t *uart = uart_ll_get_hw(UART_NUM_DEBUG);
-  if (!uart) {
-    esp_rom_printf("[%s] UART2 hardware not found!\n", TAG);
-    return;
-  }
-
-  const uint32_t sclk_freq = 40000000;
-  const uint32_t baud_rate = UART_BAUD_RATE;
-
-  // Reset FIFOs
-  uart_ll_txfifo_rst(uart);
-  uart_ll_rxfifo_rst(uart);
-
-  // Set baudrate
-  uart_ll_set_baudrate(uart, baud_rate, sclk_freq);
-
-  // Configure 8N1
-  uart_ll_set_data_bit_num(uart, UART_DATA_8_BITS);
-  uart_ll_set_stop_bits(uart, UART_STOP_BITS_1);
-  uart_ll_set_parity(uart, UART_PARITY_DISABLE);
-
-  // Disable flow control
-  uart_ll_set_hw_flow_ctrl(uart, UART_HW_FLOWCTRL_DISABLE, 0);
-
-  // Set TX idle
-  uart_ll_set_tx_idle_num(uart, 0);
-
-  // Clear interrupts
-  uart_ll_clr_intsts_mask(uart, UART_LL_INTR_MASK);
-  uart_ll_disable_intr_mask(uart, UART_LL_INTR_MASK);
-
-  // Map GPIO
-  esp_rom_gpio_connect_out_signal(DEBUG_UART_TX_PIN, U2TXD_OUT_IDX, false,
-                                  false);
-  esp_rom_gpio_pad_select_gpio(DEBUG_UART_TX_PIN);
-
-  esp_rom_printf("[%s] UART2: %d baud, 8N1, TX=GPIO%d\n", TAG, baud_rate,
-                 DEBUG_UART_TX_PIN);
-}
-
-// UART2 TX one byte using LL
-void uart2_tx_one_char(uint8_t c) {
-  uart_dev_t *uart = uart_ll_get_hw(UART_NUM_DEBUG);
-  uart_ll_write_txfifo(uart, &c, 1);
-}
-
-// UART2 print string
-void uart2_print_string(const char *str) {
-  int data_len = strlen(str);
-  uart_ll_write_txfifo(uart_ll_get_hw(UART_NUM_DEBUG), (const uint8_t *)str,
-                       data_len);
 }
 
 /**
@@ -241,14 +183,14 @@ void uart_bridge_passthrough(void) {
   uint32_t wdt_feed_counter = 0;
   uint32_t max_idle = 5000;
 
-  configure_uart1_for_slave();
+  configure_uart2_for_slave();
   esp_rom_printf("[%s] UART bridge active\n", TAG);
 
   while (1) {
     bool data_activity = false;
     // Forward: PC -> Slave
     if (uart0_rx_one_char(&byte) == 0) {
-      uart1_tx_one_char(byte);
+      uart2_tx_one_char(byte);
       pc_to_slave++;
       data_activity = true;
       if (byte == SLIP_END) {
@@ -257,7 +199,7 @@ void uart_bridge_passthrough(void) {
     }
 
     // Forward: Slave -> PC
-    if (uart1_rx_one_char(&byte) == 0) {
+    if (uart2_rx_one_char(&byte) == 0) {
       uart0_tx_one_char(byte);
       slave_to_pc++;
       data_activity = true;
