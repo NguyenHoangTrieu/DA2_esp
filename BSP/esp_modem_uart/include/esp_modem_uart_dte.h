@@ -1,5 +1,5 @@
-#ifndef _ESP_MODEM_DTE_H_
-#define _ESP_MODEM_DTE_H_
+#ifndef ESP_MODEM_UART_DTE_H
+#define ESP_MODEM_UART_DTE_H
 
 #include "esp_types.h"
 #include "esp_err.h"

@@ -1,9 +1,9 @@
-#ifndef _ESP_MODEM_DCE_H_
-#define _ESP_MODEM_DCE_H_
+#ifndef ESP_MODEM_UART_DCE_H
+#define ESP_MODEM_UART_DCE_H
 
 #include "esp_types.h"
 #include "esp_err.h"
-#include "esp_modem_dte.h"
+#include "esp_modem_uart_dte.h"
 
 typedef struct modem_dce modem_dce_t;
 typedef struct modem_dte modem_dte_t;
@@ -117,4 +117,4 @@ struct modem_dce {
     esp_err_t (*setup_cmux)(modem_dce_t *dce);                              /*!< Setup CMUX */
 };
 
-#endif // _ESP_MODEM_DCE_H_
+#endif // _ESP_MODEM_UART_DCE_H_

@@ -23,9 +23,9 @@ static esp_err_t bg96_handle_csq(modem_dce_t *dce, const char *line)
     esp_err_t err = ESP_FAIL;
     bg96_modem_dce_t *bg96_dce = __containerof(dce, bg96_modem_dce_t, parent);
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else if (!strncmp(line, "+CSQ", strlen("+CSQ"))) {
         /* store value of rssi and ber */
         uint32_t **csq = bg96_dce->priv_resource;
@@ -44,9 +44,9 @@ static esp_err_t bg96_handle_cbc(modem_dce_t *dce, const char *line)
     esp_err_t err = ESP_FAIL;
     bg96_modem_dce_t *bg96_dce = __containerof(dce, bg96_modem_dce_t, parent);
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else if (!strncmp(line, "+CBC", strlen("+CBC"))) {
         /* store value of bcs, bcl, voltage */
         uint32_t **cbc = bg96_dce->priv_resource;
@@ -64,11 +64,11 @@ static esp_err_t bg96_handle_exit_data_mode(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_NO_CARRIER)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     }
     return err;
 }
@@ -81,9 +81,9 @@ static esp_err_t bg96_handle_atd_ppp(modem_dce_t *dce, const char *line)
     ESP_LOGI("DCE_TAG", "ATD response: %s", line);
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_CONNECT)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     }
     return err;
 }
@@ -95,9 +95,9 @@ static esp_err_t bg96_handle_cgmm(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else {
         int len = snprintf(dce->name, MODEM_MAX_NAME_LENGTH, "%s", line);
         if (len > 2) {
@@ -116,9 +116,9 @@ static esp_err_t bg96_handle_cgsn(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else {
         int len = snprintf(dce->imei, MODEM_IMEI_LENGTH + 1, "%s", line);
         if (len > 2) {
@@ -137,9 +137,9 @@ static esp_err_t bg96_handle_cimi(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else {
         int len = snprintf(dce->imsi, MODEM_IMSI_LENGTH + 1, "%s", line);
         if (len > 2) {
@@ -158,9 +158,9 @@ static esp_err_t bg96_handle_cops(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else if (!strncmp(line, "+COPS", strlen("+COPS"))) {
         /* there might be some random spaces in operator's name, we can not use sscanf to parse the result */
         /* strtok will break the string, we need to create a copy */
@@ -198,7 +198,7 @@ static esp_err_t bg96_handle_power_down(modem_dce_t *dce, const char *line)
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
         err = ESP_OK;
     } else if (strstr(line, MODEM_RESULT_CODE_POWERDOWN)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     }
     return err;
 }
@@ -262,9 +262,9 @@ static esp_err_t bg96_handle_at_cmux(modem_dce_t *dce, const char *line)
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
         ESP_LOGI(DCE_TAG, "CMUX command success");
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     }
     return err;
 }
@@ -441,7 +441,7 @@ static esp_err_t bg96_handle_pin(modem_dce_t *dce, const char *line)
 {
     esp_err_t err = ESP_FAIL;
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } 
     return err;
 }
@@ -459,7 +459,7 @@ static esp_err_t bg96_handle_ask_pin(modem_dce_t *dce, const char *line)
         dce->needpin = true;
     }
         if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } 
     return err;
 }
@@ -511,31 +511,31 @@ modem_dce_t *bg96_init(modem_dte_t *dte)
     dte->dce = &(bg96_dce->parent);
     /* Bind methods */
     bg96_dce->parent.handle_line = NULL;
-    bg96_dce->parent.sync = esp_modem_dce_sync;
-    bg96_dce->parent.echo_mode = esp_modem_dce_echo;
-    bg96_dce->parent.store_profile = esp_modem_dce_store_profile;
-    bg96_dce->parent.set_flow_ctrl = esp_modem_dce_set_flow_ctrl;
-    bg96_dce->parent.define_pdp_context = esp_modem_dce_define_pdp_context;
-    bg96_dce->parent.hang_up = esp_modem_dce_hang_up;
+    bg96_dce->parent.sync = esp_modem_uart_dce_sync;
+    bg96_dce->parent.echo_mode = esp_modem_uart_dce_echo;
+    bg96_dce->parent.store_profile = esp_modem_uart_dce_store_profile;
+    bg96_dce->parent.set_flow_ctrl = esp_modem_uart_dce_set_flow_ctrl;
+    bg96_dce->parent.define_pdp_context = esp_modem_uart_dce_define_pdp_context;
+    bg96_dce->parent.hang_up = esp_modem_uart_dce_hang_up;
     bg96_dce->parent.get_signal_quality = bg96_get_signal_quality;
     bg96_dce->parent.get_battery_status = bg96_get_battery_status;
     bg96_dce->parent.set_working_mode = bg96_set_working_mode;
-//    esp_dte->parent.change_mode = esp_modem_dte_change_mode;
+//    esp_dte->parent.change_mode = esp_modem_uart_dte_change_mode;
     bg96_dce->parent.power_down = bg96_power_down;
     bg96_dce->parent.needpin = false;
     bg96_dce->parent.deinit = bg96_deinit;
     /* Sync between DTE and DCE */
-    DCE_CHECK(esp_modem_dce_sync(&(bg96_dce->parent)) == ESP_OK, "sync failed", err_io);
+    DCE_CHECK(esp_modem_uart_dce_sync(&(bg96_dce->parent)) == ESP_OK, "sync failed", err_io);
 
     /* CMUX */
     if (bg96_dce->parent.dte->cmux) {
         ESP_LOGI(DCE_TAG, "CMUX setup");
- //         esp_modem_start_cmux(dte); 
+ //         esp_modem_uart_start_cmux(dte); 
  //       DCE_CHECK(bg96_dce->parent.dte->change_mode(bg96_dce->parent.dte, 2) == ESP_OK, "CMUX failed", err_io);
     }
 
     /* Close echo */
-    DCE_CHECK(esp_modem_dce_echo(&(bg96_dce->parent), false) == ESP_OK, "close echo mode failed", err_io);
+    DCE_CHECK(esp_modem_uart_dce_echo(&(bg96_dce->parent), false) == ESP_OK, "close echo mode failed", err_io);
     /* Get Module name */
     DCE_CHECK(bg96_get_module_name(bg96_dce) == ESP_OK, "get module name failed", err_io);
     /* Set PIN */

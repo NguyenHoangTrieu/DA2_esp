@@ -1,5 +1,5 @@
-#ifndef  _ESP_MODEM_COMPAT_H_
-#define  _ESP_MODEM_COMPAT_H_
+#ifndef  ESP_MODEM_UART_COMPAT_H
+#define  ESP_MODEM_UART_COMPAT_H
 
 #include "lwip/ip.h"
 
@@ -12,7 +12,7 @@ typedef enum {
     MODEM_EVENT_PPP_DISCONNECT = 0x102,
     MODEM_EVENT_PPP_STOP       = 0x103,
     MODEM_EVENT_UNKNOWN        = 0x104,
-} esp_modem_compat_event_t;
+} esp_modem_uart_compat_event_t;
 
 /**
  * @brief PPPoS Client IP Information backward compatible version
@@ -27,18 +27,18 @@ typedef struct {
     } ppp_client_ip_info_t;
 
 /**
- * @brief Backward compatible version of esp_modem_set_event_handler()
+ * @brief Backward compatible version of esp_modem_uart_set_event_handler()
  */
-esp_err_t esp_modem_add_event_handler(modem_dte_t *dte, esp_event_handler_t handler, void *handler_args)  __attribute__ ((deprecated));
+esp_err_t esp_modem_uart_add_event_handler(modem_dte_t *dte, esp_event_handler_t handler, void *handler_args)  __attribute__ ((deprecated));
 
 /**
- * @brief Backward compatible version of creating esp-netif(PPP) and attaching to esp_modem_start_ppp()
+ * @brief Backward compatible version of creating esp-netif(PPP) and attaching to esp_modem_uart_start_ppp()
  */
-esp_err_t esp_modem_setup_ppp(modem_dte_t *dte) __attribute__ ((deprecated));
+esp_err_t esp_modem_uart_setup_ppp(modem_dte_t *dte) __attribute__ ((deprecated));
 
 /**
- * @brief Backward compatible version of deleting esp-netif and  esp_modem_stop_ppp()
+ * @brief Backward compatible version of deleting esp-netif and  esp_modem_uart_stop_ppp()
  */
-esp_err_t esp_modem_exit_ppp(modem_dte_t *dte) __attribute__ ((deprecated));
+esp_err_t esp_modem_uart_exit_ppp(modem_dte_t *dte) __attribute__ ((deprecated));
 
 #endif

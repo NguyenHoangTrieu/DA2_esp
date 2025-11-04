@@ -22,9 +22,9 @@ static esp_err_t sim7600_handle_cbc(modem_dce_t *dce, const char *line)
     esp_err_t err = ESP_FAIL;
     bg96_modem_dce_t *bg96_dce = __containerof(dce, bg96_modem_dce_t, parent);
     if (strstr(line, MODEM_RESULT_CODE_SUCCESS)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_SUCCESS);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_SUCCESS);
     } else if (strstr(line, MODEM_RESULT_CODE_ERROR)) {
-        err = esp_modem_process_command_done(dce, MODEM_STATE_FAIL);
+        err = esp_modem_uart_process_command_done(dce, MODEM_STATE_FAIL);
     } else if (!strncmp(line, "+CBC", strlen("+CBC"))) {
         /* store value of bcs, bcl, voltage */
         int32_t **cbc = bg96_dce->priv_resource;
@@ -76,6 +76,6 @@ modem_dce_t *sim7600_init(modem_dte_t *dte)
 {
     modem_dce_t *dce = bg96_init(dte);
     dte->dce->get_battery_status = sim7600_get_battery_status;
-    dte->dce->setup_cmux = esp_modem_dce_setup_cmux;
+    dte->dce->setup_cmux = esp_modem_uart_dce_setup_cmux;
     return dce;
 }

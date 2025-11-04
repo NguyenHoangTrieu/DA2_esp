@@ -1,7 +1,7 @@
-#ifndef _ESP_MODEM_DCE_SERVICE_H_
-#define _ESP_MODEM_DCE_SERVICE_H_
+#ifndef ESP_MODEM_UART_DCE_SERVICE_H
+#define ESP_MODEM_UART_DCE_SERVICE_H
 
-#include "esp_modem_dce.h"
+#include "esp_modem_uart_dce.h"
 
 /**
  * @brief Indicate that processing current command has done
@@ -12,7 +12,7 @@
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-static inline esp_err_t esp_modem_process_command_done(modem_dce_t *dce, modem_state_t state)
+static inline esp_err_t esp_modem_uart_process_command_done(modem_dce_t *dce, modem_state_t state)
 {
     dce->state = state;
     return dce->dte->process_cmd_done(dce->dte);
@@ -43,7 +43,7 @@ static inline void strip_cr_lf_tail(char *str, uint32_t len)
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_handle_response_default(modem_dce_t *dce, const char *line);
+esp_err_t esp_modem_uart_dce_handle_response_default(modem_dce_t *dce, const char *line);
 
 /**
  * @brief Syncronization
@@ -53,7 +53,7 @@ esp_err_t esp_modem_dce_handle_response_default(modem_dce_t *dce, const char *li
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_sync(modem_dce_t *dce);
+esp_err_t esp_modem_uart_dce_sync(modem_dce_t *dce);
 
 /**
  * @brief Enable or not echo mode of DCE
@@ -64,7 +64,7 @@ esp_err_t esp_modem_dce_sync(modem_dce_t *dce);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_echo(modem_dce_t *dce, bool on);
+esp_err_t esp_modem_uart_dce_echo(modem_dce_t *dce, bool on);
 
 /**
  * @brief Store current parameter setting in the user profile
@@ -74,7 +74,7 @@ esp_err_t esp_modem_dce_echo(modem_dce_t *dce, bool on);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_store_profile(modem_dce_t *dce);
+esp_err_t esp_modem_uart_dce_store_profile(modem_dce_t *dce);
 
 /**
  * @brief Set flow control mode of DCE in data mode
@@ -85,7 +85,7 @@ esp_err_t esp_modem_dce_store_profile(modem_dce_t *dce);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_set_flow_ctrl(modem_dce_t *dce, modem_flow_ctrl_t flow_ctrl);
+esp_err_t esp_modem_uart_dce_set_flow_ctrl(modem_dce_t *dce, modem_flow_ctrl_t flow_ctrl);
 
 /**
  * @brief Setup CMUX mode of DCE
@@ -96,7 +96,7 @@ esp_err_t esp_modem_dce_set_flow_ctrl(modem_dce_t *dce, modem_flow_ctrl_t flow_c
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_setup_cmux(modem_dce_t *dce);
+esp_err_t esp_modem_uart_dce_setup_cmux(modem_dce_t *dce);
 
 /**
  * @brief Define PDP context
@@ -109,7 +109,7 @@ esp_err_t esp_modem_dce_setup_cmux(modem_dce_t *dce);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_define_pdp_context(modem_dce_t *dce, uint32_t cid, const char *type, const char *apn);
+esp_err_t esp_modem_uart_dce_define_pdp_context(modem_dce_t *dce, uint32_t cid, const char *type, const char *apn);
 
 /**
  * @brief Hang up
@@ -119,6 +119,6 @@ esp_err_t esp_modem_dce_define_pdp_context(modem_dce_t *dce, uint32_t cid, const
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_dce_hang_up(modem_dce_t *dce);
+esp_err_t esp_modem_uart_dce_hang_up(modem_dce_t *dce);
 
 #endif

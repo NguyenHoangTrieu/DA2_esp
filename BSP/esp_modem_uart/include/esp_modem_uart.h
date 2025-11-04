@@ -1,28 +1,28 @@
-#ifndef _ESP_MODEM_H_
-#define _ESP_MODEM_H_
+#ifndef ESP_MODEM_UART_H
+#define ESP_MODEM_UART_H
 
-#include "esp_modem_dce.h"
-#include "esp_modem_dte.h"
+#include "esp_modem_uart_dce.h"
+#include "esp_modem_uart_dte.h"
 #include "esp_event.h"
 #include "driver/uart.h"
-#include "esp_modem_compat.h"
-#include "esp_modem_config.h"
+#include "esp_modem_uart_compat.h"
+#include "esp_modem_uart_config.h"
 
 /**
  * @brief Declare Event Base for ESP Modem
  *
  */
-ESP_EVENT_DECLARE_BASE(ESP_MODEM_EVENT);
+ESP_EVENT_DECLARE_BASE(ESP_MODEM_UART_EVENT);
 
 /**
  * @brief ESP Modem Event
  *
  */
 typedef enum {
-    ESP_MODEM_EVENT_PPP_START = 0,       /*!< ESP Modem Start PPP Session */
-    ESP_MODEM_EVENT_PPP_STOP  = 3,       /*!< ESP Modem Stop PPP Session*/
-    ESP_MODEM_EVENT_UNKNOWN   = 4        /*!< ESP Modem Unknown Response */
-} esp_modem_event_t;
+    ESP_MODEM_UART_EVENT_PPP_START = 0,       /*!< ESP Modem Start PPP Session */
+    ESP_MODEM_UART_EVENT_PPP_STOP  = 3,       /*!< ESP Modem Stop PPP Session*/
+    ESP_MODEM_UART_EVENT_UNKNOWN   = 4        /*!< ESP Modem Unknown Response */
+} esp_modem_uart_event_t;
 
 /**
  * @brief ESP Modem DTE Configuration
@@ -47,36 +47,36 @@ typedef struct {
     int event_task_priority;        /*!< UART Event Task Priority */
     int line_buffer_size;           /*!< Line buffer size for command mode */
     bool cmux;
-} esp_modem_dte_config_t;
+} esp_modem_uart_dte_config_t;
 
 /**
  * @brief Type used for reception callback
  *
  */
-typedef esp_err_t (*esp_modem_on_receive)(void *buffer, size_t len, void *context);
+typedef esp_err_t (*esp_modem_uart_on_receive)(void *buffer, size_t len, void *context);
 
 /**
  * @brief ESP Modem DTE Default Configuration
  *
  */
-#define ESP_MODEM_DTE_DEFAULT_CONFIG()                                          \
+#define ESP_MODEM_UART_DTE_DEFAULT_CONFIG()                                     \
     {                                                                           \
-        .port_num = ESP_MODEM_CONFIG_UART_PORT_NUM,                             \
-        .data_bits = ESP_MODEM_CONFIG_UART_DATA_BITS,                           \
-        .stop_bits = ESP_MODEM_CONFIG_UART_STOP_BITS,                           \
-        .parity = ESP_MODEM_CONFIG_UART_PARITY,                                 \
-        .baud_rate = ESP_MODEM_CONFIG_UART_BAUD_RATE,                           \
-        .flow_control = ESP_MODEM_CONFIG_UART_FLOW_CONTROL,                     \
-        .tx_io_num = ESP_MODEM_CONFIG_UART_TX_PIN,                              \
-        .rx_io_num = ESP_MODEM_CONFIG_UART_RX_PIN,                              \
-        .rts_io_num = ESP_MODEM_CONFIG_UART_RTS_PIN,                            \
-        .cts_io_num = ESP_MODEM_CONFIG_UART_CTS_PIN,                            \
-        .rx_buffer_size = ESP_MODEM_CONFIG_UART_RX_BUFFER_SIZE,                 \
-        .tx_buffer_size = ESP_MODEM_CONFIG_UART_TX_BUFFER_SIZE,                 \
-        .pattern_queue_size = ESP_MODEM_CONFIG_UART_PATTERN_QUEUE_SIZE,         \
-        .event_queue_size = ESP_MODEM_CONFIG_UART_EVENT_QUEUE_SIZE,             \
-        .event_task_stack_size = ESP_MODEM_CONFIG_UART_EVENT_TASK_STACK_SIZE,   \
-        .event_task_priority = ESP_MODEM_CONFIG_UART_EVENT_TASK_PRIORITY,       \
+        .port_num = ESP_MODEM_UART_CONFIG_UART_PORT_NUM,                        \
+        .data_bits = ESP_MODEM_UART_CONFIG_UART_DATA_BITS,                      \
+        .stop_bits = ESP_MODEM_UART_CONFIG_UART_STOP_BITS,                      \
+        .parity = ESP_MODEM_UART_CONFIG_UART_PARITY,                            \
+        .baud_rate = ESP_MODEM_UART_CONFIG_UART_BAUD_RATE,                      \
+        .flow_control = ESP_MODEM_UART_CONFIG_UART_FLOW_CONTROL,                \
+        .tx_io_num = ESP_MODEM_UART_CONFIG_UART_TX_PIN,                         \
+        .rx_io_num = ESP_MODEM_UART_CONFIG_UART_RX_PIN,                         \
+        .rts_io_num = ESP_MODEM_UART_CONFIG_UART_RTS_PIN,                       \
+        .cts_io_num = ESP_MODEM_UART_CONFIG_UART_CTS_PIN,                       \
+        .rx_buffer_size = ESP_MODEM_UART_CONFIG_UART_RX_BUFFER_SIZE,            \
+        .tx_buffer_size = ESP_MODEM_UART_CONFIG_UART_TX_BUFFER_SIZE,            \
+        .pattern_queue_size = ESP_MODEM_UART_CONFIG_UART_PATTERN_QUEUE_SIZE,    \
+        .event_queue_size = ESP_MODEM_UART_CONFIG_UART_EVENT_QUEUE_SIZE,        \
+        .event_task_stack_size = ESP_MODEM_UART_CONFIG_UART_EVENT_TASK_STACK_SIZE, \
+        .event_task_priority = ESP_MODEM_UART_CONFIG_UART_EVENT_TASK_PRIORITY,  \
         .line_buffer_size = 512,                                                \
         .cmux = true                                                            \
     }
@@ -88,7 +88,7 @@ typedef esp_err_t (*esp_modem_on_receive)(void *buffer, size_t len, void *contex
  * @return modem_dte_t*
  *      - Modem DTE object
  */
-modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config);
+modem_dte_t *esp_modem_uart_dte_init(const esp_modem_uart_dte_config_t *config);
 
 /**
  * @brief Register event handler for ESP Modem event loop
@@ -101,7 +101,7 @@ modem_dte_t *esp_modem_dte_init(const esp_modem_dte_config_t *config);
  *      - ESP_ERR_NO_MEM on allocating memory for the handler failed
  *      - ESP_ERR_INVALID_ARG on invalid combination of event base and event id
  */
-esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, int32_t event_id, void *handler_args);
+esp_err_t esp_modem_uart_set_event_handler(esp_event_handler_t handler, int32_t event_id, void *handler_args);
 
 /**
  * @brief Unregister event handler for ESP Modem event loop
@@ -111,7 +111,7 @@ esp_err_t esp_modem_set_event_handler(esp_event_handler_t handler, int32_t event
  *      - ESP_OK on success
  *      - ESP_ERR_INVALID_ARG on invalid combination of event base and event id
  */
-esp_err_t esp_modem_remove_event_handler(esp_event_handler_t handler);
+esp_err_t esp_modem_uart_remove_event_handler(esp_event_handler_t handler);
 
 /**
  * @brief Setup PPP Session
@@ -121,7 +121,7 @@ esp_err_t esp_modem_remove_event_handler(esp_event_handler_t handler);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_start_ppp(modem_dte_t *dte);
+esp_err_t esp_modem_uart_start_ppp(modem_dte_t *dte);
 
 /**
  * @brief Start CMUX
@@ -131,7 +131,7 @@ esp_err_t esp_modem_start_ppp(modem_dte_t *dte);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_start_cmux(modem_dte_t *dte);
+esp_err_t esp_modem_uart_start_cmux(modem_dte_t *dte);
 
 /**
  * @brief Exit PPP Session
@@ -141,7 +141,7 @@ esp_err_t esp_modem_start_cmux(modem_dte_t *dte);
  *      - ESP_OK on success
  *      - ESP_FAIL on error
  */
-esp_err_t esp_modem_stop_ppp(modem_dte_t *dte);
+esp_err_t esp_modem_uart_stop_ppp(modem_dte_t *dte);
 
 /**
  * @brief Setup on reception callback
@@ -152,6 +152,6 @@ esp_err_t esp_modem_stop_ppp(modem_dte_t *dte);
  *
  * @return ESP_OK on success
  */
-esp_err_t esp_modem_set_rx_cb(modem_dte_t *dte, esp_modem_on_receive receive_cb, void *receive_cb_ctx);
+esp_err_t esp_modem_uart_set_rx_cb(modem_dte_t *dte, esp_modem_uart_on_receive receive_cb, void *receive_cb_ctx);
 
 #endif // _ESP_MODEM_H_
