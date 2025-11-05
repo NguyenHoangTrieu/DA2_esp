@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += hw/mcu/nxp/lpcopen
+
 MCU_DIR = hw/mcu/nxp/lpcopen/lpc175x_6x/lpc_chip_175x_6x
 include $(TOP)/$(BOARD_PATH)/board.mk
 CPU_CORE ?= cortex-m3
@@ -11,7 +13,7 @@ CFLAGS += \
   -DRTC_EV_SUPPORT=0
 
 # lpc_types.h cause following errors
-CFLAGS_GCC += -Wno-error=strict-prototypes -Wno-error=cast-qual
+CFLAGS += -Wno-error=strict-prototypes -Wno-error=cast-qual
 
 # caused by freeRTOS port !!
 CFLAGS += -Wno-error=maybe-uninitialized

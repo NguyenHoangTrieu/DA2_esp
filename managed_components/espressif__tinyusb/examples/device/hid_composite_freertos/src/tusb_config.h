@@ -59,7 +59,7 @@
 #endif
 
 // Espressif IDF requires "freertos/" prefix in include path
-#ifdef ESP_PLATFORM
+#if TUSB_MCU_VENDOR_ESPRESSIF
 #define CFG_TUSB_OS_INC_PATH  freertos/
 #endif
 

@@ -1,8 +1,8 @@
 #ifndef _SIM7600_COMM_H_
 #define _SIM7600_COMM_H_
 
-#include "esp_modem_dce_service.h"
-#include "esp_modem.h"
+#include "esp_modem_uart_dce_service.h"
+#include "esp_modem_uart.h"
 
 /**
  * @brief Create and initialize SIM7600 object

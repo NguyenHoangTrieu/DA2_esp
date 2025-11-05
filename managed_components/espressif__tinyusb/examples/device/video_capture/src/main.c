@@ -74,7 +74,9 @@ int main(void) {
   };
   tusb_init(BOARD_TUD_RHPORT, &dev_init);
 
-  board_init_after_tusb();
+  if (board_init_after_tusb) {
+    board_init_after_tusb();
+  }
 
   while (1) {
     tud_task(); // tinyusb device task
@@ -290,7 +292,7 @@ void led_blinking_task(void* param) {
 #define BLINKY_STACK_SIZE   configMINIMAL_STACK_SIZE
 #define VIDEO_STACK_SIZE    (configMINIMAL_STACK_SIZE*4)
 
-#ifdef ESP_PLATFORM
+#if TUSB_MCU_VENDOR_ESPRESSIF
   #define USBD_STACK_SIZE     4096
   int main(void);
   void app_main(void) {
@@ -327,7 +329,9 @@ void usb_device_task(void *param) {
   };
   tusb_init(BOARD_TUD_RHPORT, &dev_init);
 
-  board_init_after_tusb();
+  if (board_init_after_tusb) {
+    board_init_after_tusb();
+  }
 
   // RTOS forever loop
   while (1) {
@@ -347,8 +351,8 @@ void freertos_init_task(void) {
   xTaskCreate(video_task, "video", VIDEO_STACK_SZIE, NULL, configMAX_PRIORITIES - 2, NULL);
   #endif
 
-  // only start scheduler for non-espressif mcu
-  #ifndef ESP_PLATFORM
+  // skip starting scheduler (and return) for ESP32-S2 or ESP32-S3
+  #if !TUSB_MCU_VENDOR_ESPRESSIF
   vTaskStartScheduler();
   #endif
 }

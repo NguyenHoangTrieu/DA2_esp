@@ -200,8 +200,7 @@ void ch340_set_baudrate(usb_device_t *dev) {
 
 // USB OTG Read/Write Task
 void usb_otg_rw_task(void *arg) {
-  uint8_t tx_data[] = {'N', 'A', 'T', 'E', ' ', 'H',
-                       'I', 'G', 'G', 'E', 'R', '\n'};
+  uint8_t tx_data[] = {'A', 'T', 'I', '\r', '\n'};
   static usb_stream_t
       usb_stream; // Persistent stream object; works across reconnect
   static uint8_t configured = 0;

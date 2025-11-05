@@ -21,3 +21,4 @@ dependencies:
   # espressif/esp_hosted: '*'
   # espressif/esp-extconn: '*'
   espressif/usb: '*'
+  espressif/eppp_link: ^1.1.3

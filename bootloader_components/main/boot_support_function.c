@@ -181,7 +181,7 @@ void uart_bridge_passthrough(void) {
   bool flash_in_progress = false;
   uint32_t idle_counter = 0;
   uint32_t wdt_feed_counter = 0;
-  uint32_t max_idle = 5000;
+  uint32_t max_idle = 2000;
 
   configure_uart2_for_slave();
   esp_rom_printf("[%s] UART bridge active\n", TAG);
@@ -219,7 +219,7 @@ void uart_bridge_passthrough(void) {
         return;
       }
 
-      if (wdt_feed_counter >= 5000) {
+      if (wdt_feed_counter >= 2000) {
         bootloader_feed_wdt();
         wdt_feed_counter = 0;
       }

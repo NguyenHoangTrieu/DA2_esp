@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += lib/lwip
+
 include ../../build_system/make/make.mk
 
 # suppress warning caused by lwip

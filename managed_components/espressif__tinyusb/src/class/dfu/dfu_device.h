@@ -74,13 +74,13 @@ void tud_dfu_manifest_cb(uint8_t alt);
 // Invoked when received DFU_UPLOAD request
 // Application must populate data with up to length bytes and
 // Return the number of written bytes
-uint16_t tud_dfu_upload_cb(uint8_t alt, uint16_t block_num, uint8_t* data, uint16_t length);
+TU_ATTR_WEAK uint16_t tud_dfu_upload_cb(uint8_t alt, uint16_t block_num, uint8_t* data, uint16_t length);
 
 // Invoked when a DFU_DETACH request is received
-void tud_dfu_detach_cb(void);
+TU_ATTR_WEAK void tud_dfu_detach_cb(void);
 
 // Invoked when the Host has terminated a download or upload transfer
-void tud_dfu_abort_cb(uint8_t alt);
+TU_ATTR_WEAK void tud_dfu_abort_cb(uint8_t alt);
 
 //--------------------------------------------------------------------+
 // Internal Class Driver API

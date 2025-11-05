@@ -6,12 +6,11 @@ extern "C" {
 #endif
 
 /* Modem Device Selection */
-#define LTE_CONFIG_MODEM_DEVICE_SIM800  0
 #define LTE_CONFIG_MODEM_DEVICE_BG96    1
 #define LTE_CONFIG_MODEM_DEVICE_SIM7600 2
 
 #ifndef LTE_CONFIG_MODEM_DEVICE
-#define LTE_CONFIG_MODEM_DEVICE         LTE_CONFIG_MODEM_DEVICE_SIM7600
+#define LTE_CONFIG_MODEM_DEVICE         LTE_CONFIG_MODEM_DEVICE_BG96
 #endif
 
 /* PPP Authentication */

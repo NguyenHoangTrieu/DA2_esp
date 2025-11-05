@@ -5,6 +5,7 @@
 #include "usb_comm.h"
 
 static const char *TAG = "USB_RW_FUNCTION";
+#define BULK_EP_MPS_FULL_SPEED  64
 
 void transfer_cb(usb_transfer_t *transfer) {
   usb_host_transfer_free(transfer);

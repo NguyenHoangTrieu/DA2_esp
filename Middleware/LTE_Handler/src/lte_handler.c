@@ -2,8 +2,8 @@
 
 #include "esp_event.h"
 #include "esp_log.h"
-#include "esp_modem.h"
-#include "esp_modem_netif.h"
+#include "esp_modem_uart.h"
+#include "esp_modem_uart_netif.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
 #include "freertos/FreeRTOS.h"
@@ -22,9 +22,6 @@
 #elif LTE_CONFIG_MODEM_DEVICE == LTE_CONFIG_MODEM_DEVICE_BG96
 #include "bg96_comm.h"
 #define MODEM_INIT_FUNC bg96_init
-#elif LTE_CONFIG_MODEM_DEVICE == LTE_CONFIG_MODEM_DEVICE_SIM800
-#include "sim800_comm.h"
-#define MODEM_INIT_FUNC sim800_init
 #else
 #error "Unsupported modem device"
 #endif
@@ -77,17 +74,17 @@ static void modem_event_handler(void *event_handler_arg,
                                 esp_event_base_t event_base, int32_t event_id,
                                 void *event_data) {
   switch (event_id) {
-  case ESP_MODEM_EVENT_PPP_START:
+  case ESP_MODEM_UART_EVENT_PPP_START:
     ESP_LOGI(TAG, "Modem PPP Started");
     break;
-  case ESP_MODEM_EVENT_PPP_STOP:
+  case ESP_MODEM_UART_EVENT_PPP_STOP:
     ESP_LOGI(TAG, "Modem PPP Stopped");
     if (ctx && ctx->event_group) {
       xEventGroupSetBits(ctx->event_group, DISCONNECT_BIT);
     }
     set_state(LTE_STATE_DISCONNECTED);
     break;
-  case ESP_MODEM_EVENT_UNKNOWN:
+  case ESP_MODEM_UART_EVENT_UNKNOWN:
     ESP_LOGW(TAG, "Unknown line received: %s", (char *)event_data);
     break;
   default:
@@ -166,20 +163,20 @@ static void on_ppp_changed(void *arg, esp_event_base_t event_base,
 }
 
 /**
- * @brief Internal: Initialize esp_modem driver and DTE/DCE
+ * @brief Internal: Initialize esp_modem_uart driver and DTE/DCE
  */
 static esp_err_t modem_init(void) {
   ESP_LOGI(TAG, "Modem DTE init...");
 
-  esp_modem_dte_config_t dte_cfg = ESP_MODEM_DTE_DEFAULT_CONFIG();
-  ctx->dte = esp_modem_dte_init(&dte_cfg);
+  esp_modem_uart_dte_config_t dte_cfg = ESP_MODEM_UART_DTE_DEFAULT_CONFIG();
+  ctx->dte = esp_modem_uart_dte_init(&dte_cfg);
   if (!ctx->dte) {
-    ESP_LOGE(TAG, "esp_modem_dte_init fail");
+    ESP_LOGE(TAG, "esp_modem_uart_dte_init fail");
     return ESP_FAIL;
   }
 
   // Register event handler for modem events
-  ESP_ERROR_CHECK(esp_modem_set_event_handler(modem_event_handler, ESP_EVENT_ANY_ID, NULL));
+  ESP_ERROR_CHECK(esp_modem_uart_set_event_handler(modem_event_handler, ESP_EVENT_ANY_ID, NULL));
 
   ESP_LOGI(TAG, "DCE init...");
   ctx->dce = MODEM_INIT_FUNC(ctx->dte);
@@ -322,8 +319,8 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config) {
   }
 
   // Setup modem netif adapter
-  ctx->modem_netif_adapter = esp_modem_netif_setup(ctx->dte);
-  esp_modem_netif_set_default_handlers(ctx->esp_netif);
+  ctx->modem_netif_adapter = esp_modem_uart_netif_setup(ctx->dte);
+  esp_modem_uart_netif_set_default_handlers(ctx->esp_netif);
 
   // Set authentication if configured
 #if defined(CONFIG_LWIP_PPP_PAP_SUPPORT) ||                                    \
@@ -367,8 +364,8 @@ esp_err_t lte_handler_deinit(void) {
 
   // Cleanup netif and modem adapter
   if (ctx->modem_netif_adapter) {
-    esp_modem_netif_clear_default_handlers();
-    esp_modem_netif_teardown(ctx->modem_netif_adapter);
+    esp_modem_uart_netif_clear_default_handlers();
+    esp_modem_uart_netif_teardown(ctx->modem_netif_adapter);
     ctx->modem_netif_adapter = NULL;
   }
 
@@ -387,7 +384,7 @@ esp_err_t lte_handler_deinit(void) {
     ctx->dte = NULL;
   }
   // Unregister modem event handler
-  esp_modem_remove_event_handler(modem_event_handler);
+  esp_modem_uart_remove_event_handler(modem_event_handler);
 
   // Unregister event handlers
   esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event);
@@ -441,7 +438,7 @@ esp_err_t lte_handler_connect(void) {
   esp_netif_attach(ctx->esp_netif, ctx->modem_netif_adapter);
 
   // Start PPP mode
-  esp_err_t err = esp_modem_start_ppp(ctx->dte);
+  esp_err_t err = esp_modem_uart_start_ppp(ctx->dte);
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Failed to start PPP: %d", err);
     set_state(LTE_STATE_ERROR);
@@ -487,7 +484,7 @@ esp_err_t lte_handler_disconnect(void) {
 
   xSemaphoreGive(ctx->mutex);
 
-  esp_err_t ret = esp_modem_stop_ppp(ctx->dte);
+  esp_err_t ret = esp_modem_uart_stop_ppp(ctx->dte);
 
   // Wait for disconnect event
   xEventGroupWaitBits(ctx->event_group, DISCONNECT_BIT, pdTRUE, pdTRUE,

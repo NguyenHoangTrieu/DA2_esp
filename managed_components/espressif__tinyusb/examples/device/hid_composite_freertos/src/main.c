@@ -31,7 +31,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 
-#ifdef ESP_PLATFORM
+#if TUSB_MCU_VENDOR_ESPRESSIF
   // ESP-IDF need "freertos/" prefix in include path.
   // CFG_TUSB_OS_INC_PATH should be defined accordingly.
   #include "freertos/FreeRTOS.h"
@@ -112,16 +112,17 @@ int main(void)
 
   xTimerStart(blinky_tm, 0);
 
-  // only start scheduler for non-espressif mcu
-#ifndef ESP_PLATFORM
+  // skip starting scheduler (and return) for ESP32-S2 or ESP32-S3
+#if !TUSB_MCU_VENDOR_ESPRESSIF
   vTaskStartScheduler();
 #endif
 
   return 0;
 }
 
-#ifdef ESP_PLATFORM
-void app_main(void) {
+#if TUSB_MCU_VENDOR_ESPRESSIF
+void app_main(void)
+{
   main();
 }
 #endif
@@ -141,7 +142,9 @@ void usb_device_task(void* param)
   };
   tusb_init(BOARD_TUD_RHPORT, &dev_init);
 
-  board_init_after_tusb();
+  if (board_init_after_tusb) {
+    board_init_after_tusb();
+  }
 
   // RTOS forever loop
   while (1)

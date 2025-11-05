@@ -1,8 +1,8 @@
 #ifndef _B96_COMM_H_
 #define _B96_COMM_H_
 
-#include "esp_modem_dce_service.h"
-#include "esp_modem.h"
+#include "esp_modem_uart_dce_service.h"
+#include "esp_modem_uart.h"
 
 /**
  * @brief Macro defined for error checking

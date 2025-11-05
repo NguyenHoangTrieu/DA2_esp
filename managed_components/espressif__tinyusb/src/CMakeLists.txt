@@ -1,6 +1,9 @@
+# TODO more docs and example on how to use this file
+# TINYUSB_TARGET_PREFIX and TINYUSB_TARGET_SUFFIX can be used to change the name of the target
+
 cmake_minimum_required(VERSION 3.20)
 
-# Add tinyusb to a existing target, DCD and HCD drivers are not included
+# Add tinyusb to a existing target
 function(tinyusb_target_add TARGET)
   target_sources(${TARGET} PRIVATE
     # common
@@ -16,7 +19,6 @@ function(tinyusb_target_add TARGET)
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/hid/hid_device.c
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/midi/midi_device.c
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/msc/msc_device.c
-    ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/mtp/mtp_device.c
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/net/ecm_rndis_device.c
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/net/ncm_device.c
     ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/class/usbtmc/usbtmc_device.c

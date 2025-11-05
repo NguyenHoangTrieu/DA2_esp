@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += hw/mcu/renesas/rx
+
 # Cross Compiler for RX
 CROSS_COMPILE = rx-elf-
 

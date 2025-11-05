@@ -88,10 +88,6 @@
     #include "class/msc/msc_device.h"
   #endif
 
-  #if CFG_TUD_MTP
-    #include "class/mtp/mtp_device.h"
-  #endif
-
   #if CFG_TUD_AUDIO
     #include "class/audio/audio_device.h"
   #endif
@@ -137,12 +133,6 @@
 //--------------------------------------------------------------------+
 // User API
 //--------------------------------------------------------------------+
-
-// Following macros are defined to be backward compatible
-// tinyusb 0.17.x and 0.18.x
-#define tusb_rhport_teardown(rhport)  tusb_deinit(rhport)
-#define tusb_teardown()               tusb_deinit(0)
-
 #if CFG_TUH_ENABLED || CFG_TUD_ENABLED
 
 // Internal helper for backward compatible with tusb_init(void)
@@ -150,7 +140,7 @@ bool tusb_rhport_init(uint8_t rhport, const tusb_rhport_init_t* rh_init);
 
 // Initialize roothub port with device/host role
 // Note: when using with RTOS, this should be called after scheduler/kernel is started.
-//       Since USB IRQ handler does use RTOS queue API.
+// Otherwise, it could cause kernel issue since USB IRQ handler does use RTOS queue API.
 // Note2: defined as macro for backward compatible with tusb_init(void), can be changed to function in the future.
 #if defined(TUD_OPT_RHPORT) || defined(TUH_OPT_RHPORT)
   #define _tusb_init_arg0()        tusb_rhport_init(0, NULL)
@@ -168,17 +158,36 @@ bool tusb_inited(void);
 // Called to handle usb interrupt/event. tusb_init(rhport, role) must be called before
 void tusb_int_handler(uint8_t rhport, bool in_isr);
 
-// Deinit usb stack on roothub port
-bool tusb_deinit(uint8_t rhport);
+// Internal helper for backward compatibility with tusb_init(void)
+bool tusb_rhport_teardown(uint8_t rhport);
+
+#if defined(TUD_OPT_RHPORT) || defined(TUH_OPT_RHPORT)
+  #define _tusb_teardown_arg0()        tusb_rhport_teardown(0)
+#else
+  #define _tusb_teardown_arg0()        TU_VERIFY_STATIC(false, "CFG_TUSB_RHPORT0_MODE/CFG_TUSB_RHPORT1_MODE must be defined")
+#endif
+
+#define _tusb_teardown_arg1(_rhport)         tusb_rhport_teardown(_rhport)
+#define tusb_teardown(...)                   TU_FUNC_OPTIONAL_ARG(_tusb_teardown, __VA_ARGS__)
 
 #else
 
 #define tusb_init(...)  (false)
 #define tusb_int_handler(...)  do {}while(0)
 #define tusb_inited()  (false)
-#define tusb_deinit(...) (false)
+#define tusb_teardown(...) (false)
 
 #endif
+
+//--------------------------------------------------------------------+
+// API Implemented by user
+//--------------------------------------------------------------------+
+
+// Get current milliseconds, required by some port/configuration without RTOS
+uint32_t tusb_time_millis_api(void);
+
+// Delay in milliseconds, use tusb_time_millis_api() by default. required by some port/configuration with no RTOS
+void tusb_time_delay_ms_api(uint32_t ms);
 
 #ifdef __cplusplus
  }
