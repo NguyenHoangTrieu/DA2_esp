@@ -5094,9 +5094,9 @@
 											"parentStyle": true,
 											"left": 1013,
 											"top": 1390,
-											"width": 80.802734375,
+											"width": 120.1708984375,
 											"height": 13,
-											"text": "ESP MODEM"
+											"text": "ESP MODEM UART"
 										},
 										{
 											"_type": "LabelView",
@@ -5108,7 +5108,7 @@
 											"parentStyle": true,
 											"left": 1013,
 											"top": 1405,
-											"width": 80.802734375,
+											"width": 120.1708984375,
 											"height": 13,
 											"text": "(from BSP)"
 										},
@@ -5131,7 +5131,7 @@
 									"parentStyle": true,
 									"left": 1008,
 									"top": 1383,
-									"width": 90.802734375,
+									"width": 130.1708984375,
 									"height": 40,
 									"stereotypeLabel": {
 										"$ref": "AAAAAAGaFmpxD08qQzU="
@@ -5155,7 +5155,7 @@
 							"containerChangeable": true,
 							"left": 1008,
 							"top": 1368,
-							"width": 89.802734375,
+							"width": 129.1708984375,
 							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
@@ -5271,6 +5271,114 @@
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaD6L7EmA5LEY="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaUpOgBbNFYco=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcXYk4lSKaU="
+							},
+							"model": {
+								"$ref": "AAAAAAGaUpNhC7NAxrE="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaUpOgBbNGcIc=",
+									"_parent": {
+										"$ref": "AAAAAAGaUpOgBbNFYco="
+									},
+									"model": {
+										"$ref": "AAAAAAGaUpNhC7NAxrE="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaUpOgBbNHkIc=",
+											"_parent": {
+												"$ref": "AAAAAAGaUpOgBbNGcIc="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -60,
+											"top": -44,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaUpOgBbNIRnI=",
+											"_parent": {
+												"$ref": "AAAAAAGaUpOgBbNGcIc="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 1053,
+											"top": 750,
+											"width": 102.8671875,
+											"height": 13,
+											"text": "PPP Server"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaUpOgBbNJlPE=",
+											"_parent": {
+												"$ref": "AAAAAAGaUpOgBbNGcIc="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 1053,
+											"top": 765,
+											"width": 102.8671875,
+											"height": 13,
+											"text": "(from Application)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaUpOgBbNK7Zc=",
+											"_parent": {
+												"$ref": "AAAAAAGaUpOgBbNGcIc="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -60,
+											"top": -44,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 1048,
+									"top": 743,
+									"width": 112.8671875,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaUpOgBbNHkIc="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaUpOgBbNIRnI="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaUpOgBbNJlPE="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaUpOgBbNK7Zc="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 1048,
+							"top": 728,
+							"width": 111.8671875,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaUpOgBbNGcIc="
 							}
 						}
 					]
@@ -11837,6 +11945,14 @@
 								"$ref": "AAAAAAGZwcgzFImw6mI="
 							},
 							"name": "Bridge Bootloader"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaUpNhC7NAxrE=",
+							"_parent": {
+								"$ref": "AAAAAAGZwcgzFImw6mI="
+							},
+							"name": "PPP Server"
 						}
 					]
 				},
@@ -16690,7 +16806,7 @@
 							"_parent": {
 								"$ref": "AAAAAAGZwciCp4nplqw="
 							},
-							"name": "ESP MODEM"
+							"name": "ESP MODEM UART"
 						}
 					]
 				},
