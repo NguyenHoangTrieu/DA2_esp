@@ -31,7 +31,6 @@
 
 #include "chip.h"
 #include "host/hcd.h"
-#include "host/usbh.h"
 
 void hcd_int_enable(uint8_t rhport)
 {

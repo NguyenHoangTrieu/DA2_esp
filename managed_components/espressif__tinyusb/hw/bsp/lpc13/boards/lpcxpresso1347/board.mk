@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += hw/mcu/nxp/lpcopen
+
 CFLAGS += \
   -DCFG_TUSB_MEM_SECTION='__attribute__((section(".data.$$RAM2")))'
 

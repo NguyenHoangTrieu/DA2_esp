@@ -124,5 +124,11 @@ endif
 
 # Log level is mapped to TUSB DEBUG option
 ifneq ($(LOG),)
+  CMAKE_DEFSYM +=	-DLOG=$(LOG)
   CFLAGS += -DCFG_TUSB_DEBUG=$(LOG)
+endif
+
+# Logger: default is uart, can be set to rtt or swo
+ifneq ($(LOGGER),)
+	CMAKE_DEFSYM +=	-DLOGGER=$(LOGGER)
 endif

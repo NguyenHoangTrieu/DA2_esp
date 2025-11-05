@@ -38,7 +38,3 @@
 #define UART_SERCOM           0
 #define UART_RX_PIN           7
 #define UART_TX_PIN           6
-
-static inline void board_vbus_set(uint8_t rhport, bool state) {
-  (void) rhport; (void) state;
-}

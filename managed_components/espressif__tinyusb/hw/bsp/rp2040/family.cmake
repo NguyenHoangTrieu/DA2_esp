@@ -95,7 +95,6 @@ target_sources(tinyusb_device_base INTERFACE
 		${TOP}/src/class/hid/hid_device.c
 		${TOP}/src/class/midi/midi_device.c
 		${TOP}/src/class/msc/msc_device.c
-		${TOP}/src/class/mtp/mtp_device.c
 		${TOP}/src/class/net/ecm_rndis_device.c
 		${TOP}/src/class/net/ncm_device.c
 		${TOP}/src/class/usbtmc/usbtmc_device.c

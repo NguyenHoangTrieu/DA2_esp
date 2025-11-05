@@ -193,28 +193,6 @@ static char const* const tu_str_video_vs_control_selector[] = {
 #endif
 
 //--------------------------------------------------------------------+
-// Weak stubs: invoked if no strong implementation is available
-//--------------------------------------------------------------------+
-TU_ATTR_WEAK void tud_video_frame_xfer_complete_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx) {
-  (void) ctl_idx;
-  (void) stm_idx;
-}
-
-TU_ATTR_WEAK int tud_video_power_mode_cb(uint_fast8_t ctl_idx, uint8_t power_mod) {
-  (void) ctl_idx;
-  (void) power_mod;
-  return VIDEO_ERROR_NONE;
-}
-
-TU_ATTR_WEAK int tud_video_commit_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx,
-                                    video_probe_and_commit_control_t const *parameters) {
-  (void) ctl_idx;
-  (void) stm_idx;
-  (void) parameters;
-  return VIDEO_ERROR_NONE;
-}
-
-//--------------------------------------------------------------------+
 //
 //--------------------------------------------------------------------+
 
@@ -644,7 +622,8 @@ static bool _negotiate_streaming_parameters(videod_streaming_interface_t const *
     tusb_desc_cs_video_fmt_t const *fmt = _find_desc_format(tu_desc_next(vs), end, fmtnum);
     tusb_desc_cs_video_frm_t const *frm = _find_desc_frame(tu_desc_next(fmt), end, frmnum);
 
-    uint_fast32_t interval, interval_ms;
+    uint_fast32_t interval = 0;
+    uint_fast32_t interval_ms = 0;
     switch (request) {
       case VIDEO_REQUEST_GET_MAX: {
         uint_fast32_t min_interval, max_interval;
@@ -924,7 +903,7 @@ static int handle_video_ctl_cs_req(uint8_t rhport, uint8_t stage,
             TU_VERIFY(1 == request->wLength, VIDEO_ERROR_UNKNOWN);
             TU_VERIFY(tud_control_xfer(rhport, request, &self->power_mode, sizeof(self->power_mode)), VIDEO_ERROR_UNKNOWN);
           } else if (stage == CONTROL_STAGE_DATA) {
-            return tud_video_power_mode_cb(ctl_idx, self->power_mode);
+            if (tud_video_power_mode_cb) return tud_video_power_mode_cb(ctl_idx, self->power_mode);
           }
           return VIDEO_ERROR_NONE;
 
@@ -1126,7 +1105,10 @@ static int handle_video_stm_cs_req(uint8_t rhport, uint8_t stage,
             TU_VERIFY(_update_streaming_parameters(stm, param), VIDEO_ERROR_INVALID_VALUE_WITHIN_RANGE);
             /* Set the negotiated value */
             stm->max_payload_transfer_size = param->dwMaxPayloadTransferSize;
-            int ret = tud_video_commit_cb(stm->index_vc, stm->index_vs, param);
+            int ret = VIDEO_ERROR_NONE;
+            if (tud_video_commit_cb) {
+              ret = tud_video_commit_cb(stm->index_vc, stm->index_vs, param);
+            }
             if (VIDEO_ERROR_NONE == ret) {
               stm->state   = VS_STATE_COMMITTED;
               stm->buffer  = NULL;
@@ -1438,7 +1420,9 @@ bool videod_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint3
     stm->buffer  = NULL;
     stm->bufsize = 0;
     stm->offset  = 0;
-    tud_video_frame_xfer_complete_cb(stm->index_vc, stm->index_vs);
+    if (tud_video_frame_xfer_complete_cb) {
+      tud_video_frame_xfer_complete_cb(stm->index_vc, stm->index_vs);
+    }
   }
   return true;
 }

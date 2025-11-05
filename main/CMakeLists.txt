@@ -17,6 +17,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Middleware/Data_Communication_Handler/src/usb_handler.c"
                                 "../Middleware/Data_Communication_Handler/src/uart_handler.c"
                                 "../Application/FOTA/src/fota_handler.c"
+                                "../Application/PPP_Server/src/ppp_server.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash
@@ -48,4 +49,5 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/sim7600_communication/include"
                                 "../Middleware/Data_Communication_Handler/include"
                                 "../Application/FOTA/include"
+                                "../Application/PPP_Server/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)

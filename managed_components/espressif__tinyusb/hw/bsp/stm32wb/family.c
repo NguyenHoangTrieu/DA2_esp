@@ -184,7 +184,8 @@ void HardFault_Handler(void) {
   asm("bkpt 1");
 }
 
-// Required by __libc_init_array in startup code if we are compiling using -nostdlib/-nostartfiles.
-void _init(void);
+// Required by __libc_init_array in startup code if we are compiling using
+// -nostdlib/-nostartfiles.
 void _init(void) {
+
 }

@@ -44,10 +44,6 @@
 #define UART_RX_PIN           8
 #define UART_TX_PIN           7
 
-static inline void board_vbus_set(uint8_t rhport, bool state) {
- (void) rhport; (void) state;
-}
-
 #ifdef __cplusplus
  }
 #endif

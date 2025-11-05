@@ -36,7 +36,7 @@
  extern "C" {
 #endif
 
-#define NEOPIXEL_PIN          38
+#define NEOPIXEL_PIN          48
 
 #define BUTTON_PIN            0
 #define BUTTON_STATE_ACTIVE   0

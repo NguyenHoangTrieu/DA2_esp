@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += hw/mcu/nxp/lpcopen
+
 include $(TOP)/$(BOARD_PATH)/board.mk
 CPU_CORE ?= cortex-m3
 
@@ -13,7 +15,7 @@ CFLAGS += \
 LDFLAGS_GCC += -specs=nosys.specs -specs=nano.specs
 
 # mcu driver cause following warnings
-CFLAGS_GCC += -Wno-error=strict-prototypes -Wno-error=unused-parameter -Wno-error=unused-variable -Wno-error=cast-qual
+CFLAGS += -Wno-error=strict-prototypes -Wno-error=unused-parameter -Wno-error=unused-variable -Wno-error=cast-qual
 
 MCU_DIR = hw/mcu/nxp/lpcopen/lpc15xx/lpc_chip_15xx
 
