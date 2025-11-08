@@ -3,8 +3,8 @@
  * @brief MCU LAN Communication Handler Implementation
  */
 
+ #include "config_handler.h"
 #include "mcu_lan_handler.h"
-#include "config_handler.h"
 #include "lan_comm.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"

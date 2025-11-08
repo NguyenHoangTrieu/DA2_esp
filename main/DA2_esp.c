@@ -81,6 +81,7 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
     // usb_otg_rw_task_stop();
+    ppp_server_init(g_wifi_netif);
     vTaskDelay(pdMS_TO_TICKS(100));
     class_driver_task_stop();
     usb_host_lib_task_stop();
@@ -113,6 +114,7 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
     usb_host_lib_task_start();
     class_driver_task_start();
     // usb_otg_rw_task_start();
+    ppp_server_deinit();
     
     if (*current_internet_type != g_internet_type) {
         ESP_LOGI(TAG, "Internet type changed: %d -> %d", *current_internet_type, g_internet_type);
@@ -191,6 +193,7 @@ void app_main(void) {
     
     uart_handler_task_start();
     mqtt_handler_task_start();
+    mcu_lan_handler_start();
 
     ESP_LOGI(TAG, "System started in NORMAL mode");
     ESP_LOGI(TAG, "Press GPIO45 or send UART 'CONFIG'/'NORMAL' to switch modes");

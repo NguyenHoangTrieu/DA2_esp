@@ -18,6 +18,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_uart_config_queue = NULL;
 QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
+QueueHandle_t g_mcu_lan_config_queue = NULL;
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to WiFi
 
 static bool config_handler_running = false;
@@ -381,6 +382,28 @@ static void config_handler_task(void *arg) {
                     }
                     break;
                 }
+                case CONFIG_TYPE_MCU_LAN: {
+                    ESP_LOGI(TAG, "MCU LAN command received, forwarding to MCU LAN handler");
+                    if (cmd.data_len > 5) {
+                        mcu_lan_config_data_t lan_cmd;
+                        lan_cmd.length = cmd.data_len - 5;  // Skip "CFML:" prefix
+                        memcpy(lan_cmd.command, &cmd.raw_data[5], lan_cmd.length);
+                        
+                        // Send to MCU LAN queue
+                        if (g_mcu_lan_config_queue) {
+                            if (xQueueSend(g_mcu_lan_config_queue, &lan_cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+                                ESP_LOGI(TAG, "Command forwarded to MCU LAN handler queue");
+                            } else {
+                                ESP_LOGW(TAG, "Failed to send to MCU LAN queue (full)");
+                            }
+                        } else {
+                            ESP_LOGE(TAG, "MCU LAN queue not initialized");
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "MCU LAN command too short");
+                    }
+                    break;
+                }
                 default:
                     ESP_LOGW(TAG, "Unknown config type: %d", cmd.type);
                     break;
@@ -424,6 +447,9 @@ void config_handler_task_start(void) {
 
     if (!g_lte_config_queue) {
         g_lte_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(lte_config_data_t));
+    }
+    if (!g_mcu_lan_config_queue) {
+        g_mcu_lan_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(mcu_lan_config_data_t));
     }
     
     config_handler_running = true;
