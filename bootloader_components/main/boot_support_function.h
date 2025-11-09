@@ -30,10 +30,6 @@
 #define UART_BAUD_RATE 115200
 #define UART_BUFFER_SIZE 1024
 
-// Debug UART2 pins
-#define DEBUG_UART_TX_PIN 17
-#define DEBUG_UART_RX_PIN 18
-
 // SLIP protocol constants
 #define SLIP_END 0xC0
 

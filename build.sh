@@ -18,5 +18,6 @@ cp -r build/DA2_esp.bin flash_file
 cp -r build/bootloader/bootloader.bin flash_file
 cp -r build/partition_table/partition-table.bin flash_file
 
-# 4. (Optional) flash firmware to device
-# idf.py -p /dev/ttyUSB0 flash
+#5. build LAN version
+cd ../DA2_esp_LAN
+./build.sh

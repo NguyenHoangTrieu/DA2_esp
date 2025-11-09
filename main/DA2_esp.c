@@ -89,7 +89,6 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     vTaskDelay(pdMS_TO_TICKS(100));
     
     jtag_task_start();
-    config_handler_task_start();
     led_show_yellow();
     
     current_mode = APP_MODE_CONFIG;
@@ -108,7 +107,6 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
     ESP_LOGI(TAG, "==> Switching to NORMAL mode");
     
     jtag_task_stop();
-    config_handler_task_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
     
     usb_host_lib_task_start();
@@ -172,7 +170,8 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-
+    // Start Config handler
+    config_handler_task_start();
     // Start USB tasks
     usb_host_lib_task_start();
     class_driver_task_start();

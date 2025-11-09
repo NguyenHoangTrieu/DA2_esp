@@ -145,10 +145,10 @@ void configure_uart2_for_slave(void) {
   uart_ll_disable_intr_mask(uart, UART_LL_INTR_MASK);
 
   // Map GPIOs
-  esp_rom_gpio_connect_out_signal(SLAVE_RX_PIN, U1TXD_OUT_IDX, false, false);
+  esp_rom_gpio_connect_out_signal(SLAVE_RX_PIN, U2TXD_OUT_IDX, false, false);
   esp_rom_gpio_pad_select_gpio(SLAVE_RX_PIN);
 
-  esp_rom_gpio_connect_in_signal(SLAVE_TX_PIN, U1RXD_IN_IDX, false);
+  esp_rom_gpio_connect_in_signal(SLAVE_TX_PIN, U2RXD_IN_IDX, false);
   esp_rom_gpio_pad_select_gpio(SLAVE_TX_PIN);
 
   esp_rom_printf("[%s] UART2: %d baud, 8N1, TX=GPIO%d, RX=GPIO%d\n", TAG,
@@ -181,7 +181,7 @@ void uart_bridge_passthrough(void) {
   bool flash_in_progress = false;
   uint32_t idle_counter = 0;
   uint32_t wdt_feed_counter = 0;
-  uint32_t max_idle = 2000;
+  uint32_t max_idle = 5000;
 
   configure_uart2_for_slave();
   esp_rom_printf("[%s] UART bridge active\n", TAG);
@@ -219,7 +219,7 @@ void uart_bridge_passthrough(void) {
         return;
       }
 
-      if (wdt_feed_counter >= 2000) {
+      if (wdt_feed_counter >= 5000) {
         bootloader_feed_wdt();
         wdt_feed_counter = 0;
       }

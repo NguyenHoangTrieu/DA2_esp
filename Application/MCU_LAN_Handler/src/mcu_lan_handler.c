@@ -24,12 +24,13 @@ static TaskHandle_t mcu_lan_handler_task_handle = NULL;
 static bool g_initialized = false;
 
 // Configuration for SPI pins (adjust according to your hardware)
-#define MCU_LAN_SPI_SCK     GPIO_NUM_9
-#define MCU_LAN_SPI_CS      GPIO_NUM_10
-#define MCU_LAN_SPI_MOSI    GPIO_NUM_12
-#define MCU_LAN_SPI_MISO    GPIO_NUM_11
-#define MCU_LAN_SPI_WP      GPIO_NUM_13 // For Quad mode
-#define MCU_LAN_SPI_HD      GPIO_NUM_14 // For Quad mode
+#define MCU_LAN_SPI_SCK         GPIO_NUM_9
+#define MCU_LAN_SPI_CS          GPIO_NUM_10
+#define MCU_LAN_SPI_MOSI        GPIO_NUM_11
+#define MCU_LAN_SPI_MISO        GPIO_NUM_12
+#define MCU_LAN_SPI_WP          GPIO_NUM_13 // For Quad mode
+#define MCU_LAN_SPI_HD          GPIO_NUM_14 // For Quad mode
+#define MCU_LAN_HANDSHAKE_GPIO  GPIO_NUM_15
 
 #define MCU_LAN_ACK_TIMEOUT_MS 1000
 
@@ -148,8 +149,9 @@ static esp_err_t mcu_lan_handler_init(void)
         .gpio_io1 = MCU_LAN_SPI_MISO,
         .gpio_io2 = MCU_LAN_SPI_WP,
         .gpio_io3 = MCU_LAN_SPI_HD,
+        .gpio_handshake = MCU_LAN_HANDSHAKE_GPIO,
 
-        .clock_speed_hz = 10 * 1000 * 1000, // 10 MHz
+        .clock_speed_hz = 5000000, // 5 MHz
         .mode = 0,                          // SPI Mode 0
         .host_id = SPI2_HOST,
 
@@ -169,9 +171,6 @@ static esp_err_t mcu_lan_handler_init(void)
         ESP_LOGE(TAG, "Failed to initialize LAN communication: %d", status);
         return ESP_FAIL;
     }
-
-    // Set blocking mode for simpler task implementation
-    lan_comm_set_blocking_mode(g_lan_comm_handle, true);
 
     // Mark as initialized (will never initialize again)
     g_initialized = true;

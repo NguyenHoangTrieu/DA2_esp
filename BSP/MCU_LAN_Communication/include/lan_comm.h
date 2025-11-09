@@ -35,6 +35,7 @@ extern "C" {
 #define LAN_COMM_DEFAULT_QUEUE_SIZE 7
 #define LAN_COMM_MAX_TRANSFER_SIZE 4092  // SPI DMA limitation
 #define LAN_COMM_TIMEOUT_MS 1000
+#define LAN_COMM_FIXED_TRANSFER_SIZE 128
 
 /**
  * @brief Status codes
@@ -79,6 +80,7 @@ typedef struct {
     int gpio_io1;           // MISO / IO1
     int gpio_io2;           // WP / IO2 (for Quad mode)
     int gpio_io3;           // HD / IO3 (for Quad mode)
+    int gpio_handshake;     // Handshake GPIO
     
     // SPI configuration
     uint32_t clock_speed_hz;    // SPI clock frequency
@@ -161,15 +163,6 @@ lan_comm_status_t lan_comm_send_data(lan_comm_handle_t handle,
 lan_comm_status_t lan_comm_request_data(lan_comm_handle_t handle, 
                                         uint8_t* rx_buffer, 
                                         uint16_t length_to_read);
-
-/**
- * @brief Set blocking/non-blocking mode
- * 
- * @param handle Communication handle
- * @param blocking true for blocking, false for non-blocking
- * @return lan_comm_status_t Status code
- */
-lan_comm_status_t lan_comm_set_blocking_mode(lan_comm_handle_t handle, bool blocking);
 
 /**
  * @brief Get last error status

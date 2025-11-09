@@ -50,6 +50,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_LTE;
     } else if (cmd[0] == 'I' && cmd[1] == 'N') {
         return CONFIG_TYPE_INTERNET;
+    } else if (cmd[0] == 'M' && cmd[1] == 'L') {
+        return CONFIG_TYPE_MCU_LAN;
     }
     
     return CONFIG_TYPE_UNKNOWN;
