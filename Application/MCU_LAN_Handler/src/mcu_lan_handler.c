@@ -149,9 +149,9 @@ static esp_err_t mcu_lan_handler_init(void)
         .gpio_io1 = MCU_LAN_SPI_MISO,
         .gpio_io2 = MCU_LAN_SPI_WP,
         .gpio_io3 = MCU_LAN_SPI_HD,
-        .gpio_handshake = MCU_LAN_HANDSHAKE_GPIO,
+        // .gpio_handshake = MCU_LAN_HANDSHAKE_GPIO,
 
-        .clock_speed_hz = 5000000, // 5 MHz
+        .clock_speed_hz = 10000000, // 10 MHz
         .mode = 0,                          // SPI Mode 0
         .host_id = SPI2_HOST,
 
