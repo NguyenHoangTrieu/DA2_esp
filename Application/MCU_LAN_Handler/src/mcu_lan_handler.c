@@ -30,7 +30,6 @@ static bool g_initialized = false;
 #define MCU_LAN_SPI_MISO        GPIO_NUM_12
 #define MCU_LAN_SPI_WP          GPIO_NUM_13 // For Quad mode
 #define MCU_LAN_SPI_HD          GPIO_NUM_14 // For Quad mode
-#define MCU_LAN_HANDSHAKE_GPIO  GPIO_NUM_15
 
 #define MCU_LAN_ACK_TIMEOUT_MS 1000
 
@@ -149,7 +148,6 @@ static esp_err_t mcu_lan_handler_init(void)
         .gpio_io1 = MCU_LAN_SPI_MISO,
         .gpio_io2 = MCU_LAN_SPI_WP,
         .gpio_io3 = MCU_LAN_SPI_HD,
-        // .gpio_handshake = MCU_LAN_HANDSHAKE_GPIO,
 
         .clock_speed_hz = 10000000, // 10 MHz
         .mode = 0,                          // SPI Mode 0
