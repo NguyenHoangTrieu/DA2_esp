@@ -32,7 +32,8 @@ static volatile uint8_t s_reconnect_request =
     0;                                       // Flag for reconnection request
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
-static esp_netif_t *s_wifi_netif = NULL;
+// Network interface handle (global)
+esp_netif_t *g_wifi_netif = NULL;
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -84,7 +85,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
            custom_pass);
   ESP_ERROR_CHECK(esp_netif_init());
-  s_wifi_netif = esp_netif_create_default_wifi_sta();
+  g_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -234,8 +235,8 @@ void wifi_connect_task_stop(void) {
                                         &event_handler);
   esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                         &event_handler);
-  if(s_wifi_netif) {
-      esp_netif_destroy(s_wifi_netif);
-      s_wifi_netif = NULL;
+  if(g_wifi_netif) {
+      esp_netif_destroy(g_wifi_netif);
+      g_wifi_netif = NULL;
   }
 }

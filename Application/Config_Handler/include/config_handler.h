@@ -22,6 +22,7 @@ typedef enum {
     CONFIG_TYPE_LTE = 4,       // "LT" - LTE configuration
     CONFIG_TYPE_INTERNET = 5,   // "IN" - Internet configuration
     CONFIG_UPDATE_FIRMWARE = 6, // "FW" - Firmware update command
+    CONFIG_TYPE_MCU_LAN = 7,    // "ML" - MCU LAN configuration
     CONFIG_TYPE_UNKNOWN = 0xFF
 } config_type_t;
 
@@ -68,6 +69,12 @@ typedef struct {
     uint8_t interface_num;
 } usb_config_data_t;
 
+//MCU LAN Communication configuration structure
+typedef struct {
+    char command[64];
+    int  length;
+} mcu_lan_config_data_t;
+
 // Generic configuration command
 typedef struct {
     config_type_t type;
@@ -81,6 +88,7 @@ extern QueueHandle_t g_lte_config_queue;
 extern QueueHandle_t g_mqtt_config_queue;
 extern QueueHandle_t g_uart_config_queue;
 extern QueueHandle_t g_usb_config_queue;
+extern QueueHandle_t g_mcu_lan_config_queue;
 
 // Main config handler queue (receives raw commands)
 extern QueueHandle_t g_config_handler_queue;

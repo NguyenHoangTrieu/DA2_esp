@@ -1,5 +1,5 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef FOTA_CONFIG_H
+#define FOTA_CONFIG_H
 
 /* Firmware upgrade URL endpoint */
 #define CONFIG_FIRMWARE_UPGRADE_URL "https://github.com/NguyenHoangTrieu/DA2_esp_release/releases/download/V0.0.1/DA2_esp.bin"

@@ -14,6 +14,7 @@
 #include "wifi_scan.h"
 
 // Function prototypes
+extern esp_netif_t *g_wifi_netif;
 void wifi_connect_task_start(void);
 void wifi_connect_task_stop(void);
 
