@@ -6,12 +6,12 @@
 
 /* UART Configuration for PPP Server */
 #define PPP_UART_PORT           UART_NUM_2
-#define PPP_UART_BAUD_RATE      115200
+#define PPP_UART_BAUD_RATE      256000
 #define PPP_UART_TX_PIN         GPIO_NUM_41
 #define PPP_UART_RX_PIN         GPIO_NUM_42
 
 /* UART Buffer Sizes */
-#define PPP_UART_BUF_SIZE       (2048)
+#define PPP_UART_BUF_SIZE       (16*1024)
 #define PPP_UART_QUEUE_SIZE     (20)
 
 /* OTA Trigger and Response Commands */
