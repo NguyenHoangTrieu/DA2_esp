@@ -5,10 +5,10 @@
 #include "driver/gpio.h"
 
 /* UART Configuration for PPP Server */
-#define PPP_UART_PORT           UART_NUM_1
+#define PPP_UART_PORT           UART_NUM_2
 #define PPP_UART_BAUD_RATE      115200
-#define PPP_UART_TX_PIN         GPIO_NUM_17
-#define PPP_UART_RX_PIN         GPIO_NUM_18
+#define PPP_UART_TX_PIN         GPIO_NUM_41
+#define PPP_UART_RX_PIN         GPIO_NUM_42
 
 /* UART Buffer Sizes */
 #define PPP_UART_BUF_SIZE       (2048)
@@ -27,6 +27,8 @@
 /* PPP Server Configuration */
 #define PPP_SERVER_TASK_STACK_SIZE  (4 * 1024)
 #define PPP_SERVER_TASK_PRIORITY    (5)
+
+#define PPP_SERVER_INTERNET_EPPP_CHANNEL 0
 
 /* Response Buffer Size */
 #define PPP_RESPONSE_BUF_SIZE   (128)

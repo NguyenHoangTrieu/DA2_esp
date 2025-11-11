@@ -56,7 +56,7 @@ static void mcu_lan_handler_task(void *arg)
         // Wait for command from queue (sent by config_handler)
         if (xQueueReceive(g_mcu_lan_config_queue, &lan_config, pdMS_TO_TICKS(100)) == pdTRUE)
         {
-            ESP_LOGI(TAG, "Received command to send to LAN MCU: %d bytes", lan_config.length);
+            ESP_LOGI(TAG, "Receive and Send command: %.*s", lan_config.length, lan_config.command);
             ESP_LOG_BUFFER_HEXDUMP(TAG, (uint8_t *)lan_config.command, lan_config.length, ESP_LOG_DEBUG);
 
             // Validate command length
@@ -105,6 +105,7 @@ static void mcu_lan_handler_task(void *arg)
                 {
                     ESP_LOGW(TAG, "Failed to receive ACK from LAN MCU: %d", status);
                 }
+                memset(ack_buffer, 0, sizeof(ack_buffer));
             }
             else
             {

@@ -81,12 +81,14 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
     // usb_otg_rw_task_stop();
-    ppp_server_init(g_wifi_netif);
     vTaskDelay(pdMS_TO_TICKS(100));
     class_driver_task_stop();
     usb_host_lib_task_stop();
     mqtt_handler_task_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
+
+    ppp_server_init(g_wifi_netif);
+    vTaskDelay(pdMS_TO_TICKS(200));
     
     jtag_task_start();
     led_show_yellow();

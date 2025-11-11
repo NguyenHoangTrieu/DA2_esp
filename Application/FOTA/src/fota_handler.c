@@ -195,8 +195,6 @@ static esp_err_t validate_image_header(esp_app_desc_t *new_app_info)
 static esp_err_t _http_client_init_cb(esp_http_client_handle_t http_client)
 {
     esp_err_t err = ESP_OK;
-    /* Uncomment to add custom headers to HTTP request */
-    // err = esp_http_client_set_header(http_client, "Custom-Header", "Value");
     return err;
 }
 

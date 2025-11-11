@@ -144,17 +144,6 @@ static void wifi_config_task(void *arg) {
   wifi_config_data_t wifi_cfg;
 
   while (!wifi_connect_task_close) {
-    // Perform scan if not connected
-    // if (!s_wifi_connected && scan_counter == 200) {
-    //   ESP_LOGI(TAG, "Not connected, performing WiFi scan...");
-    //   perform_scan(); // Scan for available networks if not connected
-    //   scan_counter = 0;
-    // } else if (!s_wifi_connected) {
-    //   scan_counter++;
-    // } else {
-    //   scan_counter = 0;
-    // }
-
     // Check for WiFi config from queue
     if (g_wifi_config_queue != NULL) {
       if (xQueueReceive(g_wifi_config_queue, &wifi_cfg, pdMS_TO_TICKS(100)) ==

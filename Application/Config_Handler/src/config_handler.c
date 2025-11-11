@@ -388,8 +388,9 @@ static void config_handler_task(void *arg) {
                     ESP_LOGI(TAG, "MCU LAN command received, forwarding to MCU LAN handler");
                     if (cmd.data_len > 5) {
                         mcu_lan_config_data_t lan_cmd;
-                        lan_cmd.length = cmd.data_len - 5;  // Skip "CFML:" prefix
-                        memcpy(lan_cmd.command, &cmd.raw_data[5], lan_cmd.length);
+                        lan_cmd.length = cmd.data_len - 3;  // Skip "ML:" prefix
+                        memcpy(lan_cmd.command, &cmd.raw_data[3], lan_cmd.length);
+                        lan_cmd.length -= 2;
                         
                         // Send to MCU LAN queue
                         if (g_mcu_lan_config_queue) {
