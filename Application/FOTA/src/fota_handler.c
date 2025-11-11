@@ -6,11 +6,11 @@
 */
 #include "fota_handler.h"
 
-#if CONFIG_FIRMWARE_UPGRADE_BIND_IF
+#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
 /* The interface name value can refer to if_desc in esp_netif_defaults.h */
-#if CONFIG_FIRMWARE_UPGRADE_BIND_IF_ETH
+#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF_ETH
 static const char *bind_interface_name = NETIF_DESC_ETH;
-#elif CONFIG_FIRMWARE_UPGRADE_BIND_IF_STA
+#elif FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF_STA
 static const char *bind_interface_name = NETIF_DESC_STA;
 #endif
 #endif
@@ -22,7 +22,7 @@ extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
 
 static bool ota_task_close = false;
 
-#if CONFIG_ENABLE_OTA_RESUMPTION
+#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
 #define NVS_NAMESPACE_OTA_RESUMPTION  "ota_resumption"
 #define NVS_KEY_OTA_WR_LENGTH  "nvs_ota_wr_len"
 #define NVS_KEY_SAVED_URL  "nvs_ota_url"
@@ -172,7 +172,7 @@ static esp_err_t validate_image_header(esp_app_desc_t *new_app_info)
         ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
     }
 
-#if CONFIG_SKIP_VERSION_CHECK
+#if FOTA_CONFIG_SKIP_VERSION_CHECK
     if (memcmp(new_app_info->version, running_app_info.version, 
                sizeof(new_app_info->version)) == 0) {
         ESP_LOGW(TAG, "Current running version is the same as new. Update cancelled.");
@@ -180,7 +180,7 @@ static esp_err_t validate_image_header(esp_app_desc_t *new_app_info)
     }
 #endif
 
-#if CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
+#if FOTA_CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
     const uint32_t hw_sec_version = esp_efuse_read_secure_version();
     if (new_app_info->secure_version < hw_sec_version) {
         ESP_LOGW(TAG, "New firmware security version is less than eFuse programmed, %d < %d", 
@@ -232,7 +232,7 @@ void advanced_ota_task(void *pvParameter)
     esp_err_t err;
     esp_err_t ota_finish_err = ESP_OK;
 
-#if CONFIG_FIRMWARE_UPGRADE_BIND_IF
+#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
     esp_netif_t *netif = get_netif_from_desc(bind_interface_name);
     if (netif == NULL) {
         ESP_LOGE(TAG, "Can't find netif from interface description");
@@ -246,28 +246,28 @@ void advanced_ota_task(void *pvParameter)
 #endif
 
     esp_http_client_config_t config = {
-        .url = CONFIG_FIRMWARE_UPGRADE_URL,
-#if CONFIG_USE_CERT_BUNDLE
+        .url = FOTA_CONFIG_FIRMWARE_UPGRADE_URL,
+#if FOTA_CONFIG_USE_CERT_BUNDLE
         .crt_bundle_attach = esp_crt_bundle_attach,
 #else
         .cert_pem = (char *)server_cert_pem_start,
 #endif
-        .timeout_ms = CONFIG_OTA_RECV_TIMEOUT,
+        .timeout_ms = FOTA_CONFIG_OTA_RECV_TIMEOUT,
         .keep_alive_enable = true,
         .buffer_size = 8 * 1024,
         .buffer_size_tx = 8 * 1024,
-#if CONFIG_FIRMWARE_UPGRADE_BIND_IF
+#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
         .if_name = &ifr,
 #endif
-#if CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
+#if FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
         .save_client_session = true,
 #endif
-#if CONFIG_TLS_DYN_BUF_RX_STATIC
+#if FOTA_CONFIG_TLS_DYN_BUF_RX_STATIC
         .tls_dyn_buf_strategy = HTTP_TLS_DYN_BUF_RX_STATIC,
 #endif
     };
 
-#if CONFIG_FIRMWARE_UPGRADE_URL_FROM_STDIN
+#if FOTA_CONFIG_FIRMWARE_UPGRADE_URL_FROM_STDIN
     char url_buf[OTA_URL_SIZE];
     if (strcmp(config.url, "FROM_STDIN") == 0) {
         configure_stdin_stdout();
@@ -282,11 +282,11 @@ void advanced_ota_task(void *pvParameter)
     }
 #endif
 
-#if CONFIG_SKIP_COMMON_NAME_CHECK
+#if FOTA_CONFIG_SKIP_COMMON_NAME_CHECK
     config.skip_cert_common_name_check = true;
 #endif
 
-#if CONFIG_ENABLE_OTA_RESUMPTION
+#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
     nvs_handle_t nvs_ota_resumption_handle;
     err = nvs_open(NVS_NAMESPACE_OTA_RESUMPTION, NVS_READWRITE, &nvs_ota_resumption_handle);
     if (err != ESP_OK) {
@@ -307,11 +307,11 @@ void advanced_ota_task(void *pvParameter)
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
         .http_client_init_cb = _http_client_init_cb,
-#if CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
+#if FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
         .partial_http_download = true,
-        .max_http_request_size = CONFIG_HTTP_REQUEST_SIZE,
+        .max_http_request_size = FOTA_CONFIG_HTTP_REQUEST_SIZE,
 #endif
-#if CONFIG_ENABLE_OTA_RESUMPTION
+#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
         .ota_resumption = true,
         .ota_image_bytes_written = ota_wr_len,
 #endif
@@ -350,7 +350,7 @@ void advanced_ota_task(void *pvParameter)
         const size_t len = esp_https_ota_get_image_len_read(https_ota_handle);
         ESP_LOGD(TAG, "Image bytes read: %d", len);
         
-#if CONFIG_ENABLE_OTA_RESUMPTION
+#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
         err = ota_res_save_cfg_to_nvs(nvs_ota_resumption_handle, len, config.url);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to save OTA config to NVS (%s)", esp_err_to_name(err));
@@ -361,7 +361,7 @@ void advanced_ota_task(void *pvParameter)
     if (esp_https_ota_is_complete_data_received(https_ota_handle) != true) {
         ESP_LOGE(TAG, "Complete data was not received.");
     } else {
-#if CONFIG_ENABLE_OTA_RESUMPTION
+#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
         err = ota_res_cleanup_cfg_from_nvs(nvs_ota_resumption_handle);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to clean up OTA config from NVS (%s)", esp_err_to_name(err));
@@ -398,7 +398,7 @@ void fota_handler_task_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, 
                                                 &event_handler, NULL));
 
-#if CONFIG_CONNECT_WIFI
+#if FOTA_CONFIG_CONNECT_WIFI
     esp_wifi_set_ps(WIFI_PS_NONE);
 #endif
 

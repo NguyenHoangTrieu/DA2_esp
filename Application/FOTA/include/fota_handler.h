@@ -13,11 +13,11 @@
 #include "string.h"
 #include "fota_config.h"
 
-#ifdef CONFIG_USE_CERT_BUNDLE
+#ifdef FOTA_CONFIG_USE_CERT_BUNDLE
 #include "esp_crt_bundle.h"
 #endif
 
-#if CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
+#if FOTA_CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK
 #include "esp_efuse.h"
 #endif
 
@@ -25,7 +25,7 @@
 #include "nvs_flash.h"
 #include <sys/socket.h>
 
-#if CONFIG_CONNECT_WIFI
+#if FOTA_CONFIG_CONNECT_WIFI
 #include "esp_wifi.h"
 #endif
 
