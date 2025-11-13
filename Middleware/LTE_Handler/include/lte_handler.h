@@ -5,11 +5,6 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * @brief LTE Handler Event Base
  */
@@ -18,6 +13,11 @@ ESP_EVENT_DECLARE_BASE(LTE_HANDLER_EVENT);
 /**
  * @brief LTE Handler Events
  */
+typedef enum {
+    LTE_HANDLER_UART = 0,
+    LTE_HANDLER_USB,
+} lte_handler_comm_type_t;
+
 typedef enum {
     LTE_EVENT_INITIALIZED = 0,      /*!< Handler initialized */
     LTE_EVENT_MODEM_READY,          /*!< Modem ready and registered */
@@ -71,12 +71,13 @@ typedef struct {
  * @brief LTE Handler Configuration
  */
 typedef struct {
-    const char *apn;                /*!< Access Point Name (required) */
-    const char *username;           /*!< PPP auth username (optional) */
-    const char *password;           /*!< PPP auth password (optional) */
-    bool auto_reconnect;            /*!< Enable auto-reconnect */
-    uint32_t reconnect_timeout_ms;  /*!< Reconnect retry timeout (default: 30000ms) */
-    uint32_t max_reconnect_attempts;/*!< Max reconnect attempts (0 = infinite) */
+    lte_handler_comm_type_t comm_type;  /*!< Communication type (UART or USB) */
+    const char *apn;                    /*!< Access Point Name (required) */
+    const char *username;               /*!< PPP auth username (optional) */
+    const char *password;               /*!< PPP auth password (optional) */
+    bool auto_reconnect;                /*!< Enable auto-reconnect */
+    uint32_t reconnect_timeout_ms;      /*!< Reconnect retry timeout (default: 30000ms) */
+    uint32_t max_reconnect_attempts;    /*!< Max reconnect attempts (0 = infinite) */
 } lte_handler_config_t;
 
 /**
@@ -236,9 +237,5 @@ esp_err_t lte_handler_set_auto_reconnect(bool enable);
  * @return ESP_OK on success
  */
 esp_err_t lte_handler_set_reconnect_params(uint32_t timeout_ms, uint32_t max_attempts);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _LTE_HANDLER_H_ */

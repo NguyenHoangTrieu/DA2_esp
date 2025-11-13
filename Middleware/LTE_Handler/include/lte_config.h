@@ -1,10 +1,6 @@
 #ifndef _LTE_CONFIG_H_
 #define _LTE_CONFIG_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Modem Device Selection */
 #define LTE_CONFIG_MODEM_DEVICE_BG96    1
 #define LTE_CONFIG_MODEM_DEVICE_SIM7600 2
@@ -35,10 +31,6 @@ extern "C" {
 #ifndef LTE_CONFIG_SEND_MSG_PEER_PHONE_NUMBER
 #define LTE_CONFIG_SEND_MSG_PEER_PHONE_NUMBER   "+8610086"
 #endif
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif /* _LTE_CONFIG_H_ */
