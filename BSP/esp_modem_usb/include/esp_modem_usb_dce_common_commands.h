@@ -2,6 +2,7 @@
 #define ESP_MODEM_USB_DCE_COMMON_COMMANDS_H_
 
 #include "esp_modem_usb_dce.h"
+#include "esp_modem_usb_config.h"
 #include "sdkconfig.h"
 
 /**

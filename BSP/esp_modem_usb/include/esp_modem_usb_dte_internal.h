@@ -6,6 +6,7 @@
 #include "esp_modem_usb_dte.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "esp_modem_usb_config.h"
 
 /**
  * @brief Main lifecycle states of the esp-modem

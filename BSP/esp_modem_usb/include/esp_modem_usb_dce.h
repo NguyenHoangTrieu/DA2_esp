@@ -5,6 +5,7 @@
 #include "esp_err.h"
 #include "esp_modem_usb.h"
 #include "esp_modem_usb_dte.h"
+#include "esp_modem_usb_config.h"
 
 /**
  * @brief Forward declaration of the command list object, which (if enabled) is used
@@ -220,4 +221,4 @@ esp_err_t esp_modem_usb_set_default_command_list(esp_modem_usb_dce_t *dce);
  */
 esp_err_t esp_modem_usb_command_list_set_cmd(esp_modem_usb_dce_t *dce, const char * command_id, dce_command_t command);
 
-#endif /* ESP_MODEM_USB_DCE_H_ */1
+#endif /* ESP_MODEM_USB_DCE_H_ */

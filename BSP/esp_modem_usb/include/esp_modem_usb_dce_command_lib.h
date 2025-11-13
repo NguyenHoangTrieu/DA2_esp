@@ -3,6 +3,7 @@
 
 #include "esp_modem_usb_dce.h"
 #include "esp_modem_usb.h"
+#include "esp_modem_usb_config.h"
 
 /**
  * @brief Finds the command par its symbolic name

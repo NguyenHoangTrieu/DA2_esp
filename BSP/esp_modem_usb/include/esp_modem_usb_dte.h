@@ -6,6 +6,7 @@
 #include "esp_event.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_modem_usb_config.h"
 
 /**
  * @brief Working mode of Modem

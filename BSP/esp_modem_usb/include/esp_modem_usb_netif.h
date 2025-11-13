@@ -1,6 +1,8 @@
 #ifndef ESP_MODEM_USB_NETIF_H_
 #define ESP_MODEM_USB_NETIF_H_
 
+#include "esp_modem_usb_config.h"
+
 /**
  * @brief modem netif adapter type
  *

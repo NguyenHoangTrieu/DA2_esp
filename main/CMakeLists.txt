@@ -1,3 +1,6 @@
+file(GLOB MODEM_UART_SRCS "../BSP/esp_modem_uart/src/*.c")
+file(GLOB MODEM_USB_SRCS "../BSP/esp_modem_usb/src/*.c")
+
 idf_component_register(SRCS "DA2_esp.c" 
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
                                 "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
@@ -11,10 +14,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
                                 "../BSP/rbg_led_ws_handler/rbg_handler.c" 
                                 "../BSP/usb_communication/src/usb_host_function.c"
-                                "../BSP/esp_modem_uart/src/esp_modem_uart_dce_service.c"
-                                "../BSP/esp_modem_uart/src/esp_modem_uart_netif.c"
-                                "../BSP/esp_modem_uart/src/esp_modem_uart.c"
-                                "../BSP/esp_modem_uart/src/esp_modem_uart_compat.c"
+                                ${MODEM_UART_SRCS}
+                                ${MODEM_USB_SRCS}
                                 "../BSP/bg96_communication/src/bg96_comm.c"
                                 "../BSP/sim7600_communication/src/sim7600_comm.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
@@ -38,6 +39,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 esp_https_ota
                                 esp_netif
                                 esp_psram
+                                esp_ringbuf
                     INCLUDE_DIRS "." 
                                 "../Application/Internet_Communication_Handler/wifi_handler/include"
                                 "../Application/Internet_Communication_Handler/lte_handler/include"
@@ -50,6 +52,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/rbg_led_ws_handler"
                                 "../BSP/usb_communication/include"
                                 "../BSP/esp_modem_uart/include"
+                                "../BSP/esp_modem_usb/include"
                                 "../BSP/bg96_communication/include"
                                 "../BSP/sim7600_communication/include"
                                 "../BSP/MCU_LAN_Communication/include"

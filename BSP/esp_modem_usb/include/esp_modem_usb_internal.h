@@ -1,8 +1,9 @@
-#ifndef ESP_MODEM_USB_DTE_INTERNAL_H_
-#define ESP_MODEM_USB_DTE_INTERNAL_H_
+#ifndef ESP_MODEM_USB_INTERNAL_H_
+#define ESP_MODEM_USB_INTERNAL_H_
 
 #include "esp_log.h"
 #include "esp_modem_usb.h"
+#include "esp_modem_usb_config.h"
 
 /**
 * @brief Macro defined for error checking

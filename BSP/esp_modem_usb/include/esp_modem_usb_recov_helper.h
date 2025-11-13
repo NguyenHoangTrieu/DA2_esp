@@ -3,6 +3,7 @@
 
 #include "esp_err.h"
 #include "esp_modem_usb_dce.h"
+#include "esp_modem_usb_config.h"
 
 /**
 * @brief Utility macro to define a retry method

@@ -5,6 +5,7 @@
 #include "esp_netif.h"
 #include "driver/uart.h"
 #include "iot_usbh_cdc.h"
+#include "esp_modem_usb_config.h"
 
 /**
  * @brief Forward declare DTE and DCE objects

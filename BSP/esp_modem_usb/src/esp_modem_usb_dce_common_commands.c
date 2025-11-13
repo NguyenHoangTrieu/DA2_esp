@@ -1,8 +1,3 @@
-/*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Apache-2.0
- */
 #include <string.h>
 #include "esp_log.h"
 #include "esp_modem_usb_dce.h"
