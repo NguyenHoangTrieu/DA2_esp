@@ -96,16 +96,7 @@ extern class_driver_t *s_driver_obj;
 extern class_driver_t m_driver_obj;
 extern usb_host_client_handle_t class_driver_client_hdl;
 
-extern esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_t len, int timeout_ms);
 extern void class_driver_client_deregister(void);
-
-// USB CDC read/write functions
-void transfer_cb(usb_transfer_t *transfer);
-void claim_interface(usb_device_t *device_obj);
-void cdc_async_receive_cb(usb_transfer_t *transfer);
-void parse_and_cache_endpoints(usb_device_t *dev);
-esp_err_t usb_cdc_send_data(usb_device_t *dev, const uint8_t *data, size_t len, int timeout_ms);
-esp_err_t start_usb_cdc_streaming(usb_device_t *dev, usb_stream_t *stream);
 
 // USB Host class driver functions
 void client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg);

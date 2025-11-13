@@ -19,5 +19,5 @@ cp -r build/bootloader/bootloader.bin flash_file
 cp -r build/partition_table/partition-table.bin flash_file
 
 #5. build LAN version
-cd ../DA2_esp_LAN
-./build.sh
+# cd ../DA2_esp_LAN
+# ./build.sh

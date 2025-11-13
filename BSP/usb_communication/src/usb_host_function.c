@@ -14,11 +14,6 @@ usb_host_client_handle_t class_driver_client_hdl = NULL;
 /**
  * @brief Client event callback function for handling USB host events
  *
- * This callback is called by the USB host library when USB device events occur.
- * It handles two main events: device connection and device disconnection.
- * The function is thread-safe and uses mutex protection to update shared data
- * structures.
- *
  * @param event_msg Pointer to the event message containing event type and data
  * @param arg User argument passed during client registration (class_driver_t
  * pointer)
@@ -64,10 +59,6 @@ void client_event_cb(const usb_host_client_event_msg_t *event_msg,
 /**
  * @brief Opens a USB device for communication
  *
- * This function opens a USB device using its address and stores the device
- * handle for future operations. After successfully opening the device, it
- * schedules the next action to get device information.
- *
  * @param device_obj Pointer to the USB device object containing device address
  * and client handle
  */
@@ -84,10 +75,6 @@ void action_open_dev(usb_device_t *device_obj) {
 
 /**
  * @brief Retrieves and displays USB device information
- *
- * This function gets detailed information about a USB device including its
- * speed, parent device information, and current configuration value. It also
- * logs the device hierarchy and port connection details.
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
@@ -119,10 +106,6 @@ void action_get_info(usb_device_t *device_obj) {
 /**
  * @brief Retrieves and displays the USB device descriptor
  *
- * This function gets the standard USB device descriptor which contains
- * fundamental information about the device such as vendor ID, product ID,
- * device class, and supported configurations.
- *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
 void action_get_dev_desc(usb_device_t *device_obj) {
@@ -140,11 +123,7 @@ void action_get_dev_desc(usb_device_t *device_obj) {
 
 /**
  * @brief Retrieves and displays the USB configuration descriptor
- *
- * This function gets the configuration descriptor for the currently active
- * configuration. The configuration descriptor contains information about
- * interfaces, endpoints, and other configuration-specific details.
- *
+ * 
  * @param device_obj Pointer to the USB device object with valid device handle
  */
 void action_get_config_desc(usb_device_t *device_obj) {
@@ -159,17 +138,13 @@ void action_get_config_desc(usb_device_t *device_obj) {
       NULL); // Print configuration descriptor with all interfaces and endpoints
   // Get the device's string descriptors next
   device_obj->actions |= ACTION_GET_STR_DESC;
-  parse_and_cache_endpoints(
-      device_obj);             // Parse and cache endpoints for CDC/Data class
-  claim_interface(device_obj); // Claim the interface for communication
+  // parse_and_cache_endpoints(
+  //     device_obj);             // Parse and cache endpoints for CDC/Data class
+  // claim_interface(device_obj); // Claim the interface for communication
 }
 
 /**
  * @brief Retrieves and displays USB string descriptors
- *
- * This function gets and displays the manufacturer, product, and serial number
- * string descriptors if they are available. These descriptors provide
- * human-readable information about the device.
  *
  * @param device_obj Pointer to the USB device object with valid device handle
  */
@@ -198,9 +173,6 @@ void action_get_str_desc(usb_device_t *device_obj) {
 
 /**
  * @brief Closes a USB device and cleans up resources
- *
- * This function properly closes a USB device connection and resets the
- * device object's handle and address to indicate it's no longer in use.
  *
  * @param device_obj Pointer to the USB device object to close
  */
@@ -259,11 +231,6 @@ void action_close_dev(usb_device_t *device_obj)
 /**
  * @brief Handles pending actions for a specific USB device
  *
- * This function processes all pending actions for a USB device in a specific
- * order. It uses a state machine approach where each action can trigger
- * subsequent actions. The function continues processing until no more actions
- * are pending.
- *
  * @param device_obj Pointer to the USB device object with pending actions
  */
 void class_driver_device_handle(usb_device_t *device_obj) {
@@ -298,13 +265,6 @@ void class_driver_device_handle(usb_device_t *device_obj) {
 /**
  * @brief Initiates class driver shutdown and cleanup
  *
- * This function triggers the shutdown process for the class driver.
- * It marks all open devices for closure, sets the shutdown flag,
- * and unblocks the main driver task to allow it to complete the
- * shutdown process gracefully.
- *
- * This function is typically called from outside the driver task
- * when the application needs to shut down the USB functionality.
  */
 void class_driver_client_deregister(void) {
   // Mark all opened devices

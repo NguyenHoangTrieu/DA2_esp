@@ -50,7 +50,6 @@ static void init_check_timer_callback(TimerHandle_t xTimer) {
   // Send notification to mcu_lan_handler task
   if (mcu_lan_handler_task_handle != NULL) {
     xTaskNotifyGive(mcu_lan_handler_task_handle);
-    ESP_LOGD(TAG, "Timer: Notified task to check INIT_OK");
   }
 }
 
@@ -121,8 +120,6 @@ static void mcu_lan_handler_task(void *arg) {
         ESP_LOGE(TAG, "Failed to send command to LAN MCU: %d", status);
       }
     } else if (ulTaskNotifyTake(pdTRUE, 0) > 0) {
-      ESP_LOGI(TAG, "Timer triggered - checking INIT_OK status");
-
       // Request data from LAN MCU to check INIT_OK
       lan_comm_status_t status = lan_comm_request_data(
           g_lan_comm_handle, ack_buffer, sizeof(ack_buffer));
@@ -130,13 +127,12 @@ static void mcu_lan_handler_task(void *arg) {
       if (status == LAN_COMM_OK) {
         // Check for INIT_OK message
         if (strncmp((char *)ack_buffer, "MCU_WAN_INIT_OK", 15) == 0) {
-          ESP_LOGI(TAG, "COMPLETE INIT ACK received from LAN MCU");
+          ESP_LOGI(TAG, "INIT ACK from LAN MCU");
           g_init_ok_received = true;
 
           // Stop the timer since INIT_OK received
           if (init_check_timer != NULL) {
             xTimerStop(init_check_timer, portMAX_DELAY);
-            ESP_LOGI(TAG, "Init check timer stopped");
           }
         }
       }
