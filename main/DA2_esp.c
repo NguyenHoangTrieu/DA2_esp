@@ -178,11 +178,12 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
     
     if (*current_internet_type != g_internet_type) {
         ESP_LOGI(TAG, "Internet type changed: %d -> %d", *current_internet_type, g_internet_type);
+        config_internet_type_t old_type = *current_internet_type;
         *current_internet_type = g_internet_type;
         server_connect_stop(*current_server_type);
         vTaskDelay(pdMS_TO_TICKS(5000));
         for (int i = 0; i < CONFIG_INTERNET_COUNT; i++) {
-            if (i != *current_internet_type) {
+            if (i == old_type) {
                 internet_connect_stop(i);
             }
         }
@@ -192,9 +193,10 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
     }
     if (*current_server_type != g_server_type) {
         ESP_LOGI(TAG, "Server type changed: %d -> %d", *current_server_type, g_server_type);
+        config_server_type_t old_type = *current_server_type;
         *current_server_type = g_server_type;
         for (int i = 0; i < CONFIG_SERVERTYPE_COUNT; i++) {
-            if (i != *current_server_type) {
+            if (i == old_type) {
                 server_connect_stop(i);
             }
         }
