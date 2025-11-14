@@ -20,6 +20,7 @@ QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 QueueHandle_t g_mcu_lan_config_queue = NULL;
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to WiFi
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
 
 static bool config_handler_running = false;
 static TaskHandle_t config_handler_task_handle = NULL;
@@ -143,7 +144,7 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
     
     // Check if this is TYPE field or APN field
     // If it's short (< 10 chars) and matches UART/USB, it's TYPE
-    bool has_type = false;
+    bool has_type;
     if (type_len < 10) {
         if (strncmp(ptr, "UART", 4) == 0 || strncmp(ptr, "USB", 3) == 0) {
             has_type = true;

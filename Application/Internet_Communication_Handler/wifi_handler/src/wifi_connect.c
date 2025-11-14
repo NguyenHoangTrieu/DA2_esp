@@ -64,7 +64,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     }
 
     ESP_LOGI(TAG, "Connect to the AP failed");
-    ESP_LOGI(TAG, "Disconnected from WiFi, Scan resumed");
+    ESP_LOGI(TAG, "Disconnected from WiFi");
     s_wifi_connected = 0;
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -84,7 +84,6 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
 
   ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
            custom_pass);
-  ESP_ERROR_CHECK(esp_netif_init());
   g_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();

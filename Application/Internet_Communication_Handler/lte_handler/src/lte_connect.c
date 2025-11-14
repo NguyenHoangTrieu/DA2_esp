@@ -145,7 +145,7 @@ void lte_connect_task_start(void) {
   s_ctx.initialized = false;
 
   BaseType_t ret =
-      xTaskCreate(lte_task, "lte_task", 4096, NULL, 5, &s_ctx.task_handle);
+      xTaskCreate(lte_task, "lte_task", 16384, NULL, 5, &s_ctx.task_handle);
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create task");
     s_ctx.task_running = false;

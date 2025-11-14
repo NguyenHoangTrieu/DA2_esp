@@ -52,6 +52,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     esp_mqtt_client_publish(event->client, ATRIBUTE_TOPIC,
                             "{\"chip_type\":\"esp32p4\", \"fw\":\"1.0.0\"}", 0,
                             1, 0);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Wait before publishing
     m_mqtt_connected = true;
     break;
   case MQTT_EVENT_DISCONNECTED:
@@ -95,29 +96,50 @@ static void mqtt_publish_task(void *arg) {
  */
 static void mqtt_reinit(void) {
   // Stop existing client
+  m_mqtt_connected = false;
   if (m_client) {
     ESP_LOGI(TAG, "Stopping existing MQTT client");
     esp_mqtt_client_stop(m_client);
     esp_mqtt_client_destroy(m_client);
     m_client = NULL;
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
   // Create new client with updated config
   esp_mqtt_client_config_t mqtt_cfg = {
-      .broker = {
-          .address = {
-              .uri = s_broker_uri,
+      .broker =
+          {
+              .address =
+                  {
+                      .uri = s_broker_uri,
+                  },
           },
-      },
-      .credentials = {
-          .username = s_device_token,
-      }};
+      .credentials =
+          {
+              .username = s_device_token,
+          },
+      .session =
+          {
+              .keepalive = 120,           // Add keepalive (seconds)
+              .disable_clean_session = 0, // Clean session
+          },
+      .network =
+          {
+              .timeout_ms = 10000, // Increase timeout for LTE
+              .refresh_connection_after_ms = 0,
+              .disable_auto_reconnect = false,
+          },
+      .buffer =
+          {
+              .size = 2048, // Increase buffer size
+              .out_size = 1024,
+          },
+  };
 
   m_client = esp_mqtt_client_init(&mqtt_cfg);
   if (m_client) {
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID,
-                                    mqtt_event_handler, NULL);
+                                   mqtt_event_handler, NULL);
     esp_mqtt_client_start(m_client);
     ESP_LOGI(TAG, "MQTT client reinitialized with URI: %s, Token: %s",
              s_broker_uri, s_device_token);
@@ -168,14 +190,34 @@ static void mqtt_config_task(void *arg) {
  */
 void mqtt_handler_task_start(void) {
   esp_mqtt_client_config_t mqtt_cfg = {
-      .broker = {
-          .address = {
-              .uri = s_broker_uri,
+      .broker =
+          {
+              .address =
+                  {
+                      .uri = s_broker_uri,
+                  },
           },
-      },
-      .credentials = {
-          .username = s_device_token,
-      }};
+      .credentials =
+          {
+              .username = s_device_token,
+          },
+      .session =
+          {
+              .keepalive = 120,           // Add keepalive (seconds)
+              .disable_clean_session = 0, // Clean session
+          },
+      .network =
+          {
+              .timeout_ms = 10000, // Increase timeout for LTE
+              .refresh_connection_after_ms = 0,
+              .disable_auto_reconnect = false,
+          },
+      .buffer =
+          {
+              .size = 2048, // Increase buffer size
+              .out_size = 1024,
+          },
+  };
 
   m_client = esp_mqtt_client_init(&mqtt_cfg);
   esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler,

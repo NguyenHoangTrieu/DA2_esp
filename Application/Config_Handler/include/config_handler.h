@@ -31,9 +31,17 @@ typedef enum {
     CONFIG_INTERNET_LTE = 1,
     CONFIG_INTERNET_ETHERNET = 2,
     CONFIG_INTERNET_NBIOT = 3,
+    CONFIG_INTERNET_COUNT = 4,
     CONFIG_INTERNET_TYPE_UNKNOWN = 0xFF
 } config_internet_type_t;
 
+typedef enum {
+    CONFIG_SERVERTYPE_MQTT = 0,
+    CONFIG_SERVERTYPE_COAP = 1,
+    CONFIG_SERVERTYPE_HTTP = 2,
+    CONFIG_SERVERTYPE_COUNT = 3,
+    CONFIG_SERVERTYPE_UNKNOWN = 0xFF
+} config_server_type_t;
 // WiFi configuration structure
 typedef struct {
     char ssid[33];
@@ -94,6 +102,7 @@ extern QueueHandle_t g_mcu_lan_config_queue;
 // Main config handler queue (receives raw commands)
 extern QueueHandle_t g_config_handler_queue;
 extern config_internet_type_t g_internet_type;
+extern config_server_type_t g_server_type;
 // Function prototypes
 void config_handler_task_start(void);
 void config_handler_task_stop(void);

@@ -12,13 +12,8 @@
 const char *TAG = "USB_HANDLER";
 
 static TaskHandle_t jtag_task_hdl = NULL;
-static TaskHandle_t usb_host_task_hdl = NULL;
-static TaskHandle_t class_driver_task_hdl = NULL;
-static TaskHandle_t usb_otg_rw_task_hdl = NULL;
 static usb_serial_jtag_driver_config_t usb_serial_jtag_config;
 static bool close_jtag_task = false;
-static bool close_usb_otg_rw_task = false;
-static bool usb_host_lib_close = false;
 
 /**
  * @brief JTAG handler task - receives data from USB Serial JTAG and sends to config handler

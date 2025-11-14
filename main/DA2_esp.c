@@ -80,23 +80,94 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
-    mqtt_handler_task_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
 
     ppp_server_init(g_wifi_netif);
     vTaskDelay(pdMS_TO_TICKS(200));
     
-    jtag_task_start();
+    if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
     led_show_yellow();
     
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
 }
 
+// Helper functions to start/stop internet and server connections
+static void server_connect_start(config_server_type_t server_type){
+    switch(server_type){
+        case CONFIG_SERVERTYPE_MQTT:
+            mqtt_handler_task_start();
+            break;
+        case CONFIG_SERVERTYPE_COAP:
+            //coap_handler_task_start(); // To be implemented
+            break;
+        case CONFIG_SERVERTYPE_HTTP:
+            //http_handler_task_start(); // To be implemented
+            break; 
+        default:
+            ESP_LOGW(TAG, "Unknown server type: %d", server_type);
+            break;
+    }
+}
+
+// Helper functions to start/stop internet and server connections
+static void server_connect_stop(config_server_type_t server_type){
+    switch(server_type){
+        case CONFIG_SERVERTYPE_MQTT:
+            mqtt_handler_task_stop();
+            break;
+        case CONFIG_SERVERTYPE_COAP:
+            //coap_handler_task_stop(); // To be implemented
+            break;
+        case CONFIG_SERVERTYPE_HTTP:
+            //http_handler_task_stop(); // To be implemented
+            break; 
+        default:
+            ESP_LOGW(TAG, "Unknown server type: %d", g_server_type);
+            break;
+    }
+}
+
+// Helper functions to start/stop internet connections
+static void internet_connect_stop(config_internet_type_t internet_type){
+    switch(internet_type){
+        case CONFIG_INTERNET_LTE:
+            lte_connect_task_stop();
+            break;
+        case CONFIG_INTERNET_WIFI:
+            wifi_connect_task_stop();
+            break;
+        case CONFIG_INTERNET_ETHERNET:
+            //ethernet_connect_task_stop(); // To be implemented
+            break; 
+        default:
+            ESP_LOGW(TAG, "Unknown internet type: %d", internet_type);
+            break;
+    }
+}
+
+// Helper functions to start/stop internet connections
+static void internet_connect_start(config_internet_type_t internet_type){
+    switch(internet_type){
+        case CONFIG_INTERNET_LTE:
+            lte_connect_task_start();
+            break;
+        case CONFIG_INTERNET_WIFI:
+            wifi_connect_task_start();
+            break;
+        case CONFIG_INTERNET_ETHERNET:
+            //ethernet_connect_task_start(); // To be implemented
+            break; 
+        default:
+            ESP_LOGW(TAG, "Unknown internet type: %d", internet_type);
+            break;
+    }
+}
+
 /**
  * @brief Switch to NORMAL mode
  */
-static void switch_to_normal_mode(config_internet_type_t *current_internet_type) {
+static void switch_to_normal_mode(config_internet_type_t *current_internet_type, config_server_type_t *current_server_type) {
     if (current_mode == APP_MODE_NORMAL) {
         ESP_LOGW(TAG, "Already in NORMAL mode");
         return;
@@ -104,7 +175,8 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
     
     ESP_LOGI(TAG, "==> Switching to NORMAL mode");
     
-    jtag_task_stop();
+    if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_stop();
+
     vTaskDelay(pdMS_TO_TICKS(100));
 
     ppp_server_deinit();
@@ -112,30 +184,29 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
     if (*current_internet_type != g_internet_type) {
         ESP_LOGI(TAG, "Internet type changed: %d -> %d", *current_internet_type, g_internet_type);
         *current_internet_type = g_internet_type;
-        
-        switch (*current_internet_type) {
-        case CONFIG_INTERNET_LTE:
-            wifi_connect_task_stop();
-            lte_connect_task_start();
-            break;
-        case CONFIG_INTERNET_WIFI:
-            lte_connect_task_stop();
-            wifi_connect_task_start();
-            break;
-        case CONFIG_INTERNET_ETHERNET:
-            lte_connect_task_stop();
-            wifi_connect_task_stop();
-            // Ethernet task start can be added here
-            ESP_LOGI(TAG, "Ethernet selected - no task implemented");
-            break;
-        default:
-            ESP_LOGW(TAG, "Unknown internet type: %d", *current_internet_type);
-            break;
+        server_connect_stop(*current_server_type);
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        for (int i = 0; i < CONFIG_INTERNET_COUNT; i++) {
+            if (i != *current_internet_type) {
+                internet_connect_stop(i);
+            }
         }
+        internet_connect_start(*current_internet_type);
+        vTaskDelay(pdMS_TO_TICKS(15000));
+        server_connect_start(*current_server_type);
     }
-    
-    mqtt_handler_task_start();
-    led_show_orange();
+    if (*current_server_type != g_server_type) {
+        ESP_LOGI(TAG, "Server type changed: %d -> %d", *current_server_type, g_server_type);
+        *current_server_type = g_server_type;
+        for (int i = 0; i < CONFIG_SERVERTYPE_COUNT; i++) {
+            if (i != *current_server_type) {
+                server_connect_stop(i);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        server_connect_start(*current_server_type);
+    }
+    led_show_blue();
     
     current_mode = APP_MODE_NORMAL;
     ESP_LOGI(TAG, "NORMAL mode active");
@@ -150,37 +221,28 @@ void app_main(void) {
     setup_gpio45_interrupt();
 
     main_task_handle = xTaskGetCurrentTaskHandle();
-
+    
+    ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     
     // Register UART mode switch callback
     uart_handler_register_mode_callback(uart_mode_switch_callback);
     
     config_internet_type_t current_internet_type = g_internet_type;
+    config_server_type_t current_server_type = g_server_type;
     
     // NVS Initialize
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+        ESP_ERROR_CHECK(nvs_flash_init());
     }
-    ESP_ERROR_CHECK(ret);
-    // Start Config handler
+
     config_handler_task_start();
 
     // Start Internet tasks
-    switch (current_internet_type) {
-    case CONFIG_INTERNET_LTE:
-        lte_connect_task_start();
-        break;
-    case CONFIG_INTERNET_WIFI:
-        wifi_connect_task_start();
-        break;
-    default:
-        ESP_LOGW(TAG, "Unknown internet type, no internet task started");
-        break;
-    }
-    
+    internet_connect_start(current_internet_type);
+    vTaskDelay(pdMS_TO_TICKS(10000));
     uart_handler_task_start();
     mqtt_handler_task_start();
     mcu_lan_handler_start();
@@ -201,7 +263,7 @@ void app_main(void) {
                 if (current_mode == APP_MODE_NORMAL) {
                     switch_to_config_mode(&current_internet_type);
                 } else {
-                    switch_to_normal_mode(&current_internet_type);
+                    switch_to_normal_mode(&current_internet_type, &current_server_type);
                 }
             }
             
@@ -213,7 +275,7 @@ void app_main(void) {
                 } 
                 else if (requested_mode == 1) {
                     // NORMAL mode requested
-                    switch_to_normal_mode(&current_internet_type);
+                    switch_to_normal_mode(&current_internet_type, &current_server_type);
                 }
                 
                 requested_mode = -1;  // Reset

@@ -11,6 +11,7 @@
 #include "esp_modem_usb_internal.h"
 #include "esp_modem_usb_dte_internal.h"
 #include "iot_usbh_cdc.h"
+#include "esp_heap_caps.h"
 
 #define ESP_MODEM_USB_EVENT_QUEUE_SIZE (16)
 

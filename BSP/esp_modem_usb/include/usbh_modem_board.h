@@ -17,7 +17,9 @@ typedef enum {
     MODEM_EVENT_DTE_RESTART_DONE,    /*!< Modem DTE Restart done */
     MODEM_EVENT_NET_CONN,            /*!< Modem Net Connected */
     MODEM_EVENT_NET_DISCONN,         /*!< Modem Net Disconnected */
-    MODEM_EVENT_UNKNOWN_USB              /*!< Modem Unknown Response */
+    MODEM_EVENT_UNKNOWN_USB,              /*!< Modem Unknown Response */
+    MODEM_EVENT_WIFI_STA_CONN,
+    MODEM_EVENT_WIFI_STA_DISCONN
 } modem_event_t;
 
 #define MODEM_DEFAULT_CONFIG()\

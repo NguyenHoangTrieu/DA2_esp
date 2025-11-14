@@ -49,7 +49,11 @@
 #endif
 
 #ifndef CONFIG_USBH_TASK_STACK_SIZE
-    #define CONFIG_USBH_TASK_STACK_SIZE     4096
+    #define CONFIG_USBH_TASK_STACK_SIZE     1024 * 32
+#endif
+
+#ifndef CONFIG_MODEM_DAEMON_STACK_SIZE
+    #define CONFIG_MODEM_DAEMON_STACK_SIZE     1024 * 32
 #endif
 
 /* ==================== USB Transfer Buffer Configuration ==================== */
@@ -76,64 +80,45 @@
 
 
 /* ==================== Modem Target Selection ==================== */
-#define CONFIG_MODEM_TARGET_A7600C1
+#define CONFIG_MODEM_TARGET_A7600C1      1
 
 #if defined(CONFIG_MODEM_TARGET_USER)
-    #define CONFIG_MODEM_TARGET_USER               1
     #define CONFIG_MODEM_TARGET_NAME               "User Defined"
 #elif defined(CONFIG_MODEM_TARGET_NT26)
-    #define CONFIG_MODEM_TARGET_NT26               1
     #define  CONFIG_MODEM_TARGET_NAME               "NT26"
 #elif defined(CONFIG_MODEM_TARGET_ML302_DNLM)
-    #define  CONFIG_MODEM_TARGET_ML302_DNLM         1
     #define  CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
 #elif defined(CONFIG_MODEM_TARGET_AIR724UG_NFM)
-    #define CONFIG_MODEM_TARGET_AIR724UG_NFM       1
     #define CONFIG_MODEM_TARGET_NAME               "AIR724UG-NFM"
 #elif defined(CONFIG_MODEM_TARGET_AIR780_E)
-    #define CONFIG_MODEM_TARGET_AIR780_E           1
     #define CONFIG_MODEM_TARGET_NAME               "AIR780E"
 #elif defined(CONFIG_MODEM_TARGET_EC600N_CNLA_N05)
-    #define CONFIG_MODEM_TARGET_EC600N_CNLA_N05    1
     #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLA-N05"
 #elif defined(CONFIG_MODEM_TARGET_EC600N_CNLC_N06)
-    #define CONFIG_MODEM_TARGET_EC600N_CNLC_N06    1
     #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLC-N06"
 #elif defined(CONFIG_MODEM_TARGET_A7600C1)
-    #define CONFIG_MODEM_TARGET_A7600C1            1
     #define CONFIG_MODEM_TARGET_NAME               "A7600C1"
 #elif defined(CONFIG_MODEM_TARGET_BG95_M3)
-    #define CONFIG_MODEM_TARGET_BG95_M3            1
     #define CONFIG_MODEM_TARGET_NAME               "BG95M3"
 #elif defined(CONFIG_MODEM_TARGET_BG96_MA)
-    #define CONFIG_MODEM_TARGET_BG96_MA            1
     #define CONFIG_MODEM_TARGET_NAME               "BG96MA"
 #elif defined(CONFIG_MODEM_TARGET_MC610_EU)
-    #define CONFIG_MODEM_TARGET_MC610_EU           1
     #define CONFIG_MODEM_TARGET_NAME               "MC610_EU"
 #elif defined(CONFIG_MODEM_TARGET_EC20_CE)
-    #define CONFIG_MODEM_TARGET_EC20_CE            1
     #define CONFIG_MODEM_TARGET_NAME               "EC20_CE"
 #elif defined(CONFIG_MODEM_TARGET_EG25_GL)
-    #define CONFIG_MODEM_TARGET_EG25_GL            1
     #define CONFIG_MODEM_TARGET_NAME               "EG25_GL"
 #elif defined(CONFIG_MODEM_TARGET_YM310_X09)
-    #define CONFIG_MODEM_TARGET_YM310_X09          1
     #define CONFIG_MODEM_TARGET_NAME               "YM310_X09"
 #elif defined(CONFIG_MODEM_TARGET_SIM7600E)
-    #define CONFIG_MODEM_TARGET_SIM7600E           1
     #define CONFIG_MODEM_TARGET_NAME               "SIM7600E"
 #elif defined(CONFIG_MODEM_TARGET_A7670E)
-    #define CONFIG_MODEM_TARGET_A7670E             1
     #define CONFIG_MODEM_TARGET_NAME               "A7670E"
 #elif defined(CONFIG_MODEM_TARGET_SIM7070G)
-    #define CONFIG_MODEM_TARGET_SIM7070G           1
     #define CONFIG_MODEM_TARGET_NAME               "SIM7070G"
 #elif defined(CONFIG_MODEM_TARGET_SIM7080)
-    #define CONFIG_MODEM_TARGET_SIM7080            1
     #define CONFIG_MODEM_TARGET_NAME               "SIM7080G"
-#else
-    #define CONFIG_MODEM_TARGET_ML302_DNLM         1  // Default
+#else  // Default
     #define CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
 #endif
 
@@ -146,7 +131,7 @@
 #endif
 
 /* ==================== USB CDC Interface Configuration ==================== */
-
+#define MODEM_TARGET_A7600C1
 #ifndef CONFIG_MODEM_USB_ITF
     #if defined(MODEM_TARGET_NT26)
         #define CONFIG_MODEM_USB_ITF        0x03

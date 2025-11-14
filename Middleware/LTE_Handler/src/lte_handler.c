@@ -116,31 +116,39 @@ static void uart_modem_event_handler(void *event_handler_arg,
 /**
  * @brief USB Modem event handler (from modem_board)
  */
-static void usb_modem_event_handler(void *event_handler_arg,
-                                    esp_event_base_t event_base,
-                                    int32_t event_id, void *event_data) {
+static void on_modem_event(void *arg, esp_event_base_t event_base,
+                           int32_t event_id, void *event_data) {
   if (event_base == MODEM_BOARD_EVENT) {
     switch (event_id) {
+    case MODEM_EVENT_SIMCARD_DISCONN:
+      ESP_LOGW(TAG, "Modem Event: SIM Card disconnected");
+      break;
+    case MODEM_EVENT_SIMCARD_CONN:
+      ESP_LOGI(TAG, "Modem Event: SIM Card Connected");
+      break;
     case MODEM_EVENT_DTE_DISCONN:
-      ESP_LOGW(TAG, "USB Modem disconnected");
-      set_state(LTE_STATE_ERROR);
+      ESP_LOGW(TAG, "Modem Event: USB disconnected");
       break;
     case MODEM_EVENT_DTE_CONN:
-      ESP_LOGI(TAG, "USB Modem connected");
+      ESP_LOGI(TAG, "Modem Event: USB connected");
+      break;
+    case MODEM_EVENT_DTE_RESTART:
+      ESP_LOGW(TAG, "Modem Event: Hardware restart");
+      break;
+    case MODEM_EVENT_DTE_RESTART_DONE:
+      ESP_LOGI(TAG, "Modem Event: Hardware restart done");
       break;
     case MODEM_EVENT_NET_CONN:
-      ESP_LOGI(TAG, "USB Network connected");
-      if (ctx && ctx->event_group) {
-        xEventGroupSetBits(ctx->event_group, CONNECT_BIT);
-      }
-      set_state(LTE_STATE_CONNECTED);
+      ESP_LOGI(TAG, "Modem Event: Network connected");
       break;
     case MODEM_EVENT_NET_DISCONN:
-      ESP_LOGW(TAG, "USB Network disconnected");
-      if (ctx && ctx->event_group) {
-        xEventGroupSetBits(ctx->event_group, DISCONNECT_BIT);
-      }
-      set_state(LTE_STATE_DISCONNECTED);
+      ESP_LOGW(TAG, "Modem Event: Network disconnected");
+      break;
+    case MODEM_EVENT_WIFI_STA_CONN:
+      ESP_LOGI(TAG, "Modem Event: Station connected");
+      break;
+    case MODEM_EVENT_WIFI_STA_DISCONN:
+      ESP_LOGW(TAG, "Modem Event: All stations disconnected");
       break;
     default:
       break;
@@ -269,40 +277,20 @@ static esp_err_t usb_modem_init(void) {
   ESP_LOGI(TAG, "Initializing USB modem...");
 
   /* Configure modem board */
-  modem_config_t modem_cfg = MODEM_DEFAULT_CONFIG();
-  modem_cfg.handler = usb_modem_event_handler;
-  modem_cfg.flags = MODEM_FLAGS_INIT_NOT_ENTER_PPP; /* Don't auto-enter PPP */
+  modem_config_t modem_config = MODEM_DEFAULT_CONFIG();
 
-  /* Initialize modem board (handles USB DTE/DCE internally) */
-  esp_err_t ret = modem_board_init(&modem_cfg);
+#ifdef CONFIG_MODEM_BOARD_INIT_ENTER_PPP
+  modem_config.flags |= MODEM_FLAGS_INIT_NOT_ENTER_PPP;
+  modem_config.flags |= MODEM_FLAGS_INIT_NOT_BLOCK;
+#endif
+  modem_config.handler = on_modem_event;
+
+  esp_err_t ret = modem_board_init(&modem_config);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "modem_board_init failed: %d", ret);
+    ESP_LOGE(TAG, "Modem init failed: 0x%x", ret);
     return ret;
   }
-
-  /* Get modem information using modem_board APIs */
-  char operator_name[64] = {0};
-  if (modem_board_get_operator_state(operator_name, sizeof(operator_name)) ==
-      ESP_OK) {
-    strncpy(ctx->modem_info.operator_name, operator_name,
-            sizeof(ctx->modem_info.operator_name) - 1);
-  }
-
-  /* Get signal quality */
-  int rssi = 0, ber = 0;
-  if (modem_board_get_signal_quality(&rssi, &ber) == ESP_OK) {
-    ctx->modem_info.rssi = rssi;
-    ctx->modem_info.ber = ber;
-  }
-
-  strncpy(ctx->modem_info.module_name, "USB Modem",
-          sizeof(ctx->modem_info.module_name) - 1);
-
-  ctx->modem_info_valid = true;
-
-  ESP_LOGI(TAG, "USB Modem ready");
-  ESP_LOGI(TAG, "Operator: %s", operator_name);
-
+  ESP_LOGI(TAG, "Modem initialized successfully");
   return ESP_OK;
 }
 
@@ -424,9 +412,6 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config) {
       lte_handler_deinit();
       return ret;
     }
-
-    /* USB modem board handles netif internally, just get reference */
-    /* Note: modem_board manages its own netif in auto mode */
 
   } else {
     ESP_LOGE(TAG, "Unknown comm type: %d", ctx->config.comm_type);
