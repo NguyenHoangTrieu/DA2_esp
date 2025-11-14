@@ -144,10 +144,8 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
     
     // Check if this is TYPE field or APN field
     // If it's short (< 10 chars) and matches UART/USB, it's TYPE
-    bool has_type;
     if (type_len < 10) {
         if (strncmp(ptr, "UART", 4) == 0 || strncmp(ptr, "USB", 3) == 0) {
-            has_type = true;
             // TYPE is optional in config structure, skip it
             ESP_LOGI(TAG, "LTE Type: %.*s", type_len, ptr);
             ptr = first_colon + 1;
@@ -412,6 +410,14 @@ static void config_handler_task(void *arg) {
                         lan_cmd.length = cmd.data_len - 3;  // Skip "ML:" prefix
                         memcpy(lan_cmd.command, &cmd.raw_data[3], lan_cmd.length);
                         lan_cmd.length -= 2;
+
+                        // Check if this is a firmware update command
+                        if (lan_cmd.length >= 4 && strncmp(lan_cmd.command, "CFFW", 4) == 0) {
+                            g_not_ppp_to_lan = true;
+                            ppp_server_init();
+                            vTaskDelay(pdMS_TO_TICKS(200));
+                            mcu_lan_start_timer();
+                        }
                         
                         // Send to MCU LAN queue
                         if (g_mcu_lan_config_queue) {

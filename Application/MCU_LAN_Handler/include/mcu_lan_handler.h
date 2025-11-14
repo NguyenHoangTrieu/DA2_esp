@@ -29,4 +29,10 @@ esp_err_t mcu_lan_handler_start(void);
  */
 esp_err_t mcu_lan_handler_stop(void);
 
+/**
+ * @brief Start the INIT_OK check timer
+ * 
+ */
+void mcu_lan_start_timer(void);
+
 #endif // MCU_LAN_HANDLER_H

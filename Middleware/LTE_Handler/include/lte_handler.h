@@ -92,6 +92,7 @@ typedef struct {
     .max_reconnect_attempts = 0,                \
 }
 
+extern volatile bool g_not_ppp_to_lan;
 /**
  * @brief Initialize LTE Handler
  * 

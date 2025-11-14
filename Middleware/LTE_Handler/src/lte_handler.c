@@ -39,6 +39,7 @@
 #define DISCONNECT_BIT BIT1
 
 static const char *TAG = "LTE_HANDLER";
+volatile bool g_not_ppp_to_lan = false;
 
 ESP_EVENT_DEFINE_BASE(LTE_HANDLER_EVENT);
 
@@ -163,7 +164,7 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
                         int32_t event_id, void *event_data) {
   ESP_LOGD(TAG, "IP event! %d", event_id);
 
-  if (event_id == IP_EVENT_PPP_GOT_IP) {
+  if (event_id == IP_EVENT_PPP_GOT_IP && !g_not_ppp_to_lan) {
     esp_netif_dns_info_t dns_info;
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     esp_netif_t *netif = event->esp_netif;
@@ -196,7 +197,7 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
         xEventGroupSetBits(ctx->event_group, CONNECT_BIT);
       }
     }
-  } else if (event_id == IP_EVENT_PPP_LOST_IP) {
+  } else if (event_id == IP_EVENT_PPP_LOST_IP && !g_not_ppp_to_lan) {
     ESP_LOGI(TAG, "PPP Lost IP");
     if (ctx) {
       ctx->network_info_valid = false;

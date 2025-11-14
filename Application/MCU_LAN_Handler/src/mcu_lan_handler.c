@@ -123,7 +123,7 @@ static void mcu_lan_handler_task(void *arg) {
       // Request data from LAN MCU to check INIT_OK
       lan_comm_status_t status = lan_comm_request_data(
           g_lan_comm_handle, ack_buffer, sizeof(ack_buffer));
-
+         ESP_LOGI(TAG, "Checking LAN MCU");
       if (status == LAN_COMM_OK) {
         // Check for INIT_OK message
         if (strncmp((char *)ack_buffer, "MCU_WAN_INIT_OK", 15) == 0) {
@@ -249,15 +249,7 @@ esp_err_t mcu_lan_handler_start(void) {
     }
 
     // Start timer
-    if (xTimerStart(init_check_timer, 0) != pdPASS) {
-      ESP_LOGE(TAG, "Failed to start init check timer");
-      xTimerDelete(init_check_timer, 0);
-      init_check_timer = NULL;
-      mcu_lan_handler_running = false;
-      vTaskDelete(mcu_lan_handler_task_handle);
-      mcu_lan_handler_task_handle = NULL;
-      return ESP_FAIL;
-    }
+    mcu_lan_start_timer();
 
     ESP_LOGI(TAG, "Init check timer started (period: %d ms)", INIT_CHECK_PERIOD_MS);
   }
@@ -300,4 +292,16 @@ esp_err_t mcu_lan_handler_stop(void) {
   ESP_LOGI(TAG, "MCU LAN handler task stopped");
 
   return ESP_OK;
+}
+
+void mcu_lan_start_timer(void){
+    // Start timer
+    if (xTimerStart(init_check_timer, 0) != pdPASS) {
+      ESP_LOGE(TAG, "Failed to start init check timer");
+      xTimerDelete(init_check_timer, 0);
+      init_check_timer = NULL;
+      mcu_lan_handler_running = false;
+      vTaskDelete(mcu_lan_handler_task_handle);
+      mcu_lan_handler_task_handle = NULL;
+    }
 }

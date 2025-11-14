@@ -20,7 +20,6 @@ static const char *TAG = "ppp_server";
 
 /* PPP Server State */
 static esp_netif_t *s_ppp_netif = NULL;
-static esp_netif_t *s_wifi_netif = NULL;
 static bool s_ppp_server_initialized = false;
 static TaskHandle_t s_ppp_task_handle = NULL;
 
@@ -102,20 +101,11 @@ static void ppp_server_task(void *pvParameters) {
 /**
  * @brief Initialize the PPP server using eppp_link
  */
-esp_err_t ppp_server_init(esp_netif_t *wifi_netif) {
+esp_err_t ppp_server_init() {
   if (s_ppp_server_initialized) {
     ESP_LOGW(TAG, "PPP server already initialized");
     return ESP_OK;
   }
-
-  if (!wifi_netif) {
-    ESP_LOGE(TAG,
-             "Invalid wifi_netif parameter - WiFi must be connected first");
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  // Store WiFi netif reference
-  s_wifi_netif = wifi_netif;
 
   // Create event group for connection status
   s_ppp_event_group = xEventGroupCreate();
@@ -213,8 +203,6 @@ esp_err_t ppp_server_deinit(void) {
     vEventGroupDelete(s_ppp_event_group);
     s_ppp_event_group = NULL;
   }
-
-  s_wifi_netif = NULL;
 
   ESP_LOGI(TAG, "PPP server deinitialized successfully");
   return ESP_OK;

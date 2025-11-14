@@ -8,6 +8,9 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "fota_handler.h"
+#include "ppp_server.h"
+#include "mcu_lan_handler.h"
+#include "lte_handler.h"
 
 // Command buffer size
 #define CONFIG_CMD_MAX_LEN 256

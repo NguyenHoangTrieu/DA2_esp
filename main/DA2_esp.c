@@ -80,11 +80,6 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    ppp_server_init(g_wifi_netif);
-    vTaskDelay(pdMS_TO_TICKS(200));
-    
     if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
     led_show_yellow();
     

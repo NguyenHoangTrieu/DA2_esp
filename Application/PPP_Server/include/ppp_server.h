@@ -10,12 +10,10 @@
  * @brief Initialize the PPP server
  * 
  * This function initializes the UART, starts the PPP server service,
- * and enables NAPT on the provided (and already-connected) wifi_netif handle.
- * 
- * @param wifi_netif Pointer to the already-initialized and connected Wi-Fi netif
+ * and enables NAPT on the provided (and already-connected)
  * @return esp_err_t ESP_OK on success, error code otherwise
  */
-esp_err_t ppp_server_init(esp_netif_t *wifi_netif);
+esp_err_t ppp_server_init(void);
 
 /**
  * @brief Deinitialize the PPP server
