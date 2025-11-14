@@ -113,7 +113,7 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
 
 /**
  * @brief Parse LTE configuration from command string
- * Format: "LT:APN:USERNAME:PASSWORD"
+ * Format: "LT:TYPE:APN:USERNAME:PASSWORD"
  * Example: "LT:v-internet::\"
  * Note: Username and password can be empty
  * @param data Raw command data
@@ -125,20 +125,40 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
     if (!data || !cfg || len < 3) {
         return ESP_FAIL;
     }
-
+    
     memset(cfg, 0, sizeof(lte_config_data_t));
     
-    // Parse format: "LT:apn:username:password"
+    // Parse format: "LT:TYPE:APN:USERNAME:PASSWORD"
     const char *ptr = data + 3; // Skip "LT:"
     const char *end = data + len;
     
-    // Parse APN (required)
+    // Parse TYPE (UART or USB) - optional, defaults to UART
     const char *first_colon = strchr(ptr, ':');
     if (!first_colon || first_colon >= end) {
-        ESP_LOGE(TAG, "LTE config: missing APN separator");
+        ESP_LOGE(TAG, "LTE config: missing separator");
         return ESP_FAIL;
     }
     
+    int type_len = first_colon - ptr;
+    
+    // Check if this is TYPE field or APN field
+    // If it's short (< 10 chars) and matches UART/USB, it's TYPE
+    bool has_type = false;
+    if (type_len < 10) {
+        if (strncmp(ptr, "UART", 4) == 0 || strncmp(ptr, "USB", 3) == 0) {
+            has_type = true;
+            // TYPE is optional in config structure, skip it
+            ESP_LOGI(TAG, "LTE Type: %.*s", type_len, ptr);
+            ptr = first_colon + 1;
+            first_colon = strchr(ptr, ':');
+            if (!first_colon || first_colon >= end) {
+                ESP_LOGE(TAG, "LTE config: missing APN separator");
+                return ESP_FAIL;
+            }
+        }
+    }
+    
+    // Parse APN (required)
     int apn_len = first_colon - ptr;
     if (apn_len <= 0 || apn_len >= sizeof(cfg->apn)) {
         ESP_LOGE(TAG, "LTE APN length invalid: %d", apn_len);
@@ -167,7 +187,7 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
         }
     }
     
-    ESP_LOGI(TAG, "Parsed LTE config - APN: '%s', Username: '%s'", 
+    ESP_LOGI(TAG, "Parsed LTE config - APN: '%s', Username: '%s'",
              cfg->apn, cfg->username);
     return ESP_OK;
 }

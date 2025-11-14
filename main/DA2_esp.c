@@ -80,10 +80,6 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
-    // usb_otg_rw_task_stop();
-    vTaskDelay(pdMS_TO_TICKS(100));
-    class_driver_task_stop();
-    usb_host_lib_task_stop();
     mqtt_handler_task_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -110,10 +106,7 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type)
     
     jtag_task_stop();
     vTaskDelay(pdMS_TO_TICKS(100));
-    
-    usb_host_lib_task_start();
-    class_driver_task_start();
-    // usb_otg_rw_task_start();
+
     ppp_server_deinit();
     
     if (*current_internet_type != g_internet_type) {
@@ -174,10 +167,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
     // Start Config handler
     config_handler_task_start();
-    // Start USB tasks
-    usb_host_lib_task_start();
-    class_driver_task_start();
-    // usb_otg_rw_task_start();
 
     // Start Internet tasks
     switch (current_internet_type) {

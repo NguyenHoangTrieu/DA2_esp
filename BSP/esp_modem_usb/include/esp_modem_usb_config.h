@@ -11,10 +11,6 @@
 
 #include "sdkconfig.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ==================== Version Information ==================== */
 
 #ifndef IOT_USBH_MODEM_VER_MAJOR
@@ -326,9 +322,5 @@ extern "C" {
  * @brief Check if GPIO is enabled (non-zero)
  */
 #define MODEM_GPIO_IS_ENABLED(gpio)         ((gpio) != 0)
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* ESP_MODEM_USB_CONFIG_H */

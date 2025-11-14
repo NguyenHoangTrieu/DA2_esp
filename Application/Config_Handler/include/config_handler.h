@@ -42,6 +42,7 @@ typedef struct {
 
 // LTE configuration structure
 typedef struct {
+    char comm_type[8];    // Communication type: "UART" or "USB"
     char apn[64];           // Access Point Name
     char username[32];      // PPP username (optional)
     char password[32];      // PPP password (optional)
