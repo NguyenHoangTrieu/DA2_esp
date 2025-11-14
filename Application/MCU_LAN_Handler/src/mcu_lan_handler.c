@@ -10,9 +10,15 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include "lan_comm.h"
+#include "mqtt_handler.h"
 #include <string.h>
 
 static const char *TAG = "mcu_lan_handler";
+
+#define DATA_POLL_INTERVAL_MS 1000      // Poll every 1 second
+#define DATA_RX_BUFFER_SIZE (32 * 1024) // 32KB
+
+static uint8_t *g_data_rx_buffer = NULL;
 
 // LAN communication handle (private to this module)
 static lan_comm_handle_t g_lan_comm_handle = NULL;
@@ -46,11 +52,23 @@ static bool g_init_ok_received = false;
 /**
  * @brief Software timer callback - notify task to check init OK
  */
-static void init_check_timer_callback(TimerHandle_t xTimer) {
-  // Send notification to mcu_lan_handler task
-  if (mcu_lan_handler_task_handle != NULL) {
-    xTaskNotifyGive(mcu_lan_handler_task_handle);
-  }
+static void data_tx_timer_callback(TimerHandle_t xTimer) {
+    // Only send data if sync is complete
+    if (!g_mcu_sync_complete) {
+        ESP_LOGD(TAG, "Waiting for START_MCU command before sending data");
+        return;
+    }
+    
+    if (g_wan_comm_handle && g_fake_data) {
+        // Load fake data to TX buffer
+        wan_comm_status_t status =
+            wan_comm_load_tx_data(g_wan_comm_handle, g_fake_data, FAKE_DATA_SIZE);
+        if (status == WAN_COMM_OK) {
+            ESP_LOGI(TAG, "Loaded 32KB fake data to TX buffer");
+        } else {
+            ESP_LOGE(TAG, "Failed to load fake data: %d", status);
+        }
+    }
 }
 
 /**
@@ -67,6 +85,7 @@ static void mcu_lan_error_cb(lan_comm_status_t error, const char *context,
 static void mcu_lan_handler_task(void *arg) {
   mcu_lan_config_data_t lan_config;
   uint8_t ack_buffer[64];
+  TickType_t last_poll_time = xTaskGetTickCount();
 
   ESP_LOGI(TAG, "MCU LAN handler task started");
 
@@ -119,11 +138,32 @@ static void mcu_lan_handler_task(void *arg) {
       } else {
         ESP_LOGE(TAG, "Failed to send command to LAN MCU: %d", status);
       }
+    } else if ((xTaskGetTickCount() - last_poll_time) >=
+               pdMS_TO_TICKS(DATA_POLL_INTERVAL_MS) && g_init_ok_received) {
+
+      last_poll_time = xTaskGetTickCount();
+
+      // Request 32KB data from WAN MCU
+      lan_comm_status_t status = lan_comm_request_data(
+          g_lan_comm_handle, g_data_rx_buffer, DATA_RX_BUFFER_SIZE);
+
+      if (status == LAN_COMM_OK) {
+        ESP_LOGI(TAG, "Received 32KB data from WAN MCU");
+
+        // Verify data pattern (optional debug)
+        ESP_LOGD(TAG, "First 32 bytes: %.*s", 32, g_data_rx_buffer);
+
+        // Forward to MQTT handler
+        mqtt_enqueue_large_data(g_data_rx_buffer, DATA_RX_BUFFER_SIZE);
+
+      } else {
+        ESP_LOGW(TAG, "Failed to receive data from WAN: %d", status);
+      }
     } else if (ulTaskNotifyTake(pdTRUE, 0) > 0) {
       // Request data from LAN MCU to check INIT_OK
       lan_comm_status_t status = lan_comm_request_data(
           g_lan_comm_handle, ack_buffer, sizeof(ack_buffer));
-         ESP_LOGI(TAG, "Checking LAN MCU");
+      ESP_LOGI(TAG, "Checking LAN MCU");
       if (status == LAN_COMM_OK) {
         // Check for INIT_OK message
         if (strncmp((char *)ack_buffer, "MCU_WAN_INIT_OK", 15) == 0) {
@@ -139,7 +179,10 @@ static void mcu_lan_handler_task(void *arg) {
       memset(ack_buffer, 0, sizeof(ack_buffer));
     }
   }
-
+  if (g_data_rx_buffer) {
+      free(g_data_rx_buffer);
+      g_data_rx_buffer = NULL;
+  }
   ESP_LOGI(TAG, "MCU LAN handler task exiting");
   vTaskDelete(NULL);
 }
@@ -232,13 +275,13 @@ esp_err_t mcu_lan_handler_start(void) {
   mcu_lan_handler_running = true;
 
   if (init_check_timer == NULL) {
-    init_check_timer = xTimerCreate(
-        "init_check_timer",                  // Timer name
-        pdMS_TO_TICKS(INIT_CHECK_PERIOD_MS), // Period: 10 seconds
-        pdTRUE,                              // Auto-reload (periodic)
-        NULL,                                // Timer ID (not used)
-        init_check_timer_callback            // Callback function
-    );
+    init_check_timer =
+        xTimerCreate("init_check_timer",                  // Timer name
+                     pdMS_TO_TICKS(INIT_CHECK_PERIOD_MS), // Period: 10 seconds
+                     pdTRUE,                   // Auto-reload (periodic)
+                     NULL,                     // Timer ID (not used)
+                     init_check_timer_callback // Callback function
+        );
 
     if (init_check_timer == NULL) {
       ESP_LOGE(TAG, "Failed to create init check timer");
@@ -251,7 +294,8 @@ esp_err_t mcu_lan_handler_start(void) {
     // Start timer
     mcu_lan_start_timer();
 
-    ESP_LOGI(TAG, "Init check timer started (period: %d ms)", INIT_CHECK_PERIOD_MS);
+    ESP_LOGI(TAG, "Init check timer started (period: %d ms)",
+             INIT_CHECK_PERIOD_MS);
   }
 
   BaseType_t ret =
@@ -294,14 +338,14 @@ esp_err_t mcu_lan_handler_stop(void) {
   return ESP_OK;
 }
 
-void mcu_lan_start_timer(void){
-    // Start timer
-    if (xTimerStart(init_check_timer, 0) != pdPASS) {
-      ESP_LOGE(TAG, "Failed to start init check timer");
-      xTimerDelete(init_check_timer, 0);
-      init_check_timer = NULL;
-      mcu_lan_handler_running = false;
-      vTaskDelete(mcu_lan_handler_task_handle);
-      mcu_lan_handler_task_handle = NULL;
-    }
+void mcu_lan_start_timer(void) {
+  // Start timer
+  if (xTimerStart(init_check_timer, 0) != pdPASS) {
+    ESP_LOGE(TAG, "Failed to start init check timer");
+    xTimerDelete(init_check_timer, 0);
+    init_check_timer = NULL;
+    mcu_lan_handler_running = false;
+    vTaskDelete(mcu_lan_handler_task_handle);
+    mcu_lan_handler_task_handle = NULL;
+  }
 }
