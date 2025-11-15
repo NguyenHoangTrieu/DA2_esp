@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 
+extern volatile bool data_send_active;
 /**
  * @brief Start MCU LAN handler
  * 

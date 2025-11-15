@@ -398,11 +398,18 @@ void fota_handler_task_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, 
                                                 &event_handler, NULL));
 
-#if FOTA_CONFIG_CONNECT_WIFI
-    esp_wifi_set_ps(WIFI_PS_NONE);
-#endif
-
-    xTaskCreate(&advanced_ota_task, "advanced_ota_task", 32 * 1024, NULL, 5, NULL);
+// #if FOTA_CONFIG_CONNECT_WIFI
+//     esp_wifi_set_ps(WIFI_PS_NONE);
+// #endif
+    ESP_LOGI(TAG, "Creating Advanced OTA task");
+    ESP_LOGI(TAG, "Free heap before OTA task: %d bytes", esp_get_free_heap_size());
+    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task", 16 * 1024, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create Advanced OTA task");
+    } else {
+        ESP_LOGI(TAG, "Advanced OTA task created successfully");
+    }
+    
 }
 
 void fota_handler_task_stop(void) 

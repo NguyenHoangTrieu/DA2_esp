@@ -209,12 +209,12 @@
 /* ==================== GPIO Configuration ==================== */
 
 #ifndef CONFIG_MODEM_POWER_GPIO
-    #define CONFIG_MODEM_POWER_GPIO         12
+    #define CONFIG_MODEM_POWER_GPIO         22
 #endif
 #define MODEM_GPIO_POWER                    CONFIG_MODEM_POWER_GPIO
 
 #ifndef CONFIG_MODEM_RESET_GPIO
-    #define CONFIG_MODEM_RESET_GPIO         13
+    #define CONFIG_MODEM_RESET_GPIO         23
 #endif
 #define MODEM_GPIO_RESET                    CONFIG_MODEM_RESET_GPIO
 

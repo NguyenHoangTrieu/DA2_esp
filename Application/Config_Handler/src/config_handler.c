@@ -19,7 +19,7 @@ QueueHandle_t g_uart_config_queue = NULL;
 QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 QueueHandle_t g_mcu_lan_config_queue = NULL;
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to WiFi
+config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE; // Default to LTE
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
 
 static bool config_handler_running = false;
@@ -380,6 +380,8 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
+                    mqtt_handler_task_stop(); // Stop MQTT task if running
+                    vTaskDelay(pdMS_TO_TICKS(5000));
                     fota_handler_task_start();
                     break;
                 }

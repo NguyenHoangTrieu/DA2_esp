@@ -73,6 +73,7 @@ void setup_gpio45_interrupt(void) {
  * @brief Switch to CONFIG mode
  */
 static void switch_to_config_mode(config_internet_type_t *current_internet_type) {
+    data_send_active = false;
     if (current_mode == APP_MODE_CONFIG) {
         ESP_LOGW(TAG, "Already in CONFIG mode");
         return;
@@ -82,7 +83,6 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     
     if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
     led_show_yellow();
-    
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
 }
@@ -216,7 +216,7 @@ void app_main(void) {
     led_on();
     
     setup_gpio45_interrupt();
-
+    data_send_active = true;
     main_task_handle = xTaskGetCurrentTaskHandle();
     
     ESP_ERROR_CHECK(esp_netif_init());

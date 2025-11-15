@@ -1,6 +1,7 @@
 /*
  * MQTT handler module header for ESP32-S3 board.
  */
+
 #ifndef MQTT_HANDLER_H
 #define MQTT_HANDLER_H
 
@@ -10,36 +11,27 @@
 #include "freertos/task.h"
 #include "mqtt_client.h"
 #include <stdint.h>
-#include <stddef.h>
+#include <string.h>
 
-// NEW: Data type enum for publish task
-typedef enum {
-    MQTT_DATA_TYPE_TELEMETRY,  // Small telemetry data
-    MQTT_DATA_TYPE_LARGE       // Large binary data (32KB)
-} mqtt_data_type_t;
-
-// NEW: Unified publish data structure
+// Simplified publish data structure (no type differentiation)
 typedef struct {
-    mqtt_data_type_t type;
-    uint8_t *data;
-    size_t length;
+  uint8_t *data;
+  size_t length;
 } mqtt_publish_data_t;
 
-// Start the MQTT handler, launch FreeRTOS publishing task in suspended state.
+// Start the MQTT handler
 void mqtt_handler_task_start(void);
 
-// Stop the MQTT handler, delete the publishing task.
+// Stop the MQTT handler
 void mqtt_handler_task_stop(void);
 
-// Build telemetry data from source buffer to internal payload buffer and clear source.
-void mqtt_build_telemetry_payload(char *source, size_t len);
+// Unified function to enqueue any data for publishing
+void mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
 
-// NEW: Enqueue large data for publishing
-void mqtt_enqueue_large_data(const uint8_t *data, size_t data_len);
-
+// Receive data from MQTT subscription
 void mqtt_receive_enqueue(const char *data, size_t len);
 
 extern QueueHandle_t g_server_cmd_queue;
-extern QueueHandle_t g_mqtt_publish_queue;  // NEW: Unified publish queue
+extern QueueHandle_t g_mqtt_publish_queue;
 
 #endif // MQTT_HANDLER_H

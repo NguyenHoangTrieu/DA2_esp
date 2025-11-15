@@ -10,6 +10,7 @@
 #include "fota_handler.h"
 #include "ppp_server.h"
 #include "mcu_lan_handler.h"
+#include "mqtt_handler.h"
 #include "lte_handler.h"
 
 // Command buffer size

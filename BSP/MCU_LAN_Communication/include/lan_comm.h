@@ -33,7 +33,7 @@ extern "C" {
  */
 #define LAN_COMM_DEFAULT_CLOCK_HZ (10 * 1000 * 1000)  // 10 MHz
 #define LAN_COMM_DEFAULT_QUEUE_SIZE 7
-#define LAN_COMM_MAX_TRANSFER_SIZE 4092  // SPI DMA limitation
+#define LAN_COMM_MAX_TRANSFER_SIZE 8192  // SPI DMA limitation
 #define LAN_COMM_TIMEOUT_MS 1000
 
 /**
