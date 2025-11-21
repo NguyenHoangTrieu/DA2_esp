@@ -15,7 +15,6 @@ static const char *TAG = "config_handler";
 QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
 QueueHandle_t g_mqtt_config_queue = NULL;
-QueueHandle_t g_uart_config_queue = NULL;
 QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 QueueHandle_t g_mcu_lan_config_queue = NULL;
@@ -41,8 +40,6 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_WIFI;
     } else if (cmd[0] == 'M' && cmd[1] == 'Q') {
         return CONFIG_TYPE_MQTT;
-    } else if (cmd[0] == 'U' && cmd[1] == 'R') {
-        return CONFIG_TYPE_UART;
     } else if (cmd[0] == 'U' && cmd[1] == 'S') {
         return CONFIG_TYPE_USB;
     } else if (cmd[0] == 'F' && cmd[1] == 'W') {
@@ -256,35 +253,6 @@ esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *
 }
 
 /**
- * @brief Parse UART configuration from command string
- * Format: "UR:BAUDRATE:DATABITS:STOPBITS:PARITY"
- * Example: "UR:115200:8:1:0"
- * @param data Raw command data
- * @param len Command length
- * @param cfg Output UART config structure
- * @return ESP_OK on success, ESP_FAIL on error
- */
-esp_err_t config_parse_uart(const char *data, uint16_t len, uart_config_data_t *cfg) {
-    if (!data || !cfg || len < 5) {
-        return ESP_FAIL;
-    }
-    
-    // Simple parsing: "UR:baudrate:databits:stopbits:parity"
-    int parsed = sscanf(data, "UR:%u:%hhu:%hhu:%hhu", 
-                       (unsigned int *)&cfg->baud_rate, &cfg->data_bits, 
-                       &cfg->stop_bits, &cfg->parity);
-    
-    if (parsed != 4) {
-        ESP_LOGE(TAG, "UART config parse error (parsed %d/4 fields)", parsed);
-        return ESP_FAIL;
-    }
-    
-    ESP_LOGI(TAG, "Parsed UART config - Baud: %u, Data: %u, Stop: %u, Parity: %u",
-             cfg->baud_rate, cfg->data_bits, cfg->stop_bits, cfg->parity);
-    return ESP_OK;
-}
-
-/**
  * @brief Parse Internet configuration from command string
  * Format: "IN:TYPE"
  * Example: "IN:WIFI"
@@ -355,19 +323,6 @@ static void config_handler_task(void *arg) {
                             ESP_LOGI(TAG, "MQTT config sent to MQTT task");
                         } else {
                             ESP_LOGW(TAG, "MQTT queue not initialized");
-                        }
-                    }
-                    break;
-                }
-                
-                case CONFIG_TYPE_UART: {
-                    uart_config_data_t uart_cfg;
-                    if (config_parse_uart(cmd.raw_data, cmd.data_len, &uart_cfg) == ESP_OK) {
-                        if (g_uart_config_queue) {
-                            xQueueSend(g_uart_config_queue, &uart_cfg, pdMS_TO_TICKS(100));
-                            ESP_LOGI(TAG, "UART config sent to UART task");
-                        } else {
-                            ESP_LOGW(TAG, "UART queue not initialized");
                         }
                     }
                     break;

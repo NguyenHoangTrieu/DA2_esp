@@ -20,8 +20,7 @@
 // Command type codes (2-character prefix)
 typedef enum {
     CONFIG_TYPE_WIFI = 0,      // "WF" - WiFi configuration
-    CONFIG_TYPE_MQTT = 1,      // "MQ" - MQTT configuration  
-    CONFIG_TYPE_UART = 2,      // "UR" - UART configuration
+    CONFIG_TYPE_MQTT = 1,      // "MQ" - MQTT configuration
     CONFIG_TYPE_USB = 3,       // "US" - USB configuration
     CONFIG_TYPE_LTE = 4,       // "LT" - LTE configuration
     CONFIG_TYPE_INTERNET = 5,   // "IN" - Internet configuration
@@ -61,28 +60,6 @@ typedef struct {
     char password[32];      // PPP password (optional)
 } lte_config_data_t;
 
-// MQTT configuration structure
-typedef struct {
-    char broker_uri[128];
-    char device_token[65];
-    uint16_t port;
-} mqtt_config_data_t;
-
-// UART configuration structure
-typedef struct {
-    uint32_t baud_rate;
-    uint8_t data_bits;
-    uint8_t stop_bits;
-    uint8_t parity;
-} uart_config_data_t;
-
-// USB configuration structure
-typedef struct {
-    uint16_t vid;
-    uint16_t pid;
-    uint8_t interface_num;
-} usb_config_data_t;
-
 //MCU LAN Communication configuration structure
 typedef struct {
     char command[64];
@@ -100,8 +77,6 @@ typedef struct {
 extern QueueHandle_t g_wifi_config_queue;
 extern QueueHandle_t g_lte_config_queue;
 extern QueueHandle_t g_mqtt_config_queue;
-extern QueueHandle_t g_uart_config_queue;
-extern QueueHandle_t g_usb_config_queue;
 extern QueueHandle_t g_mcu_lan_config_queue;
 
 // Main config handler queue (receives raw commands)
@@ -117,7 +92,6 @@ config_type_t config_parse_type(const char *cmd, uint16_t len);
 esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg);
 esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
 esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
-esp_err_t config_parse_uart(const char *data, uint16_t len, uart_config_data_t *cfg);
 esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
 
 #endif // CONFIG_HANDLER_H
