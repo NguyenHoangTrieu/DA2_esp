@@ -48,8 +48,9 @@ typedef enum {
 } config_server_type_t;
 // WiFi configuration structure
 typedef struct {
-    char ssid[33];
-    char password[65];
+    char username[64];
+    char ssid[64];
+    char password[64];
 } wifi_config_data_t;
 
 // LTE configuration structure

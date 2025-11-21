@@ -34,4 +34,11 @@ void mqtt_receive_enqueue(const char *data, size_t len);
 extern QueueHandle_t g_server_cmd_queue;
 extern QueueHandle_t g_mqtt_publish_queue;
 
+// Global Config variables:
+extern char g_broker_uri[128];
+extern char g_device_token[65];
+extern char g_subscribe_topic[128];
+extern char g_attribute_topic[128];
+extern char g_publish_topic[128];
+
 #endif // MQTT_HANDLER_H

@@ -41,3 +41,4 @@ ENV/
 # *.bin
 *.elf
 *.map
+TODO.md

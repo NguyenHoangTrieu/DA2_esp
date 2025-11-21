@@ -258,7 +258,7 @@
 /* ==================== Wi-Fi SoftAP Configuration ==================== */
 
 #ifndef CONFIG_MODEM_WIFI_SSID
-    #define CONFIG_MODEM_WIFI_SSID          "esp_4g_router"
+    #define CONFIG_MODEM_WIFI_SSID          "ESP_ROUTER"
 #endif
 #define MODEM_WIFI_SSID                     CONFIG_MODEM_WIFI_SSID
 

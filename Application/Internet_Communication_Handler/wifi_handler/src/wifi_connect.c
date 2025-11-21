@@ -1,5 +1,7 @@
 /*
- * Wifi Connect Handler for esp32s3
+ * WiFi Connect Handler for ESP32-S3
+ * Supports both Personal (WPA2/WPA3) and Enterprise (WPA2-Enterprise) modes
+ * Using new esp_eap_client API (esp_wpa2 is deprecated)
  */
 
 #include "wifi_connect.h"
@@ -7,31 +9,42 @@
 
 #define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
 #define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
+#define DEFAULT_ESP_WIFI_USERNAME                                              \
+  "" // Enterprise username (empty for Personal mode)
 #define EXAMPLE_ESP_MAXIMUM_RETRY 3
 
 // Adjust for the security/auth your AP uses
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
 #define EXAMPLE_H2E_IDENTIFIER ""
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
+
 // Uncomment if WPA3 support needed
 // #define ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
 
 static EventGroupHandle_t
     s_wifi_event_group; // FreeRTOS event group to signal WiFi state
+
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
 static const char *TAG = "wifi connect";
 static int s_retry_num = 0;
 
+// Configurable WiFi credentials (array-based storage)
 static char s_wifi_ssid[33] = DEFAULT_ESP_WIFI_SSID; // Buffer for current SSID
 static char s_wifi_pass[65] =
-    DEFAULT_ESP_WIFI_PASS;           // Buffer for current password
+    DEFAULT_ESP_WIFI_PASS; // Buffer for current password
+static char s_wifi_username[65] =
+    DEFAULT_ESP_WIFI_USERNAME; // Buffer for enterprise username
+static wifi_conf_auth_mode_t s_wifi_auth_mode =
+    WIFI_AUTH_MODE_PERSONAL; // Current auth mode
+
 static uint8_t s_wifi_connected = 0; // Connection status flag
 static volatile uint8_t s_reconnect_request =
     0;                                       // Flag for reconnection request
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
+
 // Network interface handle (global)
 esp_netif_t *g_wifi_netif = NULL;
 
@@ -61,9 +74,9 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       ESP_LOGI(TAG, "Retrying to connect to the AP");
     } else {
       xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+      ESP_LOGI(TAG, "Connect to the AP failed");
     }
 
-    ESP_LOGI(TAG, "Connect to the AP failed");
     ESP_LOGI(TAG, "Disconnected from WiFi");
     s_wifi_connected = 0;
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -76,14 +89,70 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 }
 
 /*
- * Initialize WiFi in STA mode and connect.
- * Custom SSID/PASSWORD can be provided for initial connection.
+ * Configure WPA2-Enterprise authentication using new esp_eap_client API
  */
-void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
+static esp_err_t wifi_configure_enterprise(const char *username,
+                                           const char *password) {
+  esp_err_t ret;
+
+  ESP_LOGI(TAG, "Configuring WPA2-Enterprise with username: %s", username);
+
+  // Set identity (used in EAP-Response/Identity)
+  ret = esp_eap_client_set_identity((uint8_t *)username, strlen(username));
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to set identity: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Set username for Phase 2 (PEAP/TTLS)
+  ret = esp_eap_client_set_username((uint8_t *)username, strlen(username));
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to set username: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Set password for Phase 2
+  ret = esp_eap_client_set_password((uint8_t *)password, strlen(password));
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to set password: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Optional: Set TTLS Phase 2 method (default is typically MSCHAPv2)
+  // Uncomment if you need PAP instead:
+  // esp_eap_client_set_ttls_phase2_method(ESP_EAP_TTLS_PHASE2_PAP);
+
+  // Optional: Use default certificate bundle for CA verification
+  // Uncomment if needed for secure connections:
+  // esp_eap_client_use_default_cert_bundle(true);
+
+  // Enable WPA2-Enterprise
+  ret = esp_wifi_sta_enterprise_enable();
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to enable WPA2-Enterprise: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  ESP_LOGI(TAG, "WPA2-Enterprise configured successfully");
+  return ESP_OK;
+}
+
+/*
+ * Initialize WiFi in STA mode and connect.
+ * Supports both Personal and Enterprise modes.
+ */
+void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
+                   const char *custom_username, wifi_conf_auth_mode_t auth_mode) {
   s_wifi_event_group = xEventGroupCreate();
 
-  ESP_LOGI(TAG, "CONNECTING TO WIFI SSID:%s PASSWORD:%s", custom_ssid,
-           custom_pass);
+  if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+    ESP_LOGI(TAG, "CONNECTING TO WIFI (ENTERPRISE) SSID:%s USERNAME:%s",
+             custom_ssid, custom_username);
+  } else {
+    ESP_LOGI(TAG, "CONNECTING TO WIFI (PERSONAL) SSID:%s PASSWORD:%s",
+             custom_ssid, custom_pass);
+  }
+
   g_wifi_netif = esp_netif_create_default_wifi_sta();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -99,20 +168,37 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
   wifi_config_t wifi_config = {0};
   strncpy((char *)wifi_config.sta.ssid, custom_ssid,
           sizeof(wifi_config.sta.ssid));
-  strncpy((char *)wifi_config.sta.password, custom_pass,
-          sizeof(wifi_config.sta.password));
-  wifi_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
-  wifi_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
-  strcpy((char *)wifi_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
+
+  if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+    // For Enterprise, don't set password in wifi_config
+    // Password is set via esp_eap_client_set_password()
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_ENTERPRISE;
+  } else {
+    // For Personal mode
+    strncpy((char *)wifi_config.sta.password, custom_pass,
+            sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
+    wifi_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
+    strcpy((char *)wifi_config.sta.sae_h2e_identifier, EXAMPLE_H2E_IDENTIFIER);
 
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
-  wifi_config.sta.disable_wpa3_compatible_mode = 0;
+    wifi_config.sta.disable_wpa3_compatible_mode = 0;
 #endif
+  }
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-  ESP_ERROR_CHECK(esp_wifi_start());
 
+  // Configure Enterprise authentication if needed
+  if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+    esp_err_t ret = wifi_configure_enterprise(custom_username, custom_pass);
+    if (ret != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to configure enterprise authentication");
+      return;
+    }
+  }
+
+  ESP_ERROR_CHECK(esp_wifi_start());
   ESP_LOGI(TAG, "wifi_init_sta finished.");
 
   // Wait for either successful connection or maximum retry/failure
@@ -121,12 +207,15 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
                                          pdFALSE, pdFALSE, portMAX_DELAY);
 
   if (bits & WIFI_CONNECTED_BIT) {
-    ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s", custom_ssid,
-             custom_pass);
+    if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+      ESP_LOGI(TAG, "Connected to AP SSID:%s (Enterprise)", custom_ssid);
+    } else {
+      ESP_LOGI(TAG, "Connected to AP SSID:%s Password:%s", custom_ssid,
+               custom_pass);
+    }
     s_wifi_connected = true;
   } else if (bits & WIFI_FAIL_BIT) {
-    ESP_LOGI(TAG, "Failed to connect to SSID:%s, Password:%s", custom_ssid,
-             custom_pass);
+    ESP_LOGI(TAG, "Failed to connect to SSID:%s", custom_ssid);
   } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
@@ -139,7 +228,6 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass) {
  */
 static void wifi_config_task(void *arg) {
   ESP_LOGI(TAG, "WiFi config task started, listening for config from queue");
-  // uint16_t scan_counter = 0;
   wifi_config_data_t wifi_cfg;
 
   while (!wifi_connect_task_close) {
@@ -150,47 +238,80 @@ static void wifi_config_task(void *arg) {
         // Validate SSID and password lengths
         int ssid_len = strlen(wifi_cfg.ssid);
         int pass_len = strlen(wifi_cfg.password);
+        int username_len = strlen(wifi_cfg.username);
 
         if (ssid_len > 0 && ssid_len < 33 && pass_len >= 0 && pass_len < 65) {
+          // Update credentials
           strncpy(s_wifi_ssid, wifi_cfg.ssid, sizeof(s_wifi_ssid) - 1);
           s_wifi_ssid[sizeof(s_wifi_ssid) - 1] = '\0';
+
           strncpy(s_wifi_pass, wifi_cfg.password, sizeof(s_wifi_pass) - 1);
           s_wifi_pass[sizeof(s_wifi_pass) - 1] = '\0';
 
-          ESP_LOGI(TAG, "Received config from queue: SSID='%s', PASS='%s'",
-                   s_wifi_ssid, s_wifi_pass);
+          // Determine authentication mode
+          if (username_len > 0 && username_len < 65) {
+            // Enterprise mode
+            strncpy(s_wifi_username, wifi_cfg.username,
+                    sizeof(s_wifi_username) - 1);
+            s_wifi_username[sizeof(s_wifi_username) - 1] = '\0';
+            s_wifi_auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+
+            ESP_LOGI(TAG,
+                     "Received Enterprise config from queue: "
+                     "SSID='%s', USERNAME='%s'",
+                     s_wifi_ssid, s_wifi_username);
+          } else {
+            // Personal mode
+            s_wifi_auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            ESP_LOGI(TAG,
+                     "Received Personal config from queue: "
+                     "SSID='%s', PASS='%s'",
+                     s_wifi_ssid, s_wifi_pass);
+          }
 
           // Prepare new configuration
           memset(&s_pending_config, 0, sizeof(wifi_config_t));
           strncpy((char *)s_pending_config.sta.ssid, s_wifi_ssid,
                   sizeof(s_pending_config.sta.ssid));
-          strncpy((char *)s_pending_config.sta.password, s_wifi_pass,
-                  sizeof(s_pending_config.sta.password));
-          s_pending_config.sta.threshold.authmode =
-              ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
-          s_pending_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
-          strcpy((char *)s_pending_config.sta.sae_h2e_identifier,
-                 EXAMPLE_H2E_IDENTIFIER);
+
+          if (s_wifi_auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+            s_pending_config.sta.threshold.authmode = WIFI_AUTH_WPA2_ENTERPRISE;
+
+            // Configure enterprise settings before reconnection
+            wifi_configure_enterprise(s_wifi_username, s_wifi_pass);
+          } else {
+            strncpy((char *)s_pending_config.sta.password, s_wifi_pass,
+                    sizeof(s_pending_config.sta.password));
+            s_pending_config.sta.threshold.authmode =
+                ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
+            s_pending_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
+            strcpy((char *)s_pending_config.sta.sae_h2e_identifier,
+                   EXAMPLE_H2E_IDENTIFIER);
+
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
-          s_pending_config.sta.disable_wpa3_compatible_mode = 0;
+            s_pending_config.sta.disable_wpa3_compatible_mode = 0;
 #endif
+            // Disable enterprise mode when switching to Personal
+            esp_wifi_sta_enterprise_disable();
+          }
 
           // Set reconnection flag and trigger disconnect
           s_reconnect_request = 1;
+
           if (s_wifi_connected) {
             esp_err_t ret = esp_wifi_disconnect();
-
             if (ret == ESP_ERR_WIFI_NOT_STARTED) {
               ESP_LOGE(TAG, "WiFi not started");
             } else if (ret != ESP_OK) {
               ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
             }
           } else {
+            // If not connected, directly post disconnect event
             esp_event_post(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL, 0,
                            portMAX_DELAY);
           }
         } else {
-          ESP_LOGW(TAG, "Invalid SSID/Password length from queue");
+          ESP_LOGW(TAG, "Invalid SSID/Password/Username length from queue");
         }
       }
     } else {
@@ -204,8 +325,19 @@ static void wifi_config_task(void *arg) {
 
 void wifi_connect_task_start(void) {
   wifi_connect_task_close = false;
-  ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (initial connection)");
-  wifi_init_sta(s_wifi_ssid, s_wifi_pass);
+
+  // Determine initial mode
+  if (strlen(s_wifi_username) > 0) {
+    s_wifi_auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (Enterprise initial connection)");
+    wifi_init_sta(s_wifi_ssid, s_wifi_pass, s_wifi_username,
+                  WIFI_AUTH_MODE_ENTERPRISE);
+  } else {
+    s_wifi_auth_mode = WIFI_AUTH_MODE_PERSONAL;
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (Personal initial connection)");
+    wifi_init_sta(s_wifi_ssid, s_wifi_pass, "", WIFI_AUTH_MODE_PERSONAL);
+  }
+
   // Start the config task to listen for WiFi credentials from queue
   xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
   ESP_LOGI(TAG, "WiFi config task created");
@@ -215,16 +347,28 @@ void wifi_connect_task_stop(void) {
   if (wifi_connect_task_close) {
     return;
   }
+
   wifi_connect_task_close = true;
   ESP_LOGI(TAG, "Stopping WiFi connection task");
+
+  // Disable enterprise mode if enabled
+  esp_wifi_sta_enterprise_disable();
+
   ESP_ERROR_CHECK(esp_wifi_stop());
   ESP_ERROR_CHECK(esp_wifi_deinit());
+
   esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                         &event_handler);
   esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                         &event_handler);
-  if(g_wifi_netif) {
-      esp_netif_destroy(g_wifi_netif);
-      g_wifi_netif = NULL;
+
+  if (g_wifi_netif) {
+    esp_netif_destroy(g_wifi_netif);
+    g_wifi_netif = NULL;
+  }
+
+  if (s_wifi_event_group) {
+    vEventGroupDelete(s_wifi_event_group);
+    s_wifi_event_group = NULL;
   }
 }
