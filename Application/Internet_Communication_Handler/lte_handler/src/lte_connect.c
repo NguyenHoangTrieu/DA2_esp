@@ -100,6 +100,11 @@ static void lte_task(void *arg) {
       strncpy(g_ctx.apn, new_cfg.apn, sizeof(g_ctx.apn) - 1);
       strncpy(g_ctx.username, new_cfg.username, sizeof(g_ctx.username) - 1);
       strncpy(g_ctx.password, new_cfg.password, sizeof(g_ctx.password) - 1);
+      g_ctx.comm_type = new_cfg.comm_type;
+      g_ctx.auto_reconnect = new_cfg.auto_reconnect;
+      g_ctx.reconnect_timeout_ms = new_cfg.reconnect_timeout_ms;
+      g_ctx.max_reconnect_attempts = new_cfg.max_reconnect_attempts;
+      save_lte_config_to_nvs();
 
       /* Reinitialize with new config */
       lte_init_with_config();

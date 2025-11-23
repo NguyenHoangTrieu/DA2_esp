@@ -11,7 +11,11 @@
 #include "ppp_server.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
+#include "wifi_connect.h"
+#include "lte_connect.h"
 #include "lte_handler.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 // Command buffer size
 #define CONFIG_CMD_MAX_LEN 256
@@ -25,6 +29,7 @@ typedef enum {
     CONFIG_TYPE_INTERNET = 3,   // "IN" - Internet configuration
     CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command
     CONFIG_TYPE_MCU_LAN = 5,    // "ML" - MCU LAN configuration
+    CONFIG_TYPE_SERVER = 6,     // "SV" - Server configuration
     CONFIG_TYPE_UNKNOWN = 0xFF
 } config_type_t;
 
@@ -49,14 +54,18 @@ typedef struct {
     char username[64];
     char ssid[64];
     char password[64];
+    wifi_conf_auth_mode_t auth_mode;
 } wifi_config_data_t;
 
 // LTE configuration structure
 typedef struct {
-    char comm_type[8];    // Communication type: "UART" or "USB"
     char apn[64];           // Access Point Name
     char username[32];      // PPP username (optional)
     char password[32];      // PPP password (optional)
+    lte_handler_comm_type_t comm_type;
+    bool auto_reconnect;
+    uint32_t reconnect_timeout_ms;
+    uint32_t max_reconnect_attempts;
 } lte_config_data_t;
 
 // MQTT configuration structure
@@ -101,5 +110,15 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
 esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
 esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
 esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
+
+esp_err_t save_internet_config_to_nvs(void);
+esp_err_t save_server_config_to_nvs(void);
+
+esp_err_t save_mqtt_config_to_nvs(void);
+esp_err_t save_lte_config_to_nvs(void);
+esp_err_t save_wifi_config_to_nvs(void);
+
+esp_err_t erase_all_configs_from_nvs(void);
+esp_err_t config_init(void);
 
 #endif // CONFIG_HANDLER_H

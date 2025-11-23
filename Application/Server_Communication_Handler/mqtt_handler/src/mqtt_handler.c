@@ -276,7 +276,7 @@ static void mqtt_config_task(void *arg) {
         strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
                 sizeof(g_mqtt_ctx.publish_topic) - 1);
         g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
-
+        save_mqtt_config_to_nvs();
         mqtt_reinit();
       }
     } else {

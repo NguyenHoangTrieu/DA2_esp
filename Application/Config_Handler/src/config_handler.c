@@ -17,7 +17,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 QueueHandle_t g_mcu_lan_config_queue = NULL;
 // global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE; // Default to LTE
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to LTE
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
 
 static bool config_handler_running = false;
@@ -47,6 +47,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_INTERNET;
     } else if (cmd[0] == 'M' && cmd[1] == 'L') {
         return CONFIG_TYPE_MCU_LAN;
+    } else if (cmd[0] == 'S' && cmd[1] == 'V') {
+        return CONFIG_TYPE_SERVER;
     }
     
     return CONFIG_TYPE_UNKNOWN;
@@ -54,8 +56,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
 
 /**
  * @brief Parse WiFi configuration from command string
- * Format: "WF:SSID:PASSWORD"
- * Example: "WF:MyWiFi:MyPassword123"
+ * Format: "WF:SSID:PASSWORD:AUTH_MODE"
+ * Example: "WF:MyWiFi:MyPassword123:PERSONAL"
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output WiFi config structure
@@ -66,50 +68,94 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
         return ESP_FAIL;
     }
     
-    // Find first colon after "WF"
-    const char *first_colon = strchr(data + 2, ':');
-    if (!first_colon) {
-        ESP_LOGE(TAG, "WiFi config format error: missing first ':'");
-        return ESP_FAIL;
-    }
+    memset(cfg, 0, sizeof(wifi_config_data_t));
     
-    // Find second colon
-    const char *second_colon = strchr(first_colon + 1, ':');
-    if (!second_colon) {
-        ESP_LOGE(TAG, "WiFi config format error: missing second ':'");
+    // Parse format: "WF:SSID:PASSWORD:AUTH_MODE" or "WF:SSID:PASSWORD:USERNAME:AUTH_MODE"
+    const char *ptr = data + 3; // Skip "WF:"
+    const char *end = data + len;
+    
+    // Find first colon (after SSID)
+    const char *first_colon = strchr(ptr, ':');
+    if (!first_colon || first_colon >= end) {
+        ESP_LOGE(TAG, "WiFi config format error: missing SSID separator");
         return ESP_FAIL;
     }
     
     // Extract SSID
-    int ssid_len = second_colon - first_colon - 1;
-    if (ssid_len <= 0 || ssid_len >= 33) {
+    int ssid_len = first_colon - ptr;
+    if (ssid_len <= 0 || ssid_len >= sizeof(cfg->ssid)) {
         ESP_LOGE(TAG, "WiFi SSID length invalid: %d", ssid_len);
         return ESP_FAIL;
     }
+    memcpy(cfg->ssid, ptr, ssid_len);
+    cfg->ssid[ssid_len] = '\0';
     
-    memset(cfg->ssid, 0, sizeof(cfg->ssid));
-    memcpy(cfg->ssid, first_colon + 1, ssid_len);
-    
-    // Extract password
-    int pass_len = len - (second_colon - data) - 1;
-    if (pass_len < 0 || pass_len >= 65) {
-        ESP_LOGE(TAG, "WiFi password length invalid: %d", pass_len);
+    // Find second colon (after password)
+    const char *second_colon = strchr(first_colon + 1, ':');
+    if (!second_colon || second_colon >= end) {
+        ESP_LOGE(TAG, "WiFi config format error: missing password separator");
         return ESP_FAIL;
     }
     
-    memset(cfg->password, 0, sizeof(cfg->password));
+    // Extract password
+    int pass_len = second_colon - first_colon - 1;
+    if (pass_len < 0 || pass_len >= sizeof(cfg->password)) {
+        ESP_LOGE(TAG, "WiFi password length invalid: %d", pass_len);
+        return ESP_FAIL;
+    }
     if (pass_len > 0) {
-        memcpy(cfg->password, second_colon + 1, pass_len);
+        memcpy(cfg->password, first_colon + 1, pass_len);
+        cfg->password[pass_len] = '\0';
     }
     
-    ESP_LOGI(TAG, "Parsed WiFi config - SSID: '%s', Pass: '%s'", cfg->ssid, cfg->password);
+    // Find third colon (might be username or auth_mode)
+    const char *third_colon = strchr(second_colon + 1, ':');
+    
+    if (third_colon && third_colon < end) {
+        // Format: "WF:SSID:PASSWORD:USERNAME:AUTH_MODE"
+        // Extract username
+        int username_len = third_colon - second_colon - 1;
+        if (username_len > 0 && username_len < sizeof(cfg->username)) {
+            memcpy(cfg->username, second_colon + 1, username_len);
+            cfg->username[username_len] = '\0';
+        }
+        
+        // Extract auth_mode
+        const char *auth_start = third_colon + 1;
+        int auth_len = end - auth_start;
+        if (auth_len > 0) {
+            if (strncmp(auth_start, "ENTERPRISE", 10) == 0) {
+                cfg->auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+            } else {
+                cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            }
+        } else {
+            cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+        }
+    } else {
+        // Format: "WF:SSID:PASSWORD:AUTH_MODE"
+        const char *auth_start = second_colon + 1;
+        int auth_len = end - auth_start;
+        if (auth_len > 0) {
+            if (strncmp(auth_start, "ENTERPRISE", 10) == 0) {
+                cfg->auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+            } else {
+                cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            }
+        } else {
+            cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+        }
+    }
+    
+    ESP_LOGI(TAG, "Parsed WiFi config - SSID: '%s', Pass: '%s', Username: '%s', Auth: %d", 
+             cfg->ssid, cfg->password, cfg->username, cfg->auth_mode);
     return ESP_OK;
 }
 
 /**
  * @brief Parse LTE configuration from command string
- * Format: "LT:TYPE:APN:USERNAME:PASSWORD"
- * Example: "LT:v-internet::\"
+ * Format: "LT:TYPE:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
+ * Example: "LT:v-internet:user:pass:USB:true:30000:0"
  * Note: Username and password can be empty
  * @param data Raw command data
  * @param len Command length
@@ -117,71 +163,147 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
  * @return ESP_OK on success, ESP_FAIL on error
  */
 esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
-    if (!data || !cfg || len < 3) {
+    if (!data || !cfg || len < 5) {
         return ESP_FAIL;
     }
     
     memset(cfg, 0, sizeof(lte_config_data_t));
     
-    // Parse format: "LT:TYPE:APN:USERNAME:PASSWORD"
+    // Parse format: "LT:COMM_TYPE:APN:USERNAME:PASSWORD:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
     const char *ptr = data + 3; // Skip "LT:"
     const char *end = data + len;
+    const char *separators[7] = {0}; // Array to store separator positions
+    int sep_count = 0;
     
-    // Parse TYPE (UART or USB) - optional, defaults to UART
-    const char *first_colon = strchr(ptr, ':');
-    if (!first_colon || first_colon >= end) {
-        ESP_LOGE(TAG, "LTE config: missing separator");
+    // Find all separators
+    const char *temp_ptr = ptr;
+    while (temp_ptr < end && sep_count < 7) {
+        const char *colon = strchr(temp_ptr, ':');
+        if (!colon || colon >= end) {
+            break;
+        }
+        separators[sep_count++] = colon;
+        temp_ptr = colon + 1;
+    }
+    
+    if (sep_count < 2) {
+        ESP_LOGE(TAG, "LTE config: insufficient parameters");
         return ESP_FAIL;
     }
     
-    int type_len = first_colon - ptr;
+    int field_index = 0;
+    const char *start = ptr;
+    const char *field_end = separators[field_index];
+    int field_len;
     
-    // Check if this is TYPE field or APN field
-    // If it's short (< 10 chars) and matches UART/USB, it's TYPE
-    if (type_len < 10) {
-        if (strncmp(ptr, "UART", 4) == 0 || strncmp(ptr, "USB", 3) == 0) {
-            // TYPE is optional in config structure, skip it
-            ESP_LOGI(TAG, "LTE Type: %.*s", type_len, ptr);
-            ptr = first_colon + 1;
-            first_colon = strchr(ptr, ':');
-            if (!first_colon || first_colon >= end) {
-                ESP_LOGE(TAG, "LTE config: missing APN separator");
-                return ESP_FAIL;
-            }
-        }
+    // Parse COMM_TYPE (required)
+    field_len = field_end - start;
+    if (field_len <= 0) {
+        ESP_LOGE(TAG, "LTE comm type missing");
+        return ESP_FAIL;
     }
+    
+    if (strncmp(start, "UART", 4) == 0) {
+        cfg->comm_type = LTE_HANDLER_UART;
+    } else if (strncmp(start, "USB", 3) == 0) {
+        cfg->comm_type = LTE_HANDLER_USB;
+    } else {
+        ESP_LOGE(TAG, "LTE comm type unknown");
+        return ESP_FAIL;
+    }
+    field_index++;
     
     // Parse APN (required)
-    int apn_len = first_colon - ptr;
-    if (apn_len <= 0 || apn_len >= sizeof(cfg->apn)) {
-        ESP_LOGE(TAG, "LTE APN length invalid: %d", apn_len);
+    start = separators[field_index - 1] + 1;
+    field_end = separators[field_index];
+    field_len = field_end - start;
+    if (field_len <= 0 || field_len >= sizeof(cfg->apn)) {
+        ESP_LOGE(TAG, "LTE APN length invalid: %d", field_len);
         return ESP_FAIL;
     }
-    
-    memcpy(cfg->apn, ptr, apn_len);
-    cfg->apn[apn_len] = '\0';
+    memcpy(cfg->apn, start, field_len);
+    cfg->apn[field_len] = '\0';
+    field_index++;
     
     // Parse username (optional)
-    ptr = first_colon + 1;
-    const char *second_colon = strchr(ptr, ':');
-    if (second_colon && second_colon < end) {
-        int username_len = second_colon - ptr;
-        if (username_len > 0 && username_len < sizeof(cfg->username)) {
-            memcpy(cfg->username, ptr, username_len);
-            cfg->username[username_len] = '\0';
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->username)) {
+            memcpy(cfg->username, start, field_len);
+            cfg->username[field_len] = '\0';
         }
-        
-        // Parse password (optional)
-        ptr = second_colon + 1;
-        int password_len = end - ptr;
-        if (password_len > 0 && password_len < sizeof(cfg->password)) {
-            memcpy(cfg->password, ptr, password_len);
-            cfg->password[password_len] = '\0';
+        field_index++;
+    }
+    
+    // Parse password (optional)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->password)) {
+            memcpy(cfg->password, start, field_len);
+            cfg->password[field_len] = '\0';
+        }
+        field_index++;
+    } else if (field_index - 1 < sep_count) {
+        // Last field without separator
+        start = separators[field_index - 1] + 1;
+        field_len = end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->password)) {
+            memcpy(cfg->password, start, field_len);
+            cfg->password[field_len] = '\0';
         }
     }
     
-    ESP_LOGI(TAG, "Parsed LTE config - APN: '%s', Username: '%s'",
-             cfg->apn, cfg->username);
+    // Parse auto_reconnect (optional, boolean)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            cfg->auto_reconnect = (strncmp(start, "true", 4) == 0);
+        }
+        field_index++;
+    }
+    
+    // Parse reconnect_timeout_ms (optional, integer in ms)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            char timeout_str[16] = {0};
+            memcpy(timeout_str, start, field_len < 15 ? field_len : 15);
+            cfg->reconnect_timeout_ms = atoi(timeout_str);
+        }
+        field_index++;
+    }
+    
+    // Parse max_reconnect_attempts (optional, integer)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            char max_str[16] = {0};
+            memcpy(max_str, start, field_len < 15 ? field_len : 15);
+            cfg->max_reconnect_attempts = atoi(max_str);
+        }
+    } else if (field_index - 1 < sep_count && field_index > 0) {
+        // Last field without separator
+        start = separators[field_index - 1] + 1;
+        field_len = end - start;
+        if (field_len > 0) {
+            char max_str[16] = {0};
+            memcpy(max_str, start, field_len < 15 ? field_len : 15);
+            cfg->max_reconnect_attempts = atoi(max_str);
+        }
+    }
+    
+    ESP_LOGI(TAG, "Parsed LTE config - CommType: %d, APN: '%s', Username: '%s', Password: '%s', AutoReconnect: %d, Timeout: %d, MaxReconnect: %d",
+             cfg->comm_type, cfg->apn, cfg->username, cfg->password, cfg->auto_reconnect, cfg->reconnect_timeout_ms, cfg->max_reconnect_attempts);
     return ESP_OK;
 }
 
@@ -376,6 +498,7 @@ static void config_handler_task(void *arg) {
                         ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
                         g_internet_type = internet_type;
                     }
+                    save_internet_config_to_nvs();
                     break;
                 }
                 case CONFIG_TYPE_LTE: {
@@ -419,6 +542,11 @@ static void config_handler_task(void *arg) {
                     } else {
                         ESP_LOGW(TAG, "MCU LAN command too short");
                     }
+                    break;
+                }
+                case CONFIG_TYPE_SERVER: {
+                    ESP_LOGI(TAG, "Server config command received");
+                    // Future implementation for server config parsing
                     break;
                 }
                 default:

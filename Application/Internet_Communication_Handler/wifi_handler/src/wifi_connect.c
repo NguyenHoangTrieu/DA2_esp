@@ -312,6 +312,7 @@ static void wifi_config_task(void *arg) {
         } else {
           ESP_LOGW(TAG, "Invalid SSID/Password/Username length from queue");
         }
+        save_wifi_config_to_nvs();
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(100));
