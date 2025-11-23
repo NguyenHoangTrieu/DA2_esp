@@ -35,6 +35,14 @@ extern QueueHandle_t g_server_cmd_queue;
 extern QueueHandle_t g_mqtt_publish_queue;
 
 // Global Config variables:
+typedef struct {
+  char broker_uri[128];
+  char device_token[65];
+  char subscribe_topic[128];
+  char attribute_topic[128];
+  char publish_topic[128];
+} mqtt_config_context_t;
+
 extern char g_broker_uri[128];
 extern char g_device_token[65];
 extern char g_subscribe_topic[128];

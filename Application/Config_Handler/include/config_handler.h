@@ -21,11 +21,10 @@
 typedef enum {
     CONFIG_TYPE_WIFI = 0,      // "WF" - WiFi configuration
     CONFIG_TYPE_MQTT = 1,      // "MQ" - MQTT configuration
-    CONFIG_TYPE_USB = 3,       // "US" - USB configuration
-    CONFIG_TYPE_LTE = 4,       // "LT" - LTE configuration
-    CONFIG_TYPE_INTERNET = 5,   // "IN" - Internet configuration
-    CONFIG_UPDATE_FIRMWARE = 6, // "FW" - Firmware update command
-    CONFIG_TYPE_MCU_LAN = 7,    // "ML" - MCU LAN configuration
+    CONFIG_TYPE_LTE = 2,       // "LT" - LTE configuration
+    CONFIG_TYPE_INTERNET = 3,   // "IN" - Internet configuration
+    CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command
+    CONFIG_TYPE_MCU_LAN = 5,    // "ML" - MCU LAN configuration
     CONFIG_TYPE_UNKNOWN = 0xFF
 } config_type_t;
 
@@ -59,6 +58,15 @@ typedef struct {
     char username[32];      // PPP username (optional)
     char password[32];      // PPP password (optional)
 } lte_config_data_t;
+
+// MQTT configuration structure
+typedef struct {
+    char broker_uri[128];
+    char device_token[65];
+    char subscribe_topic[128];
+    char attribute_topic[128];
+    char publish_topic[128];
+} mqtt_config_data_t;
 
 //MCU LAN Communication configuration structure
 typedef struct {

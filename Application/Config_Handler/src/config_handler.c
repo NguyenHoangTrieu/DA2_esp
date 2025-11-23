@@ -1,7 +1,6 @@
 /*
  * Config handler module for ESP32-S3 board.
  * This module processes configuration commands received from the gateway
- * and routes them to appropriate handlers (WiFi, MQTT, UART, USB, FOTA).
  * All comments are in English for clarity.
  */
 
@@ -15,9 +14,9 @@ static const char *TAG = "config_handler";
 QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
 QueueHandle_t g_mqtt_config_queue = NULL;
-QueueHandle_t g_usb_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 QueueHandle_t g_mcu_lan_config_queue = NULL;
+// global config contexts
 config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE; // Default to LTE
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
 
@@ -40,8 +39,6 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_WIFI;
     } else if (cmd[0] == 'M' && cmd[1] == 'Q') {
         return CONFIG_TYPE_MQTT;
-    } else if (cmd[0] == 'U' && cmd[1] == 'S') {
-        return CONFIG_TYPE_USB;
     } else if (cmd[0] == 'F' && cmd[1] == 'W') {
         return CONFIG_UPDATE_FIRMWARE;
     } else if (cmd[0] == 'L' && cmd[1] == 'T') {
@@ -190,8 +187,8 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
 
 /**
  * @brief Parse MQTT configuration from command string
- * Format: "MQ:BROKER_URI:PORT:TOKEN"
- * Example: "MQ:mqtt://demo.thingsboard.io:1883:myDeviceToken123"
+ * Format: "MQ:BROKER_URI|DEVICE_TOKEN|SUBSCRIBE_TOPIC|PUBLISH_TOPIC|ATTRIBUTE_TOPIC"
+ * Example: "MQ:mqtt://demo.thingsboard.io:1883|myDeviceToken123|subTopic|pubTopic|attrTopic"
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output MQTT config structure
@@ -202,53 +199,92 @@ esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *
         return ESP_FAIL;
     }
     
-    // Parse format: "MQ:broker_uri:port:token"
+    memset(cfg, 0, sizeof(mqtt_config_data_t));
+    
+    // Parse format: "MQ:BROKER_URI|DEVICE_TOKEN|SUBSCRIBE_TOPIC|PUBLISH_TOPIC|ATTRIBUTE_TOPIC"
     const char *ptr = data + 3; // Skip "MQ:"
     const char *end = data + len;
     
     // Parse broker URI
-    const char *first_colon = strchr(ptr, ':');
-    if (!first_colon || first_colon >= end) {
+    const char *first_pipe = strchr(ptr, '|');
+    if (!first_pipe || first_pipe >= end) {
         ESP_LOGE(TAG, "MQTT config: missing broker URI separator");
         return ESP_FAIL;
     }
     
-    int uri_len = first_colon - ptr;
+    int uri_len = first_pipe - ptr;
     if (uri_len <= 0 || uri_len >= sizeof(cfg->broker_uri)) {
         ESP_LOGE(TAG, "MQTT broker URI length invalid: %d", uri_len);
         return ESP_FAIL;
     }
     
-    memset(cfg->broker_uri, 0, sizeof(cfg->broker_uri));
     memcpy(cfg->broker_uri, ptr, uri_len);
+    cfg->broker_uri[uri_len] = '\0';
     
-    // Parse port
-    ptr = first_colon + 1;
-    const char *second_colon = strchr(ptr, ':');
-    if (!second_colon || second_colon >= end) {
-        ESP_LOGE(TAG, "MQTT config: missing port separator");
+    // Parse device token
+    ptr = first_pipe + 1;
+    const char *second_pipe = strchr(ptr, '|');
+    if (!second_pipe || second_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing device token separator");
         return ESP_FAIL;
     }
     
-    cfg->port = atoi(ptr);
-    if (cfg->port == 0) {
-        ESP_LOGE(TAG, "MQTT port invalid");
-        return ESP_FAIL;
-    }
-    
-    // Parse token
-    ptr = second_colon + 1;
-    int token_len = end - ptr;
+    int token_len = second_pipe - ptr;
     if (token_len <= 0 || token_len >= sizeof(cfg->device_token)) {
         ESP_LOGE(TAG, "MQTT token length invalid: %d", token_len);
         return ESP_FAIL;
     }
     
-    memset(cfg->device_token, 0, sizeof(cfg->device_token));
     memcpy(cfg->device_token, ptr, token_len);
+    cfg->device_token[token_len] = '\0';
     
-    ESP_LOGI(TAG, "Parsed MQTT config - URI: '%s', Port: %d, Token: '%s'", 
-             cfg->broker_uri, cfg->port, cfg->device_token);
+    // Parse subscribe topic
+    ptr = second_pipe + 1;
+    const char *third_pipe = strchr(ptr, '|');
+    if (!third_pipe || third_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing subscribe topic separator");
+        return ESP_FAIL;
+    }
+    
+    int sub_topic_len = third_pipe - ptr;
+    if (sub_topic_len <= 0 || sub_topic_len >= sizeof(cfg->subscribe_topic)) {
+        ESP_LOGE(TAG, "MQTT subscribe topic length invalid: %d", sub_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->subscribe_topic, ptr, sub_topic_len);
+    cfg->subscribe_topic[sub_topic_len] = '\0';
+    
+    // Parse publish topic
+    ptr = third_pipe + 1;
+    const char *fourth_pipe = strchr(ptr, '|');
+    if (!fourth_pipe || fourth_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing publish topic separator");
+        return ESP_FAIL;
+    }
+    
+    int pub_topic_len = fourth_pipe - ptr;
+    if (pub_topic_len <= 0 || pub_topic_len >= sizeof(cfg->publish_topic)) {
+        ESP_LOGE(TAG, "MQTT publish topic length invalid: %d", pub_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->publish_topic, ptr, pub_topic_len);
+    cfg->publish_topic[pub_topic_len] = '\0';
+    
+    // Parse attribute topic
+    ptr = fourth_pipe + 1;
+    int attr_topic_len = end - ptr;
+    if (attr_topic_len <= 0 || attr_topic_len >= sizeof(cfg->attribute_topic)) {
+        ESP_LOGE(TAG, "MQTT attribute topic length invalid: %d", attr_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->attribute_topic, ptr, attr_topic_len);
+    cfg->attribute_topic[attr_topic_len] = '\0';
+    
+    ESP_LOGI(TAG, "Parsed MQTT config - URI: '%s', Token: '%s', Sub: '%s', Pub: '%s', Attr: '%s'", 
+             cfg->broker_uri, cfg->device_token, cfg->subscribe_topic, cfg->publish_topic, cfg->attribute_topic);
     return ESP_OK;
 }
 
@@ -325,12 +361,6 @@ static void config_handler_task(void *arg) {
                             ESP_LOGW(TAG, "MQTT queue not initialized");
                         }
                     }
-                    break;
-                }
-                
-                case CONFIG_TYPE_USB: {
-                    // USB config parsing can be added similarly
-                    ESP_LOGI(TAG, "USB config received (not implemented yet)");
                     break;
                 }
                 case CONFIG_UPDATE_FIRMWARE: {
@@ -422,14 +452,6 @@ void config_handler_task_start(void) {
     
     if (!g_mqtt_config_queue) {
         g_mqtt_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(mqtt_config_data_t));
-    }
-    
-    if (!g_uart_config_queue) {
-        g_uart_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(uart_config_data_t));
-    }
-    
-    if (!g_usb_config_queue) {
-        g_usb_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(usb_config_data_t));
     }
 
     if (!g_lte_config_queue) {
