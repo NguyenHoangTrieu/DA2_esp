@@ -25,11 +25,11 @@ QueueHandle_t g_mqtt_publish_queue = NULL;
 static bool mqtt_task_close = false;
 
 // Global MQTT config
-char g_broker_uri[128] = BROKER_URI;
-char g_device_token[65] = DEVICE_TOKEN;
-char g_subscribe_topic[128] = SUBSCRIBE_TOPIC;
-char g_attribute_topic[128] = ATTRIBUTE_TOPIC;
-char g_publish_topic[128] = PUBLISH_TOPIC;
+mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
+                                 .device_token = DEVICE_TOKEN,
+                                 .subscribe_topic = SUBSCRIBE_TOPIC,
+                                 .attribute_topic = ATTRIBUTE_TOPIC,
+                                 .publish_topic = PUBLISH_TOPIC};
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
@@ -54,9 +54,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
   switch (event->event_id) {
   case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-    esp_mqtt_client_subscribe(event->client, g_attribute_topic, 1);
-    esp_mqtt_client_subscribe(event->client, g_subscribe_topic, 1);
-    esp_mqtt_client_publish(event->client, g_attribute_topic,
+    esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.attribute_topic, 1);
+    esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.subscribe_topic, 1);
+    esp_mqtt_client_publish(event->client, g_mqtt_ctx.attribute_topic,
                             "{\"chip_type\":\"esp32s3\", \"fw\":\"1.0.0\"}", 0,
                             1, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -155,7 +155,7 @@ static void mqtt_publish_task(void *arg) {
         }
 
         ESP_LOGI(TAG, "Publishing %d bytes JSON", json_len);
-        int msg_id = esp_mqtt_client_publish(m_client, g_publish_topic,
+        int msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.publish_topic,
                                              (const char *)json_tx_buffer,
                                              json_len, // JSON length
                                              1,        // QoS 1
@@ -205,12 +205,12 @@ static void mqtt_reinit(void) {
           {
               .address =
                   {
-                      .uri = g_broker_uri,
+                      .uri = g_mqtt_ctx.broker_uri,
                   },
           },
       .credentials =
           {
-              .username = g_device_token,
+              .username = g_mqtt_ctx.device_token,
           },
       .session =
           {
@@ -253,17 +253,30 @@ static void mqtt_config_task(void *arg) {
       if (xQueueReceive(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(500)) ==
           pdTRUE) {
         ESP_LOGI(TAG, "Received MQTT config from queue");
-        ESP_LOGI(TAG, "Broker: %s, Port: %d, Token: %s", mqtt_cfg.broker_uri,
-                 mqtt_cfg.port, mqtt_cfg.device_token);
+        ESP_LOGI(TAG, "Broker: %s, Token: %s", mqtt_cfg.broker_uri, mqtt_cfg.device_token);
+        ESP_LOGI(TAG, "Publish: %s, Subscribe: %s, Attribute: %s", 
+                 mqtt_cfg.publish_topic, mqtt_cfg.subscribe_topic, mqtt_cfg.attribute_topic);
 
-        // Update config
-        strncpy(g_broker_uri, mqtt_cfg.broker_uri, sizeof(g_broker_uri) - 1);
-        g_broker_uri[sizeof(g_broker_uri) - 1] = '\0';
+        // Update all config fields
+        strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri, sizeof(g_mqtt_ctx.broker_uri) - 1);
+        g_mqtt_ctx.broker_uri[sizeof(g_mqtt_ctx.broker_uri) - 1] = '\0';
 
-        strncpy(g_device_token, mqtt_cfg.device_token,
-                sizeof(g_device_token) - 1);
-        g_device_token[sizeof(g_device_token) - 1] = '\0';
+        strncpy(g_mqtt_ctx.device_token, mqtt_cfg.device_token,
+                sizeof(g_mqtt_ctx.device_token) - 1);
+        g_mqtt_ctx.device_token[sizeof(g_mqtt_ctx.device_token) - 1] = '\0';
 
+        strncpy(g_mqtt_ctx.subscribe_topic, mqtt_cfg.subscribe_topic,
+                sizeof(g_mqtt_ctx.subscribe_topic) - 1);
+        g_mqtt_ctx.subscribe_topic[sizeof(g_mqtt_ctx.subscribe_topic) - 1] = '\0';
+
+        strncpy(g_mqtt_ctx.attribute_topic, mqtt_cfg.attribute_topic,
+                sizeof(g_mqtt_ctx.attribute_topic) - 1);
+        g_mqtt_ctx.attribute_topic[sizeof(g_mqtt_ctx.attribute_topic) - 1] = '\0';
+
+        strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
+                sizeof(g_mqtt_ctx.publish_topic) - 1);
+        g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
+        save_mqtt_config_to_nvs();
         mqtt_reinit();
       }
     } else {
@@ -286,12 +299,12 @@ void mqtt_handler_task_start(void) {
           {
               .address =
                   {
-                      .uri = g_broker_uri,
+                      .uri = g_mqtt_ctx.broker_uri,
                   },
           },
       .credentials =
           {
-              .username = g_device_token,
+              .username = g_mqtt_ctx.device_token,
           },
       .session =
           {

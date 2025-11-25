@@ -1,0 +1,547 @@
+#include "config_handler.h"
+#include "esp_log.h"
+#include "lte_connect.h"
+#include "mqtt_handler.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "wifi_connect.h"
+#include <string.h>
+
+static const char *TAG = "CONFIG_NVS";
+
+/* NVS Namespace */
+#define NVS_NAMESPACE "gateway_cfg"
+
+/* NVS Keys */
+#define NVS_KEY_INTERNET_TYPE "inet_type"
+#define NVS_KEY_SERVER_TYPE "srv_type"
+#define NVS_KEY_WIFI_CONFIG "wifi_cfg"
+#define NVS_KEY_LTE_CONFIG "lte_cfg"
+#define NVS_KEY_MQTT_CONFIG "mqtt_cfg"
+#define NVS_NS_GATEWAY "gateway_cfg"
+#define NVS_KEY_INITIALIZED "initialized"
+
+/* External global variables from your modules */
+extern wifi_config_context_t g_wifi_ctx;
+extern lte_config_context_t g_ctx;
+extern mqtt_config_context_t g_mqtt_ctx;
+extern config_internet_type_t g_internet_type;
+extern config_server_type_t g_server_type;
+
+/**
+ * @brief Open NVS handle
+ */
+static esp_err_t nvs_open_handle(nvs_handle_t *handle) {
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+  }
+  return err;
+}
+
+/**
+ * @brief Load internet type configuration from NVS
+ */
+static esp_err_t load_internet_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading internet type config from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Read internet type (stored as uint8_t)
+  uint8_t inet_type = CONFIG_INTERNET_WIFI;
+  err = nvs_get_u8(nvs_handle, NVS_KEY_INTERNET_TYPE, &inet_type);
+
+  if (err == ESP_OK) {
+    if (inet_type < CONFIG_INTERNET_COUNT) {
+      g_internet_type = (config_internet_type_t)inet_type;
+      ESP_LOGI(TAG, "Internet type loaded: %d", g_internet_type);
+    } else {
+      ESP_LOGW(TAG, "Invalid internet type in NVS: %d", inet_type);
+      err = ESP_ERR_INVALID_ARG;
+    }
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "Internet type not found in NVS, using default");
+    err = ESP_OK; // Not an error, use default
+  } else {
+    ESP_LOGE(TAG, "Error reading internet type: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save internet type configuration to NVS
+ */
+esp_err_t save_internet_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving internet type config to NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Write internet type
+  err = nvs_set_u8(nvs_handle, NVS_KEY_INTERNET_TYPE, (uint8_t)g_internet_type);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing internet type: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "Internet type saved: %d", g_internet_type);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+
+/**
+ * @brief Load server type configuration from NVS
+ */
+static esp_err_t load_server_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading server type config from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Read server type (stored as uint8_t)
+  uint8_t srv_type = CONFIG_SERVERTYPE_MQTT;
+  err = nvs_get_u8(nvs_handle, NVS_KEY_SERVER_TYPE, &srv_type);
+
+  if (err == ESP_OK) {
+    if (srv_type < CONFIG_SERVERTYPE_COUNT) {
+      g_server_type = (config_server_type_t)srv_type;
+      ESP_LOGI(TAG, "Server type loaded: %d", g_server_type);
+    } else {
+      ESP_LOGW(TAG, "Invalid server type in NVS: %d", srv_type);
+      err = ESP_ERR_INVALID_ARG;
+    }
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "Server type not found in NVS, using default");
+    err = ESP_OK; // Not an error, use default
+  } else {
+    ESP_LOGE(TAG, "Error reading server type: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save server type configuration to NVS
+ */
+esp_err_t save_server_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving server type config to NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Write server type
+  err = nvs_set_u8(nvs_handle, NVS_KEY_SERVER_TYPE, (uint8_t)g_server_type);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing server type: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "Server type saved: %d", g_server_type);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Load WiFi configuration from NVS
+ */
+static esp_err_t load_wifi_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading WiFi config from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Read WiFi config blob
+  size_t required_size = sizeof(wifi_config_context_t);
+  err = nvs_get_blob(nvs_handle, NVS_KEY_WIFI_CONFIG, &g_wifi_ctx,
+                     &required_size);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "WiFi config loaded - SSID: %s", g_wifi_ctx.ssid);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "WiFi config not found in NVS, using defaults");
+    err = ESP_OK; // Not an error, use defaults
+  } else {
+    ESP_LOGE(TAG, "Error reading WiFi config: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save WiFi configuration to NVS
+ */
+esp_err_t save_wifi_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving WiFi config to NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Write WiFi config blob
+  err = nvs_set_blob(nvs_handle, NVS_KEY_WIFI_CONFIG, &g_wifi_ctx,
+                     sizeof(wifi_config_context_t));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing WiFi config: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "WiFi config saved - SSID: %s", g_wifi_ctx.ssid);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Load LTE configuration from NVS
+ */
+static esp_err_t load_lte_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading LTE config from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Read LTE config blob (only the persistent fields)
+  typedef struct {
+    char apn[64];
+    char username[32];
+    char password[32];
+    uint32_t max_reconnect_attempts;
+    uint32_t reconnect_timeout_ms;
+    bool auto_reconnect;
+    lte_handler_comm_type_t comm_type;
+  } lte_config_persistent_t;
+
+  lte_config_persistent_t lte_cfg;
+  size_t required_size = sizeof(lte_config_persistent_t);
+  err = nvs_get_blob(nvs_handle, NVS_KEY_LTE_CONFIG, &lte_cfg, &required_size);
+
+  if (err == ESP_OK) {
+    // Copy to global context
+    strncpy(g_ctx.apn, lte_cfg.apn, sizeof(g_ctx.apn) - 1);
+    strncpy(g_ctx.username, lte_cfg.username, sizeof(g_ctx.username) - 1);
+    strncpy(g_ctx.password, lte_cfg.password, sizeof(g_ctx.password) - 1);
+    g_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
+    g_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
+    g_ctx.auto_reconnect = lte_cfg.auto_reconnect;
+    g_ctx.comm_type = lte_cfg.comm_type;
+
+    ESP_LOGI(TAG, "LTE config loaded - APN: %s", g_ctx.apn);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "LTE config not found in NVS, using defaults");
+    err = ESP_OK; // Not an error, use defaults
+  } else {
+    ESP_LOGE(TAG, "Error reading LTE config: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save LTE configuration to NVS
+ */
+esp_err_t save_lte_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving LTE config to NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Prepare persistent data (exclude runtime fields like task_handle)
+  typedef struct {
+    char apn[64];
+    char username[32];
+    char password[32];
+    uint32_t max_reconnect_attempts;
+    uint32_t reconnect_timeout_ms;
+    bool auto_reconnect;
+    lte_handler_comm_type_t comm_type;
+  } lte_config_persistent_t;
+
+  lte_config_persistent_t lte_cfg = {
+      .max_reconnect_attempts = g_ctx.max_reconnect_attempts,
+      .reconnect_timeout_ms = g_ctx.reconnect_timeout_ms,
+      .auto_reconnect = g_ctx.auto_reconnect,
+      .comm_type = g_ctx.comm_type};
+  strncpy(lte_cfg.apn, g_ctx.apn, sizeof(lte_cfg.apn) - 1);
+  strncpy(lte_cfg.username, g_ctx.username, sizeof(lte_cfg.username) - 1);
+  strncpy(lte_cfg.password, g_ctx.password, sizeof(lte_cfg.password) - 1);
+
+  // Write LTE config blob
+  err = nvs_set_blob(nvs_handle, NVS_KEY_LTE_CONFIG, &lte_cfg,
+                     sizeof(lte_config_persistent_t));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing LTE config: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "LTE config saved - APN: %s", g_ctx.apn);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Load MQTT configuration from NVS
+ */
+static esp_err_t load_mqtt_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading MQTT config from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Read MQTT config blob
+  size_t required_size = sizeof(mqtt_config_context_t);
+  err = nvs_get_blob(nvs_handle, NVS_KEY_MQTT_CONFIG, &g_mqtt_ctx,
+                     &required_size);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "MQTT config loaded - Broker: %s", g_mqtt_ctx.broker_uri);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "MQTT config not found in NVS, using defaults");
+    err = ESP_OK; // Not an error, use defaults
+  } else {
+    ESP_LOGE(TAG, "Error reading MQTT config: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save MQTT configuration to NVS
+ */
+esp_err_t save_mqtt_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving MQTT config to NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Write MQTT config blob
+  err = nvs_set_blob(nvs_handle, NVS_KEY_MQTT_CONFIG, &g_mqtt_ctx,
+                     sizeof(mqtt_config_context_t));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing MQTT config: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "MQTT config saved - Broker: %s", g_mqtt_ctx.broker_uri);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Load all configurations from NVS (call at startup)
+ */
+static esp_err_t load_all_configs_from_nvs(void) {
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading all configurations from NVS...");
+
+  // Load internet and server type
+  err = load_internet_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load internet config");
+  }
+
+  err = load_server_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load server config");
+  }
+
+  // Load WiFi config
+  err = load_wifi_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load WiFi config");
+  }
+
+  // Load LTE config
+  err = load_lte_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load LTE config");
+  }
+
+  // Load MQTT config
+  err = load_mqtt_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load MQTT config");
+  }
+
+  ESP_LOGI(TAG, "Configuration loading complete");
+  return ESP_OK;
+}
+
+/**
+ * @brief Erase all gateway configurations from NVS
+ */
+esp_err_t erase_all_configs_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGW(TAG, "Erasing all configurations from NVS...");
+
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  // Erase all keys in the namespace
+  err = nvs_erase_all(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error erasing NVS: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  // Commit changes
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS erase: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "All configurations erased from NVS");
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+static bool is_first_boot(void) {
+    nvs_handle_t handle;
+    uint8_t initialized = 0;
+    
+    if (nvs_open(NVS_NS_GATEWAY, NVS_READONLY, &handle) == ESP_OK) {
+        esp_err_t err = nvs_get_u8(handle, NVS_KEY_INITIALIZED, &initialized);
+        nvs_close(handle);
+        return (err != ESP_OK || initialized == 0);
+    }
+    
+    return true; // Namespace doesn't exist = first boot
+}
+
+static void mark_initialized(void) {
+    nvs_handle_t handle;
+    if (nvs_open(NVS_NS_GATEWAY, NVS_READWRITE, &handle) == ESP_OK) {
+        nvs_set_u8(handle, NVS_KEY_INITIALIZED, 1);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
+}
+
+/**
+ * @brief Initialize configuration - auto-saves defaults on first boot
+ */
+esp_err_t config_init(void) {
+    ESP_LOGI(TAG, "Initializing configuration system...");
+    
+    if (is_first_boot()) {
+        ESP_LOGI(TAG, "First boot detected - saving default configuration");
+        
+        // Save to NVS
+        save_wifi_config_to_nvs();
+        save_lte_config_to_nvs();
+        save_mqtt_config_to_nvs();
+        save_internet_config_to_nvs();
+        save_server_config_to_nvs();
+        
+        mark_initialized();
+        
+        ESP_LOGI(TAG, "Default configuration saved");
+    } else {
+        ESP_LOGI(TAG, "Loading existing configuration");
+        load_all_configs_from_nvs();
+    }
+    
+    return ESP_OK;
+}

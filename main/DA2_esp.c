@@ -212,6 +212,15 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
 void app_main(void) {
     ESP_LOGI(TAG, "Firmware Version: DA2_esp v1.0.1");
     
+    // NVS Initialize
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_ERROR_CHECK(nvs_flash_init());
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(config_init());
+    
     init_led_strip();
     led_on();
     
@@ -227,13 +236,6 @@ void app_main(void) {
     
     config_internet_type_t current_internet_type = g_internet_type;
     config_server_type_t current_server_type = g_server_type;
-    
-    // NVS Initialize
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ESP_ERROR_CHECK(nvs_flash_init());
-    }
 
     config_handler_task_start();
 

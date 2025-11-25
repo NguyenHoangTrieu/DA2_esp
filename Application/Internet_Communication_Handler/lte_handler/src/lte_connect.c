@@ -18,43 +18,42 @@
 #define LTE_AUTO_RECONNECT true
 #define LTE_RECONNECT_TIMEOUT_MS 30000
 #define LTE_MAX_RECONNECT 0 /* Infinite */
+#define LTE_CONNECTION_MONITOR_INTERVAL_MS 10000
 
 static const char *TAG = "LTE_CONNECT";
 
-/* Internal state */
-static struct {
-  bool initialized;
-  bool task_running;
-  TaskHandle_t task_handle;
-  char apn[64];
-  char username[32];
-  char password[32];
-  lte_handler_comm_type_t comm_type;
-} s_ctx = {.comm_type = LTE_DEFAULT_COMM_TYPE,
-           .apn = LTE_DEFAULT_APN,
-           .username = "",
-           .password = ""};
+/* ==================== LTE Config Context ==================== */
+lte_config_context_t g_ctx = {.comm_type = LTE_DEFAULT_COMM_TYPE,
+                              .apn = LTE_DEFAULT_APN,
+                              .username = "",
+                              .password = "",
+                              .max_reconnect_attempts = LTE_MAX_RECONNECT,
+                              .reconnect_timeout_ms = LTE_RECONNECT_TIMEOUT_MS,
+                              .auto_reconnect = LTE_AUTO_RECONNECT,
+                              .initialized = false,
+                              .task_running = false,
+                              .task_handle = NULL};
 
 /**
  * @brief Initialize/Reinitialize LTE with current config
  */
 static esp_err_t lte_init_with_config(void) {
-  if (s_ctx.initialized) {
+  if (g_ctx.initialized) {
     ESP_LOGI(TAG, "Reinitializing LTE...");
     lte_handler_disconnect();
     lte_handler_deinit();
     vTaskDelay(pdMS_TO_TICKS(1000));
-    s_ctx.initialized = false;
+    g_ctx.initialized = false;
   }
 
   lte_handler_config_t cfg = {
-      .comm_type = s_ctx.comm_type,
-      .apn = s_ctx.apn,
-      .username = s_ctx.username[0] ? s_ctx.username : NULL,
-      .password = s_ctx.password[0] ? s_ctx.password : NULL,
-      .auto_reconnect = LTE_AUTO_RECONNECT,
-      .reconnect_timeout_ms = LTE_RECONNECT_TIMEOUT_MS,
-      .max_reconnect_attempts = LTE_MAX_RECONNECT};
+      .comm_type = g_ctx.comm_type,
+      .apn = g_ctx.apn,
+      .username = g_ctx.username[0] ? g_ctx.username : NULL,
+      .password = g_ctx.password[0] ? g_ctx.password : NULL,
+      .auto_reconnect = g_ctx.auto_reconnect,
+      .reconnect_timeout_ms = g_ctx.reconnect_timeout_ms,
+      .max_reconnect_attempts = g_ctx.max_reconnect_attempts};
 
   ESP_LOGI(TAG, "Initializing LTE - APN: %s, Type: %s", cfg.apn,
            cfg.comm_type == LTE_HANDLER_UART ? "UART" : "USB");
@@ -65,7 +64,7 @@ static esp_err_t lte_init_with_config(void) {
     return ret;
   }
 
-  s_ctx.initialized = true;
+  g_ctx.initialized = true;
 
   ret = lte_handler_connect();
   if (ret != ESP_OK) {
@@ -83,12 +82,12 @@ static void lte_task(void *arg) {
   ESP_LOGI(TAG, "LTE task started");
 
   TickType_t last_monitor = 0;
-  const TickType_t monitor_interval = pdMS_TO_TICKS(10000);
+  const TickType_t monitor_interval = pdMS_TO_TICKS(LTE_CONNECTION_MONITOR_INTERVAL_MS);
 
   /* Initial connection */
   lte_init_with_config();
 
-  while (s_ctx.task_running) {
+  while (g_ctx.task_running) {
     /* Check for config updates from config_handler */
     lte_config_data_t new_cfg;
     if (g_lte_config_queue && xQueueReceive(g_lte_config_queue, &new_cfg,
@@ -98,9 +97,14 @@ static void lte_task(void *arg) {
       ESP_LOGI(TAG, "APN: %s, Username: %s", new_cfg.apn, new_cfg.username);
 
       /* Update internal config */
-      strncpy(s_ctx.apn, new_cfg.apn, sizeof(s_ctx.apn) - 1);
-      strncpy(s_ctx.username, new_cfg.username, sizeof(s_ctx.username) - 1);
-      strncpy(s_ctx.password, new_cfg.password, sizeof(s_ctx.password) - 1);
+      strncpy(g_ctx.apn, new_cfg.apn, sizeof(g_ctx.apn) - 1);
+      strncpy(g_ctx.username, new_cfg.username, sizeof(g_ctx.username) - 1);
+      strncpy(g_ctx.password, new_cfg.password, sizeof(g_ctx.password) - 1);
+      g_ctx.comm_type = new_cfg.comm_type;
+      g_ctx.auto_reconnect = new_cfg.auto_reconnect;
+      g_ctx.reconnect_timeout_ms = new_cfg.reconnect_timeout_ms;
+      g_ctx.max_reconnect_attempts = new_cfg.max_reconnect_attempts;
+      save_lte_config_to_nvs();
 
       /* Reinitialize with new config */
       lte_init_with_config();
@@ -109,7 +113,7 @@ static void lte_task(void *arg) {
     /* Periodic monitoring */
     TickType_t now = xTaskGetTickCount();
     if ((now - last_monitor) >= monitor_interval) {
-      if (s_ctx.initialized) {
+      if (g_ctx.initialized) {
         if (lte_handler_is_connected()) {
           uint32_t rssi, ber;
           if (lte_handler_get_signal_strength(&rssi, &ber) == ESP_OK) {
@@ -126,7 +130,7 @@ static void lte_task(void *arg) {
   }
 
   ESP_LOGI(TAG, "LTE task stopped");
-  s_ctx.task_handle = NULL;
+  g_ctx.task_handle = NULL;
   vTaskDelete(NULL);
 }
 
@@ -134,21 +138,21 @@ static void lte_task(void *arg) {
  * @brief Start LTE connection
  */
 void lte_connect_task_start(void) {
-  if (s_ctx.task_running) {
+  if (g_ctx.task_running) {
     ESP_LOGW(TAG, "Already running");
     return;
   }
 
   ESP_LOGI(TAG, "Starting LTE connect...");
 
-  s_ctx.task_running = true;
-  s_ctx.initialized = false;
+  g_ctx.task_running = true;
+  g_ctx.initialized = false;
 
   BaseType_t ret =
-      xTaskCreate(lte_task, "lte_task", 16384, NULL, 5, &s_ctx.task_handle);
+      xTaskCreate(lte_task, "lte_task", 16384, NULL, 5, &g_ctx.task_handle);
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create task");
-    s_ctx.task_running = false;
+    g_ctx.task_running = false;
     return;
   }
 
@@ -159,28 +163,28 @@ void lte_connect_task_start(void) {
  * @brief Stop LTE connection
  */
 void lte_connect_task_stop(void) {
-  if (!s_ctx.task_running) {
+  if (!g_ctx.task_running) {
     ESP_LOGW(TAG, "Not running");
     return;
   }
 
   ESP_LOGI(TAG, "Stopping LTE connect...");
 
-  s_ctx.task_running = false;
+  g_ctx.task_running = false;
 
   /* Wait for task to exit */
-  if (s_ctx.task_handle) {
+  if (g_ctx.task_handle) {
     vTaskDelay(pdMS_TO_TICKS(1500));
-    s_ctx.task_handle = NULL;
+    g_ctx.task_handle = NULL;
   }
 
   /* Cleanup */
-  if (s_ctx.initialized) {
+  if (g_ctx.initialized) {
     if (lte_handler_is_connected()) {
       lte_handler_disconnect();
     }
     lte_handler_deinit();
-    s_ctx.initialized = false;
+    g_ctx.initialized = false;
   }
 
   ESP_LOGI(TAG, "LTE connect stopped");

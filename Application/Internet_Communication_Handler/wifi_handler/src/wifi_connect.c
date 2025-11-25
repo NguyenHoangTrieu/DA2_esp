@@ -30,14 +30,11 @@ static EventGroupHandle_t
 static const char *TAG = "wifi connect";
 static int s_retry_num = 0;
 
-// Configurable WiFi credentials (array-based storage)
-char g_wifi_ssid[64] = DEFAULT_ESP_WIFI_SSID; // Buffer for current SSID
-char g_wifi_pass[64] =
-    DEFAULT_ESP_WIFI_PASS; // Buffer for current password
-char g_wifi_username[64] =
-    DEFAULT_ESP_WIFI_USERNAME; // Buffer for enterprise username
-wifi_conf_auth_mode_t g_wifi_auth_mode =
-    WIFI_AUTH_MODE_PERSONAL; // Current auth mode
+// Configurable WiFi credentials
+wifi_config_context_t g_wifi_ctx = {.ssid = DEFAULT_ESP_WIFI_SSID,
+                                    .pass = DEFAULT_ESP_WIFI_PASS,
+                                    .username = DEFAULT_ESP_WIFI_USERNAME,
+                                    .auth_mode = WIFI_AUTH_MODE_PERSONAL};
 
 static uint8_t s_wifi_connected = 0; // Connection status flag
 static volatile uint8_t s_reconnect_request =
@@ -142,7 +139,8 @@ static esp_err_t wifi_configure_enterprise(const char *username,
  * Supports both Personal and Enterprise modes.
  */
 void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
-                   const char *custom_username, wifi_conf_auth_mode_t auth_mode) {
+                   const char *custom_username,
+                   wifi_conf_auth_mode_t auth_mode) {
   s_wifi_event_group = xEventGroupCreate();
 
   if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
@@ -242,45 +240,46 @@ static void wifi_config_task(void *arg) {
 
         if (ssid_len > 0 && ssid_len < 33 && pass_len >= 0 && pass_len < 65) {
           // Update credentials
-          strncpy(g_wifi_ssid, wifi_cfg.ssid, sizeof(g_wifi_ssid) - 1);
-          g_wifi_ssid[sizeof(g_wifi_ssid) - 1] = '\0';
+          strncpy(g_wifi_ctx.ssid, wifi_cfg.ssid, sizeof(g_wifi_ctx.ssid) - 1);
+          g_wifi_ctx.ssid[sizeof(g_wifi_ctx.ssid) - 1] = '\0';
 
-          strncpy(g_wifi_pass, wifi_cfg.password, sizeof(g_wifi_pass) - 1);
-          g_wifi_pass[sizeof(g_wifi_pass) - 1] = '\0';
+          strncpy(g_wifi_ctx.pass, wifi_cfg.password,
+                  sizeof(g_wifi_ctx.pass) - 1);
+          g_wifi_ctx.pass[sizeof(g_wifi_ctx.pass) - 1] = '\0';
 
           // Determine authentication mode
           if (username_len > 0 && username_len < 65) {
             // Enterprise mode
-            strncpy(g_wifi_username, wifi_cfg.username,
-                    sizeof(g_wifi_username) - 1);
-            g_wifi_username[sizeof(g_wifi_username) - 1] = '\0';
-            g_wifi_auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+            strncpy(g_wifi_ctx.username, wifi_cfg.username,
+                    sizeof(g_wifi_ctx.username) - 1);
+            g_wifi_ctx.username[sizeof(g_wifi_ctx.username) - 1] = '\0';
+            g_wifi_ctx.auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
 
             ESP_LOGI(TAG,
                      "Received Enterprise config from queue: "
                      "SSID='%s', USERNAME='%s'",
-                     g_wifi_ssid, g_wifi_username);
+                     g_wifi_ctx.ssid, g_wifi_ctx.username);
           } else {
             // Personal mode
-            g_wifi_auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            g_wifi_ctx.auth_mode = WIFI_AUTH_MODE_PERSONAL;
             ESP_LOGI(TAG,
                      "Received Personal config from queue: "
                      "SSID='%s', PASS='%s'",
-                     g_wifi_ssid, g_wifi_pass);
+                     g_wifi_ctx.ssid, g_wifi_ctx.pass);
           }
 
           // Prepare new configuration
           memset(&s_pending_config, 0, sizeof(wifi_config_t));
-          strncpy((char *)s_pending_config.sta.ssid, g_wifi_ssid,
+          strncpy((char *)s_pending_config.sta.ssid, g_wifi_ctx.ssid,
                   sizeof(s_pending_config.sta.ssid));
 
-          if (g_wifi_auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
+          if (g_wifi_ctx.auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
             s_pending_config.sta.threshold.authmode = WIFI_AUTH_WPA2_ENTERPRISE;
 
             // Configure enterprise settings before reconnection
-            wifi_configure_enterprise(g_wifi_username, g_wifi_pass);
+            wifi_configure_enterprise(g_wifi_ctx.username, g_wifi_ctx.pass);
           } else {
-            strncpy((char *)s_pending_config.sta.password, g_wifi_pass,
+            strncpy((char *)s_pending_config.sta.password, g_wifi_ctx.pass,
                     sizeof(s_pending_config.sta.password));
             s_pending_config.sta.threshold.authmode =
                 ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
@@ -313,6 +312,7 @@ static void wifi_config_task(void *arg) {
         } else {
           ESP_LOGW(TAG, "Invalid SSID/Password/Username length from queue");
         }
+        save_wifi_config_to_nvs();
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(100));
@@ -327,15 +327,16 @@ void wifi_connect_task_start(void) {
   wifi_connect_task_close = false;
 
   // Determine initial mode
-  if (strlen(g_wifi_username) > 0) {
-    g_wifi_auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+  if (strlen(g_wifi_ctx.username) > 0) {
+    g_wifi_ctx.auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (Enterprise initial connection)");
-    wifi_init_sta(g_wifi_ssid, g_wifi_pass, g_wifi_username,
+    wifi_init_sta(g_wifi_ctx.ssid, g_wifi_ctx.pass, g_wifi_ctx.username,
                   WIFI_AUTH_MODE_ENTERPRISE);
   } else {
-    g_wifi_auth_mode = WIFI_AUTH_MODE_PERSONAL;
+    g_wifi_ctx.auth_mode = WIFI_AUTH_MODE_PERSONAL;
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (Personal initial connection)");
-    wifi_init_sta(g_wifi_ssid, g_wifi_pass, "", WIFI_AUTH_MODE_PERSONAL);
+    wifi_init_sta(g_wifi_ctx.ssid, g_wifi_ctx.pass, "",
+                  WIFI_AUTH_MODE_PERSONAL);
   }
 
   // Start the config task to listen for WiFi credentials from queue

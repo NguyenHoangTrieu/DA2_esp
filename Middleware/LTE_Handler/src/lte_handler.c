@@ -117,7 +117,7 @@ static void uart_modem_event_handler(void *event_handler_arg,
 /**
  * @brief USB Modem event handler (from modem_board)
  */
-static void on_modem_event(void *arg, esp_event_base_t event_base,
+static void usb_modem_event(void *arg, esp_event_base_t event_base,
                            int32_t event_id, void *event_data) {
   if (event_base == MODEM_BOARD_EVENT) {
     switch (event_id) {
@@ -284,7 +284,7 @@ static esp_err_t usb_modem_init(void) {
   modem_config.flags |= MODEM_FLAGS_INIT_NOT_ENTER_PPP;
   modem_config.flags |= MODEM_FLAGS_INIT_NOT_BLOCK;
 #endif
-  modem_config.handler = on_modem_event;
+  modem_config.handler = usb_modem_event;
 
   esp_err_t ret = modem_board_init(&modem_config);
   if (ret != ESP_OK) {
