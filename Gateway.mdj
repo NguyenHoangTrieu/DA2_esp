@@ -10975,14 +10975,6 @@
 						},
 						{
 							"_type": "UMLPackage",
-							"_id": "AAAAAAGaAlUR0x2/XQY=",
-							"_parent": {
-								"$ref": "AAAAAAGZwch5QonghNI="
-							},
-							"name": "SIM7600 Handler"
-						},
-						{
-							"_type": "UMLPackage",
 							"_id": "AAAAAAGZwde1m4q3PCY=",
 							"_parent": {
 								"$ref": "AAAAAAGZwch5QonghNI="
