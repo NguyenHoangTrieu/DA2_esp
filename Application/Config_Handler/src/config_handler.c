@@ -526,7 +526,6 @@ static void config_handler_task(void *arg) {
                             g_not_ppp_to_lan = true;
                             ppp_server_init();
                             vTaskDelay(pdMS_TO_TICKS(200));
-                            mcu_lan_start_timer();
                         }
                         
                         // Send to MCU LAN queue

@@ -61,19 +61,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                             1, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
     m_mqtt_connected = true;
-    data_send_active = true;
     break;
 
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
     m_mqtt_connected = false;
-    data_send_active = false;
     break;
 
   case MQTT_EVENT_ERROR:
     ESP_LOGE(TAG, "MQTT_EVENT_ERROR");
     m_mqtt_connected = false;
-    data_send_active = false;
     break;
 
   case MQTT_EVENT_DATA:
