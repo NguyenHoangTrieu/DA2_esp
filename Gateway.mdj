@@ -10414,7 +10414,2251 @@
 							"_parent": {
 								"$ref": "AAAAAAGZwcgzFImw6mI="
 							},
-							"name": "MCU LAN Comm Handler"
+							"name": "MCU LAN Comm Handler",
+							"ownedElements": [
+								{
+									"_type": "UMLCollaboration",
+									"_id": "AAAAAAGaur8foaoVVzk=",
+									"_parent": {
+										"$ref": "AAAAAAGZwdBkx4qWGDY="
+									},
+									"name": "LanCommunication",
+									"ownedElements": [
+										{
+											"_type": "UMLInteraction",
+											"_id": "AAAAAAGaur8foaoWdZY=",
+											"_parent": {
+												"$ref": "AAAAAAGaur8foaoVVzk="
+											},
+											"name": "RunLanCommTask",
+											"ownedElements": [
+												{
+													"_type": "UMLSequenceDiagram",
+													"_id": "AAAAAAGaur8foaoXdA4=",
+													"_parent": {
+														"$ref": "AAAAAAGaur8foaoWdZY="
+													},
+													"name": "SequenceDiagram",
+													"ownedViews": [
+														{
+															"_type": "UMLFrameView",
+															"_id": "AAAAAAGaur8foaoYc6Q=",
+															"_parent": {
+																"$ref": "AAAAAAGaur8foaoXdA4="
+															},
+															"model": {
+																"$ref": "AAAAAAGaur8foaoXdA4="
+															},
+															"subViews": [
+																{
+																	"_type": "LabelView",
+																	"_id": "AAAAAAGaur8foaoZwe0=",
+																	"_parent": {
+																		"$ref": "AAAAAAGaur8foaoYc6Q="
+																	},
+																	"font": "Arial;13;0",
+																	"parentStyle": true,
+																	"left": 120.72998046875,
+																	"top": 77,
+																	"width": 107.67529296875,
+																	"height": 13,
+																	"text": "SequenceDiagram"
+																},
+																{
+																	"_type": "LabelView",
+																	"_id": "AAAAAAGaur8foaoaD9A=",
+																	"_parent": {
+																		"$ref": "AAAAAAGaur8foaoYc6Q="
+																	},
+																	"font": "Arial;13;1",
+																	"parentStyle": true,
+																	"left": 101,
+																	"top": 77,
+																	"width": 13.72998046875,
+																	"height": 13,
+																	"text": "sd"
+																}
+															],
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 96,
+															"top": 72,
+															"width": 692,
+															"height": 592,
+															"nameLabel": {
+																"$ref": "AAAAAAGaur8foaoZwe0="
+															},
+															"frameTypeLabel": {
+																"$ref": "AAAAAAGaur8foaoaD9A="
+															}
+														}
+													]
+												}
+											]
+										}
+									]
+								},
+								{
+									"_type": "FCFlowchart",
+									"_id": "AAAAAAGavjzeR7XEpGw=",
+									"_parent": {
+										"$ref": "AAAAAAGZwdBkx4qWGDY="
+									},
+									"name": "LANCommFlowChart",
+									"ownedElements": [
+										{
+											"_type": "FCFlowchartDiagram",
+											"_id": "AAAAAAGavjzeSLXFZUE=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "FlowchartDiagram",
+											"ownedViews": [
+												{
+													"_type": "FCConnectorView",
+													"_id": "AAAAAAGavkEywbYJH2o=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavkEywbYHLf0="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavkEywbYK5RI=",
+															"_parent": {
+																"$ref": "AAAAAAGavkEywbYJH2o="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3870,
+															"top": 1356,
+															"width": 28,
+															"height": 24,
+															"text": "Start",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3856,
+													"top": 1344,
+													"width": 56,
+													"height": 48,
+													"nameLabel": {
+														"$ref": "AAAAAAGavkEywbYK5RI="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavkll/7YVXQQ=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavkll/7YTCQw="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavkll/7YWauE=",
+															"_parent": {
+																"$ref": "AAAAAAGavkll/7YVXQQ="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3818,
+															"top": 1458,
+															"width": 132,
+															"height": 26,
+															"text": "Initialize SPI Driver (Slave Mode)",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3808,
+													"top": 1448,
+													"width": 152,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavkll/7YWauE="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavkpckLYhp44=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavkpckLYivVs=",
+															"_parent": {
+																"$ref": "AAAAAAGavkpckLYhp44="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3852.542236328125,
+															"top": 1581,
+															"width": 57.08447265625,
+															"height": 26,
+															"text": "SPI Init Success?",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3824,
+													"top": 1568,
+													"width": 114.1689453125,
+													"height": 52,
+													"nameLabel": {
+														"$ref": "AAAAAAGavkpckLYivVs="
+													}
+												},
+												{
+													"_type": "FCConnectorView",
+													"_id": "AAAAAAGavk3cCLYvt2Y=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavk3cA7Yt5Wo="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavk3cCLYwSGE=",
+															"_parent": {
+																"$ref": "AAAAAAGavk3cCLYvt2Y="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3696,
+															"top": 1722,
+															"width": 48,
+															"height": 36,
+															"text": "End/ Error",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3672,
+													"top": 1704,
+													"width": 96,
+													"height": 72,
+													"nameLabel": {
+														"$ref": "AAAAAAGavk3cCLYwSGE="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavk4w47Y6mU4=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavk4w47Y42rA="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavk4w47Y7xRs=",
+															"_parent": {
+																"$ref": "AAAAAAGavk4w47Y6mU4="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3930,
+															"top": 1722,
+															"width": 204,
+															"height": 13,
+															"text": "Wait for ACK from MCU LAN",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3920,
+													"top": 1712,
+													"width": 224,
+													"height": 33,
+													"nameLabel": {
+														"$ref": "AAAAAAGavk4w47Y7xRs="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavk7MCrZGss4=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavk7MC7ZHYs8=",
+															"_parent": {
+																"$ref": "AAAAAAGavk7MCrZGss4="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4012.542236328125,
+															"top": 1850,
+															"width": 57.08447265625,
+															"height": 52,
+															"text": "Received ACK from LAN?",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3984,
+													"top": 1824,
+													"width": 114.1689453125,
+													"height": 104,
+													"nameLabel": {
+														"$ref": "AAAAAAGavk7MC7ZHYs8="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavlD3C7ZQM10=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlD3C7ZOdsc="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlD3C7ZRiAA=",
+															"_parent": {
+																"$ref": "AAAAAAGavlD3C7ZQM10="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3938,
+															"top": 2010,
+															"width": 204,
+															"height": 13,
+															"text": "Send ACK back to MCU LAN",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3928,
+													"top": 2000,
+													"width": 224,
+													"height": 33,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlD3C7ZRiAA="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavlRJh7ZdkZg=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlRJh7ZeSoU=",
+															"_parent": {
+																"$ref": "AAAAAAGavlRJh7ZdkZg="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3954,
+															"top": 2098,
+															"width": 172,
+															"height": 13,
+															"text": "Start Data Reception Loop",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3944,
+													"top": 2088,
+													"width": 192,
+													"height": 48,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlRJh7ZeSoU="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavlSM/7Zqndw=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlSM/7Zr8Lo=",
+															"_parent": {
+																"$ref": "AAAAAAGavlSM/7Zqndw="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3882,
+															"top": 2240,
+															"width": 68,
+															"height": 48,
+															"text": "Check Received Data Type",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3848,
+													"top": 2216,
+													"width": 136,
+													"height": 96,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlSM/7Zr8Lo="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavlS4rrZzMFY=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlS4rrZ09M4=",
+															"_parent": {
+																"$ref": "AAAAAAGavlS4rrZzMFY="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3878,
+															"top": 2420.5,
+															"width": 76,
+															"height": 57,
+															"text": "Config Data Available from Task?",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3840,
+													"top": 2392,
+													"width": 152,
+													"height": 114,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlS4rrZ09M4="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavlTgRLZ88xI=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlTgRLZ9GjA=",
+															"_parent": {
+																"$ref": "AAAAAAGavlTgRLZ88xI="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3363.054931640625,
+															"top": 2437,
+															"width": 70.10986328125,
+															"height": 26,
+															"text": "Internet Connected?",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3328,
+													"top": 2424,
+													"width": 140.2197265625,
+													"height": 52,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlTgRLZ9GjA="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavlUwa7aSKd0=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlUwa7aQnFg="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlUwa7aTkM8=",
+															"_parent": {
+																"$ref": "AAAAAAGavlUwa7aSKd0="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4402,
+															"top": 2290,
+															"width": 244,
+															"height": 13,
+															"text": "Send CFFW Command to MCU LAN",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 4392,
+													"top": 2280,
+													"width": 264,
+													"height": 33,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlUwa7aTkM8="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavlWb1Laf5wg=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlWb1LadsfQ="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlWb1LagsrY=",
+															"_parent": {
+																"$ref": "AAAAAAGavlWb1Laf5wg="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4458,
+															"top": 2418,
+															"width": 172,
+															"height": 13,
+															"text": "Wait for ACK from LAN",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 4448,
+													"top": 2408,
+													"width": 192,
+													"height": 33,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlWb1LagsrY="
+													}
+												},
+												{
+													"_type": "FCDecisionView",
+													"_id": "AAAAAAGavlamhraqlb0=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlamhrao4SA="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlamhrargfA=",
+															"_parent": {
+																"$ref": "AAAAAAGavlamhraqlb0="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4532.542236328125,
+															"top": 2570,
+															"width": 57.08447265625,
+															"height": 52,
+															"text": "Received ACK from LAN?",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 4504,
+													"top": 2544,
+													"width": 114.1689453125,
+													"height": 104,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlamhrargfA="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavlcWnba1N5A=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavlcWnbaznj8="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavlcWnba2+Uk=",
+															"_parent": {
+																"$ref": "AAAAAAGavlcWnba1N5A="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4458,
+															"top": 2722,
+															"width": 196,
+															"height": 26,
+															"text": "Notify Config Task to Start Firmware Update",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 4448,
+													"top": 2712,
+													"width": 216,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavlcWnba2+Uk="
+													}
+												},
+												{
+													"_type": "FCConnectorView",
+													"_id": "AAAAAAGavl5VXrbHxmQ=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavl5VXbbFmZk="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavl5VXrbIF9o=",
+															"_parent": {
+																"$ref": "AAAAAAGavl5VXrbHxmQ="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 4534,
+															"top": 2852,
+															"width": 44,
+															"height": 40,
+															"text": "End/ Updating",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 4512,
+													"top": 2832,
+													"width": 88,
+													"height": 80,
+													"nameLabel": {
+														"$ref": "AAAAAAGavl5VXrbIF9o="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavmC8kLbeDyQ=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmC8kLbc2Yc="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavmC8kLbfrPo=",
+															"_parent": {
+																"$ref": "AAAAAAGavmC8kLbeDyQ="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3050,
+															"top": 2626,
+															"width": 212.419921875,
+															"height": 26,
+															"text": "Send to LAN: ACK_RECEIVED + INTERNET_OK",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3040,
+													"top": 2616,
+													"width": 232.419921875,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavmC8kLbfrPo="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavmDn8rbnx7w=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmDn8rblIOY="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavmDn8rboMRs=",
+															"_parent": {
+																"$ref": "AAAAAAGavmDn8rbnx7w="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3322,
+															"top": 2626,
+															"width": 236,
+															"height": 26,
+															"text": "Send to LAN: ACK_RECEIVED + NO_INTERNET",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3312,
+													"top": 2616,
+													"width": 256,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavmDn8rboMRs="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavmEIcbbwiis=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmEIcbbuPPU="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavmEIcbbxtfE=",
+															"_parent": {
+																"$ref": "AAAAAAGavmEIcbbwiis="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3642,
+															"top": 2626,
+															"width": 268,
+															"height": 26,
+															"text": "Send to LAN: RTC (dd/mm/yyyy - hh/mm/ss) + Config no + Internet status",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3632,
+													"top": 2616,
+													"width": 288,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavmEIcbbxtfE="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavmGnJrcFgNg=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmGnJrcDKwc="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavmGnJrcGooA=",
+															"_parent": {
+																"$ref": "AAAAAAGavmGnJrcFgNg="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3986,
+															"top": 2626,
+															"width": 260,
+															"height": 26,
+															"text": "Send to LAN: RTC (dd/mm/yyyy - hh/mm/ss) + Config Data + Internet status",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3976,
+													"top": 2616,
+													"width": 280,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavmGnJrcGooA="
+													}
+												},
+												{
+													"_type": "FCProcessView",
+													"_id": "AAAAAAGavmH6tbcR3Tw=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmH6tbcPo+k="
+													},
+													"subViews": [
+														{
+															"_type": "LabelView",
+															"_id": "AAAAAAGavmH6tbcSUKI=",
+															"_parent": {
+																"$ref": "AAAAAAGavmH6tbcR3Tw="
+															},
+															"font": "Arial;13;0",
+															"parentStyle": true,
+															"left": 3586,
+															"top": 2834,
+															"width": 164,
+															"height": 26,
+															"text": "Forward Data to Server Handler Task",
+															"wordWrap": true
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"left": 3576,
+													"top": 2824,
+													"width": 184,
+													"height": 46,
+													"nameLabel": {
+														"$ref": "AAAAAAGavmH6tbcSUKI="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavmusWLcg+SU=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmusWLcerus="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavmusWLchfuE=",
+															"_parent": {
+																"$ref": "AAAAAAGavmusWLcg+SU="
+															},
+															"model": {
+																"$ref": "AAAAAAGavmusWLcerus="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3898,
+															"top": 1413,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavmusWLcg+SU="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavkll/7YVXQQ="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavkEywbYJH2o="
+													},
+													"points": "3884:1392;3884:1448",
+													"nameLabel": {
+														"$ref": "AAAAAAGavmusWLchfuE="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavmvDSLcqiNA=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmvDSLcoXoU="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavmvDSLcr+R4=",
+															"_parent": {
+																"$ref": "AAAAAAGavmvDSLcqiNA="
+															},
+															"model": {
+																"$ref": "AAAAAAGavmvDSLcoXoU="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3897,
+															"top": 1524,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavmvDSLcqiNA="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavkpckLYhp44="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavkll/7YVXQQ="
+													},
+													"points": "3883:1494;3883:1568",
+													"nameLabel": {
+														"$ref": "AAAAAAGavmvDSLcr+R4="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavmwz+rc0va0=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmwz+rcyXAY="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavmwz+rc1o30=",
+															"_parent": {
+																"$ref": "AAAAAAGavmwz+rc0va0="
+															},
+															"model": {
+																"$ref": "AAAAAAGavmwz+rcyXAY="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3735,
+															"top": 1585,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavmwz+rc0va0="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavk3cCLYvt2Y="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavkpckLYhp44="
+													},
+													"points": "3824:1592;3720:1592;3720:1704",
+													"nameLabel": {
+														"$ref": "AAAAAAGavmwz+rc1o30="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavmy5mLdKz1Q=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavmy5mLdIbIk="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavmy5mLdL5FI=",
+															"_parent": {
+																"$ref": "AAAAAAGavmy5mLdKz1Q="
+															},
+															"model": {
+																"$ref": "AAAAAAGavmy5mLdIbIk="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4047,
+															"top": 1585,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavmy5mLdKz1Q="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavk4w47Y6mU4="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavkpckLYhp44="
+													},
+													"points": "3938:1592;4032:1592;4032:1712",
+													"nameLabel": {
+														"$ref": "AAAAAAGavmy5mLdL5FI="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavm02Ordaui8=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavm02OrdYYfo="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavm02OrdbCXk=",
+															"_parent": {
+																"$ref": "AAAAAAGavm02Ordaui8="
+															},
+															"model": {
+																"$ref": "AAAAAAGavm02OrdYYfo="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4054,
+															"top": 1777,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavm02Ordaui8="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavk7MCrZGss4="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavk4w47Y6mU4="
+													},
+													"lineStyle": 2,
+													"points": "4040:1745;4040:1824",
+													"nameLabel": {
+														"$ref": "AAAAAAGavm02OrdbCXk="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavm1D4LdjxLc=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavm1D4LdhzoE="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavm1D4LdkWWE=",
+															"_parent": {
+																"$ref": "AAAAAAGavm1D4LdjxLc="
+															},
+															"model": {
+																"$ref": "AAAAAAGavm1D4LdhzoE="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4161,
+															"top": 1793,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavm1D4LdjxLc="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavk4w47Y6mU4="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavk7MCrZGss4="
+													},
+													"lineStyle": 2,
+													"points": "4098:1872;4176:1872;4176:1728;4144:1728",
+													"nameLabel": {
+														"$ref": "AAAAAAGavm1D4LdkWWE="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavm5Q4reA6Ng=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavm5Q4rd+tIA="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavm5Q4reBEKo=",
+															"_parent": {
+																"$ref": "AAAAAAGavm5Q4reA6Ng="
+															},
+															"model": {
+																"$ref": "AAAAAAGavm5Q4rd+tIA="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4057,
+															"top": 1957,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavm5Q4reA6Ng="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlD3C7ZQM10="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavk7MCrZGss4="
+													},
+													"points": "4043:1928;4043:2000",
+													"nameLabel": {
+														"$ref": "AAAAAAGavm5Q4reBEKo="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavm6Sw7eM2QI=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavm6Sw7eKea4="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavm6Sw7eNQ5o=",
+															"_parent": {
+																"$ref": "AAAAAAGavm6Sw7eM2QI="
+															},
+															"model": {
+																"$ref": "AAAAAAGavm6Sw7eKea4="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4054,
+															"top": 2053,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavm6Sw7eM2QI="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlD3C7ZQM10="
+													},
+													"points": "4040:2033;4040:2088",
+													"nameLabel": {
+														"$ref": "AAAAAAGavm6Sw7eNQ5o="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqZJmreiZ7k=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqZJmbegh6M="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqZJmrejK8U=",
+															"_parent": {
+																"$ref": "AAAAAAGavqZJmreiZ7k="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqZJmbegh6M="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3926,
+															"top": 2121,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqZJmreiZ7k="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlSM/7Zqndw="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"points": "3944:2128;3912:2128;3912:2216",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqZJmrejK8U="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqaAxLevJyY=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqaAxLetdZ8="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqaAxLewE80=",
+															"_parent": {
+																"$ref": "AAAAAAGavqaAxLevJyY="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqaAxLetdZ8="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3930,
+															"top": 2345,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqaAxLevJyY="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlS4rrZzMFY="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlSM/7Zqndw="
+													},
+													"points": "3916:2312;3916:2392",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqaAxLewE80="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqg2rbfKH3g=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqg2rbfI+Pw="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqg2rbfL6vY=",
+															"_parent": {
+																"$ref": "AAAAAAGavqg2rbfKH3g="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqg2rbfI+Pw="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3791,
+															"top": 2441,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqg2rbfKH3g="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavmEIcbbwiis="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlS4rrZzMFY="
+													},
+													"points": "3840:2448;3776:2448;3776:2616",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqg2rbfL6vY="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqiN7LfdZlU=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqiN7LfbZ3o="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqiN7LfeZdQ=",
+															"_parent": {
+																"$ref": "AAAAAAGavqiN7LfdZlU="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqiN7LfbZ3o="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4079,
+															"top": 2441,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqiN7LfdZlU="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavmGnJrcFgNg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlS4rrZzMFY="
+													},
+													"points": "3992:2448;4064:2448;4064:2616",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqiN7LfeZdQ="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqkesLfuwEU=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqkesLfsR4o="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqkesLfvV4I=",
+															"_parent": {
+																"$ref": "AAAAAAGavqkesLfuwEU="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqkesLfsR4o="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3415,
+															"top": 2257,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqkesLfuwEU="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlTgRLZ88xI="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlSM/7Zqndw="
+													},
+													"lineStyle": 2,
+													"points": "3848:2264;3400:2264;3400:2424",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqkesLfvV4I="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqnibLgDYhw=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqnibLgB84U="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqnibLgEF+w=",
+															"_parent": {
+																"$ref": "AAAAAAGavqnibLgDYhw="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqnibLgB84U="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3411,
+															"top": 2539,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqnibLgDYhw="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavmDn8rbnx7w="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlTgRLZ88xI="
+													},
+													"points": "3397:2476;3397:2616",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqnibLgEF+w="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavqoA/7gN1d8=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavqoA/7gLVFQ="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavqoBALgOWsQ=",
+															"_parent": {
+																"$ref": "AAAAAAGavqoA/7gN1d8="
+															},
+															"model": {
+																"$ref": "AAAAAAGavqoA/7gLVFQ="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3175,
+															"top": 2441,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavqoA/7gN1d8="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavmC8kLbeDyQ="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavlTgRLZ88xI="
+													},
+													"points": "3328:2448;3160:2448;3160:2616",
+													"nameLabel": {
+														"$ref": "AAAAAAGavqoBALgOWsQ="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavq1MN7gbPjg=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavq1MN7gZZcw="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavq1MN7gcwTI=",
+															"_parent": {
+																"$ref": "AAAAAAGavq1MN7gbPjg="
+															},
+															"model": {
+																"$ref": "AAAAAAGavq1MN7gZZcw="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3160,
+															"top": 2827,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavq1MN7gbPjg="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavmH6tbcR3Tw="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavmC8kLbeDyQ="
+													},
+													"points": "3160:2662;3160:2848;3576:2848",
+													"nameLabel": {
+														"$ref": "AAAAAAGavq1MN7gcwTI="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavq3ey7goN1s=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavq3ey7gm7aY="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavq3ey7gpjlQ=",
+															"_parent": {
+																"$ref": "AAAAAAGavq3ey7goN1s="
+															},
+															"model": {
+																"$ref": "AAAAAAGavq3ey7gm7aY="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4191,
+															"top": 2129,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavq3ey7goN1s="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavmGnJrcFgNg="
+													},
+													"points": "4192:2616;4192:2120;4136:2120",
+													"nameLabel": {
+														"$ref": "AAAAAAGavq3ey7gpjlQ="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavq/WQrhNCX4=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavq/WQrhL/Vw="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavq/WQ7hOvsQ=",
+															"_parent": {
+																"$ref": "AAAAAAGavq/WQrhNCX4="
+															},
+															"model": {
+																"$ref": "AAAAAAGavq/WQrhL/Vw="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3504,
+															"top": 2075,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavq/WQrhNCX4="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavmDn8rbnx7w="
+													},
+													"lineStyle": 2,
+													"points": "3504:2616;3504:2096;3944:2096",
+													"nameLabel": {
+														"$ref": "AAAAAAGavq/WQ7hOvsQ="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavrDymbhgdTw=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavrDymbhejm4="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavrDymbhhWI4=",
+															"_parent": {
+																"$ref": "AAAAAAGavrDymbhgdTw="
+															},
+															"model": {
+																"$ref": "AAAAAAGavrDymbhejm4="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 4289,
+															"top": 2469,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavrDymbhgdTw="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavmH6tbcR3Tw="
+													},
+													"lineStyle": 2,
+													"points": "3760:2848;4304:2848;4304:2104;4136:2104",
+													"nameLabel": {
+														"$ref": "AAAAAAGavrDymbhhWI4="
+													}
+												},
+												{
+													"_type": "FCFlowView",
+													"_id": "AAAAAAGavrIn/Lh2Olk=",
+													"_parent": {
+														"$ref": "AAAAAAGavjzeSLXFZUE="
+													},
+													"model": {
+														"$ref": "AAAAAAGavrIn/Lh0DIQ="
+													},
+													"subViews": [
+														{
+															"_type": "EdgeLabelView",
+															"_id": "AAAAAAGavrIn/Lh3D8Q=",
+															"_parent": {
+																"$ref": "AAAAAAGavrIn/Lh2Olk="
+															},
+															"model": {
+																"$ref": "AAAAAAGavrIn/Lh0DIQ="
+															},
+															"visible": false,
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 3728,
+															"top": 2091,
+															"height": 13,
+															"alpha": 1.5707963267948966,
+															"distance": 15,
+															"hostEdge": {
+																"$ref": "AAAAAAGavrIn/Lh2Olk="
+															},
+															"edgePosition": 1
+														}
+													],
+													"font": "Arial;13;0",
+													"parentStyle": false,
+													"head": {
+														"$ref": "AAAAAAGavlRJh7ZdkZg="
+													},
+													"tail": {
+														"$ref": "AAAAAAGavmEIcbbwiis="
+													},
+													"lineStyle": 2,
+													"points": "3728:2616;3728:2112;3944:2112",
+													"nameLabel": {
+														"$ref": "AAAAAAGavrIn/Lh3D8Q="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCConnector",
+											"_id": "AAAAAAGavkEywbYHLf0=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Start",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavmusWLcerus=",
+													"_parent": {
+														"$ref": "AAAAAAGavkEywbYHLf0="
+													},
+													"source": {
+														"$ref": "AAAAAAGavkEywbYHLf0="
+													},
+													"target": {
+														"$ref": "AAAAAAGavkll/7YTCQw="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavkll/7YTCQw=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Initialize SPI Driver (Slave Mode)",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavmvDSLcoXoU=",
+													"_parent": {
+														"$ref": "AAAAAAGavkll/7YTCQw="
+													},
+													"source": {
+														"$ref": "AAAAAAGavkll/7YTCQw="
+													},
+													"target": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavkpckLYfdSQ=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "SPI Init Success?",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavmwz+rcyXAY=",
+													"_parent": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													},
+													"source": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													},
+													"target": {
+														"$ref": "AAAAAAGavk3cA7Yt5Wo="
+													}
+												},
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavmy5mLdIbIk=",
+													"_parent": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													},
+													"source": {
+														"$ref": "AAAAAAGavkpckLYfdSQ="
+													},
+													"target": {
+														"$ref": "AAAAAAGavk4w47Y42rA="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCConnector",
+											"_id": "AAAAAAGavk3cA7Yt5Wo=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "End/ Error"
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavk4w47Y42rA=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Wait for ACK from MCU LAN",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavm02OrdYYfo=",
+													"_parent": {
+														"$ref": "AAAAAAGavk4w47Y42rA="
+													},
+													"source": {
+														"$ref": "AAAAAAGavk4w47Y42rA="
+													},
+													"target": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavk7MCrZESFI=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Received ACK from LAN?",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavm1D4LdhzoE=",
+													"_parent": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													},
+													"source": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													},
+													"target": {
+														"$ref": "AAAAAAGavk4w47Y42rA="
+													}
+												},
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavm5Q4rd+tIA=",
+													"_parent": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													},
+													"source": {
+														"$ref": "AAAAAAGavk7MCrZESFI="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlD3C7ZOdsc="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavlD3C7ZOdsc=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send ACK back to MCU LAN",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavm6Sw7eKea4=",
+													"_parent": {
+														"$ref": "AAAAAAGavlD3C7ZOdsc="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlD3C7ZOdsc="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavlRJh7Zb+n0=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Start Data Reception Loop",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqZJmbegh6M=",
+													"_parent": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavlSM/7Zoi7Q=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Check Received Data Type",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqaAxLetdZ8=",
+													"_parent": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													}
+												},
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqkesLfsR4o=",
+													"_parent": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlSM/7Zoi7Q="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavlS4rrZxs68=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Config Data Available from Task?",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqg2rbfI+Pw=",
+													"_parent": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													},
+													"target": {
+														"$ref": "AAAAAAGavmEIcbbuPPU="
+													}
+												},
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqiN7LfbZ3o=",
+													"_parent": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlS4rrZxs68="
+													},
+													"target": {
+														"$ref": "AAAAAAGavmGnJrcDKwc="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavlTgRLZ6BWg=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Internet Connected?",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqnibLgB84U=",
+													"_parent": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													},
+													"target": {
+														"$ref": "AAAAAAGavmDn8rblIOY="
+													}
+												},
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavqoA/7gLVFQ=",
+													"_parent": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													},
+													"source": {
+														"$ref": "AAAAAAGavlTgRLZ6BWg="
+													},
+													"target": {
+														"$ref": "AAAAAAGavmC8kLbc2Yc="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavlUwa7aQnFg=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send CFFW Command to MCU LAN"
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavlWb1LadsfQ=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Wait for ACK from LAN"
+										},
+										{
+											"_type": "FCDecision",
+											"_id": "AAAAAAGavlamhrao4SA=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Received ACK from LAN?"
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavlcWnbaznj8=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Notify Config Task to Start Firmware Update"
+										},
+										{
+											"_type": "FCConnector",
+											"_id": "AAAAAAGavl5VXbbFmZk=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "End/ Updating"
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavmC8kLbc2Yc=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send to LAN: ACK_RECEIVED + INTERNET_OK",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavq1MN7gZZcw=",
+													"_parent": {
+														"$ref": "AAAAAAGavmC8kLbc2Yc="
+													},
+													"source": {
+														"$ref": "AAAAAAGavmC8kLbc2Yc="
+													},
+													"target": {
+														"$ref": "AAAAAAGavmH6tbcPo+k="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavmDn8rblIOY=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send to LAN: ACK_RECEIVED + NO_INTERNET",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavq/WQrhL/Vw=",
+													"_parent": {
+														"$ref": "AAAAAAGavmDn8rblIOY="
+													},
+													"source": {
+														"$ref": "AAAAAAGavmDn8rblIOY="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavmEIcbbuPPU=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send to LAN: RTC (dd/mm/yyyy - hh/mm/ss) + Config no + Internet status",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavrIn/Lh0DIQ=",
+													"_parent": {
+														"$ref": "AAAAAAGavmEIcbbuPPU="
+													},
+													"source": {
+														"$ref": "AAAAAAGavmEIcbbuPPU="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavmGnJrcDKwc=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Send to LAN: RTC (dd/mm/yyyy - hh/mm/ss) + Config Data + Internet status",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavq3ey7gm7aY=",
+													"_parent": {
+														"$ref": "AAAAAAGavmGnJrcDKwc="
+													},
+													"source": {
+														"$ref": "AAAAAAGavmGnJrcDKwc="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													}
+												}
+											]
+										},
+										{
+											"_type": "FCProcess",
+											"_id": "AAAAAAGavmH6tbcPo+k=",
+											"_parent": {
+												"$ref": "AAAAAAGavjzeR7XEpGw="
+											},
+											"name": "Forward Data to Server Handler Task",
+											"ownedElements": [
+												{
+													"_type": "FCFlow",
+													"_id": "AAAAAAGavrDymbhejm4=",
+													"_parent": {
+														"$ref": "AAAAAAGavmH6tbcPo+k="
+													},
+													"source": {
+														"$ref": "AAAAAAGavmH6tbcPo+k="
+													},
+													"target": {
+														"$ref": "AAAAAAGavlRJh7Zb+n0="
+													}
+												}
+											]
+										}
+									]
+								}
+							]
 						},
 						{
 							"_type": "UMLPackage",
@@ -15521,7 +17765,91 @@
 							"_parent": {
 								"$ref": "AAAAAAGZww+WEeanL0w="
 							},
-							"name": "MCU WAN Comm Handler"
+							"name": "MCU WAN Comm Handler",
+							"ownedElements": [
+								{
+									"_type": "UMLCollaboration",
+									"_id": "AAAAAAGau1PUU69nJ7c=",
+									"_parent": {
+										"$ref": "AAAAAAGZww+WEubbGac="
+									},
+									"name": "WanCommunication",
+									"ownedElements": [
+										{
+											"_type": "UMLInteraction",
+											"_id": "AAAAAAGau1PUU69oTVA=",
+											"_parent": {
+												"$ref": "AAAAAAGau1PUU69nJ7c="
+											},
+											"name": "RunWanCommTask",
+											"ownedElements": [
+												{
+													"_type": "UMLSequenceDiagram",
+													"_id": "AAAAAAGau1PUVK9p6eU=",
+													"_parent": {
+														"$ref": "AAAAAAGau1PUU69oTVA="
+													},
+													"name": "SequenceDiagram",
+													"ownedViews": [
+														{
+															"_type": "UMLFrameView",
+															"_id": "AAAAAAGau1PUVK9q7js=",
+															"_parent": {
+																"$ref": "AAAAAAGau1PUVK9p6eU="
+															},
+															"model": {
+																"$ref": "AAAAAAGau1PUVK9p6eU="
+															},
+															"subViews": [
+																{
+																	"_type": "LabelView",
+																	"_id": "AAAAAAGau1PUVK9rENU=",
+																	"_parent": {
+																		"$ref": "AAAAAAGau1PUVK9q7js="
+																	},
+																	"font": "Arial;13;0",
+																	"parentStyle": true,
+																	"left": 120.72998046875,
+																	"top": 77,
+																	"width": 107.67529296875,
+																	"height": 13,
+																	"text": "SequenceDiagram"
+																},
+																{
+																	"_type": "LabelView",
+																	"_id": "AAAAAAGau1PUVK9sjjY=",
+																	"_parent": {
+																		"$ref": "AAAAAAGau1PUVK9q7js="
+																	},
+																	"font": "Arial;13;1",
+																	"parentStyle": true,
+																	"left": 101,
+																	"top": 77,
+																	"width": 13.72998046875,
+																	"height": 13,
+																	"text": "sd"
+																}
+															],
+															"font": "Arial;13;0",
+															"parentStyle": false,
+															"left": 96,
+															"top": 72,
+															"width": 692,
+															"height": 592,
+															"nameLabel": {
+																"$ref": "AAAAAAGau1PUVK9rENU="
+															},
+															"frameTypeLabel": {
+																"$ref": "AAAAAAGau1PUVK9sjjY="
+															}
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							]
 						},
 						{
 							"_type": "UMLPackage",
