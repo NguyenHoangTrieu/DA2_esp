@@ -18,7 +18,7 @@ flowchart TD
     CheckPeriodic -- Yes --> SendReq["Send: REQUEST RTC,<br/>CONFIG & NET_STATUS"]
     SendReq --> WaitReqResp{"Response<br/>Received?"}
     WaitReqResp -- Yes --> UpdateInfo["Update internal RTC<br/>& Internet Status"]
-    UpdateInfo --> CheckFota{"Config ==<br/>FOTA Update?"}
+    UpdateInfo --> CheckFota{"Have Config?"}
     CheckFota -- Yes --> NotifyFota[Notify Config Task]
     NotifyFota --> EndTask((End Task))
     CheckFota -- No --> CheckQueue

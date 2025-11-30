@@ -106,10 +106,6 @@ void config_handler_task_stop(void);
 
 // Helper functions
 config_type_t config_parse_type(const char *cmd, uint16_t len);
-esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg);
-esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
-esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
-esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
 
 esp_err_t save_internet_config_to_nvs(void);
 esp_err_t save_server_config_to_nvs(void);

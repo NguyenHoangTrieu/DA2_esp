@@ -15,13 +15,18 @@ QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
 QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
-QueueHandle_t g_mcu_lan_config_queue = NULL;
 // global config contexts
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to LTE
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
 
 static bool config_handler_running = false;
 static TaskHandle_t config_handler_task_handle = NULL;
+
+//pre define functions
+static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg);
+static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
+static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
+static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
 
 /**
  * @brief Parse command type from 2-character prefix
@@ -63,7 +68,7 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
  * @param cfg Output WiFi config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
-esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg) {
+static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg) {
     if (!data || !cfg || len < 5) {
         return ESP_FAIL;
     }
@@ -162,7 +167,7 @@ esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *
  * @param cfg Output LTE config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
-esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
+static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
     if (!data || !cfg || len < 5) {
         return ESP_FAIL;
     }
@@ -316,7 +321,7 @@ esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cf
  * @param cfg Output MQTT config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
-esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg) {
+static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg) {
     if (!data || !cfg || len < 5) {
         return ESP_FAIL;
     }
@@ -419,7 +424,7 @@ esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *
  * @param type Output Internet type enum
  * @return ESP_OK on success, ESP_FAIL on error
  */
-esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
+static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
     if (!data || !type || len < 5) {
         return ESP_FAIL;
     }
@@ -514,6 +519,7 @@ static void config_handler_task(void *arg) {
                     break;
                 }
                 case CONFIG_TYPE_MCU_LAN: {
+                    bool is_fota = false;
                     ESP_LOGI(TAG, "MCU LAN command received, forwarding to MCU LAN handler");
                     if (cmd.data_len > 5) {
                         mcu_lan_config_data_t lan_cmd;
@@ -526,18 +532,11 @@ static void config_handler_task(void *arg) {
                             g_not_ppp_to_lan = true;
                             ppp_server_init();
                             vTaskDelay(pdMS_TO_TICKS(200));
+                            is_fota = true;
                         }
                         
                         // Send to MCU LAN queue
-                        if (g_mcu_lan_config_queue) {
-                            if (xQueueSend(g_mcu_lan_config_queue, &lan_cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
-                                ESP_LOGI(TAG, "Command forwarded to MCU LAN handler queue");
-                            } else {
-                                ESP_LOGW(TAG, "Failed to send to MCU LAN queue (full)");
-                            }
-                        } else {
-                            ESP_LOGE(TAG, "MCU LAN queue not initialized");
-                        }
+                        mcu_lan_handler_update_config((const uint8_t *)lan_cmd.command, lan_cmd.length, is_fota);
                     } else {
                         ESP_LOGW(TAG, "MCU LAN command too short");
                     }
@@ -583,9 +582,6 @@ void config_handler_task_start(void) {
 
     if (!g_lte_config_queue) {
         g_lte_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(lte_config_data_t));
-    }
-    if (!g_mcu_lan_config_queue) {
-        g_mcu_lan_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(mcu_lan_config_data_t));
     }
     
     config_handler_running = true;
