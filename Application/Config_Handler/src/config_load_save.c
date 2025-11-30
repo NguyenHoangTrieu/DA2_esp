@@ -23,7 +23,7 @@ static const char *TAG = "CONFIG_NVS";
 
 /* External global variables from your modules */
 extern wifi_config_context_t g_wifi_ctx;
-extern lte_config_context_t g_ctx;
+extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 extern config_internet_type_t g_internet_type;
 extern config_server_type_t g_server_type;
@@ -280,15 +280,15 @@ static esp_err_t load_lte_config_from_nvs(void) {
 
   if (err == ESP_OK) {
     // Copy to global context
-    strncpy(g_ctx.apn, lte_cfg.apn, sizeof(g_ctx.apn) - 1);
-    strncpy(g_ctx.username, lte_cfg.username, sizeof(g_ctx.username) - 1);
-    strncpy(g_ctx.password, lte_cfg.password, sizeof(g_ctx.password) - 1);
-    g_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
-    g_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
-    g_ctx.auto_reconnect = lte_cfg.auto_reconnect;
-    g_ctx.comm_type = lte_cfg.comm_type;
+    strncpy(g_lte_ctx.apn, lte_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
+    strncpy(g_lte_ctx.username, lte_cfg.username, sizeof(g_lte_ctx.username) - 1);
+    strncpy(g_lte_ctx.password, lte_cfg.password, sizeof(g_lte_ctx.password) - 1);
+    g_lte_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
+    g_lte_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
+    g_lte_ctx.auto_reconnect = lte_cfg.auto_reconnect;
+    g_lte_ctx.comm_type = lte_cfg.comm_type;
 
-    ESP_LOGI(TAG, "LTE config loaded - APN: %s", g_ctx.apn);
+    ESP_LOGI(TAG, "LTE config loaded - APN: %s", g_lte_ctx.apn);
   } else if (err == ESP_ERR_NVS_NOT_FOUND) {
     ESP_LOGI(TAG, "LTE config not found in NVS, using defaults");
     err = ESP_OK; // Not an error, use defaults
@@ -326,13 +326,13 @@ esp_err_t save_lte_config_to_nvs(void) {
   } lte_config_persistent_t;
 
   lte_config_persistent_t lte_cfg = {
-      .max_reconnect_attempts = g_ctx.max_reconnect_attempts,
-      .reconnect_timeout_ms = g_ctx.reconnect_timeout_ms,
-      .auto_reconnect = g_ctx.auto_reconnect,
-      .comm_type = g_ctx.comm_type};
-  strncpy(lte_cfg.apn, g_ctx.apn, sizeof(lte_cfg.apn) - 1);
-  strncpy(lte_cfg.username, g_ctx.username, sizeof(lte_cfg.username) - 1);
-  strncpy(lte_cfg.password, g_ctx.password, sizeof(lte_cfg.password) - 1);
+      .max_reconnect_attempts = g_lte_ctx.max_reconnect_attempts,
+      .reconnect_timeout_ms = g_lte_ctx.reconnect_timeout_ms,
+      .auto_reconnect = g_lte_ctx.auto_reconnect,
+      .comm_type = g_lte_ctx.comm_type};
+  strncpy(lte_cfg.apn, g_lte_ctx.apn, sizeof(lte_cfg.apn) - 1);
+  strncpy(lte_cfg.username, g_lte_ctx.username, sizeof(lte_cfg.username) - 1);
+  strncpy(lte_cfg.password, g_lte_ctx.password, sizeof(lte_cfg.password) - 1);
 
   // Write LTE config blob
   err = nvs_set_blob(nvs_handle, NVS_KEY_LTE_CONFIG, &lte_cfg,
@@ -348,7 +348,7 @@ esp_err_t save_lte_config_to_nvs(void) {
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
   } else {
-    ESP_LOGI(TAG, "LTE config saved - APN: %s", g_ctx.apn);
+    ESP_LOGI(TAG, "LTE config saved - APN: %s", g_lte_ctx.apn);
   }
 
   nvs_close(nvs_handle);

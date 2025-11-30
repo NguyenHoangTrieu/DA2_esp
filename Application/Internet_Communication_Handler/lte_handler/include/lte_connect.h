@@ -21,7 +21,7 @@ typedef struct {
   lte_handler_comm_type_t comm_type;
 } lte_config_context_t;
 
-extern lte_config_context_t g_ctx;
+extern lte_config_context_t g_lte_ctx;
 
 /**
  * @brief Start LTE connection task
