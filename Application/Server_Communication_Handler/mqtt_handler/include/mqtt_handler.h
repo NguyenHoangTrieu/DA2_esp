@@ -26,12 +26,12 @@ void mqtt_handler_task_start(void);
 void mqtt_handler_task_stop(void);
 
 // Unified function to enqueue any data for publishing
-void mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
+bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
 
 // Receive data from MQTT subscription
 void mqtt_receive_enqueue(const char *data, size_t len);
 
-extern QueueHandle_t g_server_cmd_queue;
+extern QueueHandle_t g_server_data_queue;
 extern QueueHandle_t g_mqtt_publish_queue;
 
 // Global Config variables:

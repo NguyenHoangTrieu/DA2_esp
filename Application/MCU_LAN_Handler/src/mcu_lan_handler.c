@@ -1,10 +1,16 @@
 /**
  * @file mcu_lan_handler.c
- * @brief MCU LAN Communication Handler Implementation (SPI Slave - WAN MCU)
+ * @brief MCU LAN Handler - WAN Side (SPI Slave)
+ *
+ * Implements Diagram 2: SPI Driver & Communication Logic
+ * - Initialize SPI Slave and wait for handshake
+ * - Periodic RTC and Internet status updates
+ * - Forward data between LAN MCU and Server
+ * - Handle config and FOTA distribution
  */
-
 #include "mcu_lan_handler.h"
 #include "config_handler.h"
+#include "fota_handler.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -22,25 +28,18 @@ static const char *TAG = "MCU_LAN";
 #define MCU_LAN_TASK_STACK_SIZE 4096
 #define MCU_LAN_TASK_PRIORITY 5
 #define RX_TIMEOUT_MS 100
+#define RTC_UPDATE_INTERVAL_MS 1000
+#define DOWNLINK_QUEUE_SIZE 20
+#define MAX_RETRY_COUNT 3
+#define ACK_WAIT_TIMEOUT_MS 500
+#define MAX_DOWNLINK_PAYLOAD_SIZE 256
 
-// ===== Protocol Commands =====
-#define CMD_HANDSHAKE_ACK 0x01
-#define CMD_REQUEST_RTC_CONFIG 0x02
-#define CMD_DATA_PACKET 0x03
-
-// ===== ACK Types =====
-#define ACK_RECEIVED_INTERNET_OK 0x01
-#define ACK_RECEIVED_NO_INTERNET 0x02
-
-// ===== RTC Structure =====
+// ===== Downlink Queue Item =====
 typedef struct {
-  uint8_t day;
-  uint8_t month;
-  uint16_t year;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
-} rtc_time_t;
+  handler_id_t target_id;
+  uint8_t data[MAX_DOWNLINK_PAYLOAD_SIZE];
+  uint16_t length;
+} downlink_item_t;
 
 // ===== Config Cache =====
 typedef struct {
@@ -53,19 +52,27 @@ typedef struct {
 // ===== Global Variables =====
 static lan_comm_handle_t g_lan_handle = NULL;
 static TaskHandle_t g_task_handle = NULL;
+static QueueHandle_t g_downlink_queue = NULL;
+static SemaphoreHandle_t g_config_mutex = NULL;
 static bool g_handler_running = false;
+
 static internet_status_t g_internet_status = INTERNET_STATUS_OFFLINE;
 static config_cache_t g_config_cache = {0};
-static SemaphoreHandle_t g_config_mutex = NULL;
+
+// External reference
+extern config_server_type_t g_server_type;
 
 // ===== Forward Declarations =====
 static void mcu_lan_handler_task(void *pvParameters);
 static esp_err_t perform_handshake_slave(void);
-static esp_err_t handle_received_data(const uint8_t *payload, uint16_t length);
-static esp_err_t handle_rtc_config_request(void);
-static void send_ack_to_lan(uint8_t ack_type);
-static void get_rtc_time(rtc_time_t *rtc);
-static void forward_to_server(const uint8_t *data, uint16_t length);
+static void send_rtc_response(void);
+static void send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag);
+static void handle_data_from_lan(const uint8_t *payload, uint16_t length);
+static void handle_config_request(void);
+static void send_downlink_to_lan(const downlink_item_t *item);
+static void get_rtc_string(char *buffer);
+static const char *handler_id_to_string(handler_id_t id);
+static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms);
 
 // ===== Public API =====
 
@@ -75,13 +82,13 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_OK;
   }
 
-  ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave)");
+  ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
 
-  // Initialize LAN communication
+  // Initialize LAN communication (SPI Slave)
   lan_comm_config_t lan_config = {.gpio_sck = 12,
                                   .gpio_cs = 10,
-                                  .gpio_io0 = 11, // MOSI
-                                  .gpio_io1 = 13, // MISO
+                                  .gpio_io0 = 11,
+                                  .gpio_io1 = 13,
                                   .gpio_io2 = -1,
                                   .gpio_io3 = -1,
                                   .mode = 0,
@@ -93,20 +100,28 @@ esp_err_t mcu_lan_handler_start(void) {
 
   lan_comm_status_t status = lan_comm_init(&lan_config, &g_lan_handle);
   if (status != LAN_COMM_OK) {
-    ESP_LOGE(TAG, "Failed to initialize LAN comm: %d", status);
+    ESP_LOGE(TAG, "Failed to initialize LAN comm (SPI Slave): %d", status);
     return ESP_FAIL;
   }
 
-  // TODO: Initialize RTC hardware
-  ESP_LOGI(TAG, "TODO: Initialize RTC hardware (DS1307/DS3231)");
+  // Create downlink queue
+  g_downlink_queue = xQueueCreate(DOWNLINK_QUEUE_SIZE, sizeof(downlink_item_t));
+  if (g_downlink_queue == NULL) {
+    ESP_LOGE(TAG, "Failed to create downlink queue");
+    lan_comm_deinit(g_lan_handle);
+    return ESP_FAIL;
+  }
+
+  // Create config mutex
+  g_config_mutex = xSemaphoreCreateMutex();
 
   // Create handler task
   BaseType_t ret =
       xTaskCreate(mcu_lan_handler_task, "mcu_lan_task", MCU_LAN_TASK_STACK_SIZE,
                   NULL, MCU_LAN_TASK_PRIORITY, &g_task_handle);
-
   if (ret != pdPASS) {
     ESP_LOGE(TAG, "Failed to create task");
+    vQueueDelete(g_downlink_queue);
     lan_comm_deinit(g_lan_handle);
     return ESP_FAIL;
   }
@@ -117,9 +132,8 @@ esp_err_t mcu_lan_handler_start(void) {
 }
 
 esp_err_t mcu_lan_handler_stop(void) {
-  if (!g_handler_running) {
+  if (!g_handler_running)
     return ESP_OK;
-  }
 
   ESP_LOGI(TAG, "Stopping MCU LAN Handler");
   g_handler_running = false;
@@ -129,35 +143,47 @@ esp_err_t mcu_lan_handler_stop(void) {
     g_task_handle = NULL;
   }
 
+  if (g_downlink_queue != NULL) {
+    vQueueDelete(g_downlink_queue);
+    g_downlink_queue = NULL;
+  }
+
+  if (g_config_mutex != NULL) {
+    vSemaphoreDelete(g_config_mutex);
+    g_config_mutex = NULL;
+  }
+
   if (g_lan_handle != NULL) {
     lan_comm_deinit(g_lan_handle);
     g_lan_handle = NULL;
   }
 
-  ESP_LOGI(TAG, "MCU LAN Handler stopped");
   return ESP_OK;
 }
 
-void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota) {
-  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    if (config_data == NULL || length == 0 ||
-        length > sizeof(g_config_cache.config_data)) {
-      ESP_LOGE(TAG, "Invalid config data");
-      xSemaphoreGive(g_config_mutex);
-      return;
+static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
+  TickType_t start = xTaskGetTickCount();
+
+  while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(timeout_ms)) {
+    lan_comm_queue_receive(g_lan_handle);
+
+    lan_comm_packet_t packet;
+    lan_comm_status_t status =
+        lan_comm_get_received_packet(g_lan_handle, &packet, RX_TIMEOUT_MS);
+
+    if (status == LAN_COMM_OK && packet.payload_length >= 2) {
+      if (packet.payload[0] == FRAME_TYPE_ACK &&
+          packet.payload[1] == ACK_TYPE_HANDSHAKE) {
+        ESP_LOGI(TAG, "FOTA handshake ACK received from LAN MCU");
+        return ESP_OK;
+      }
     }
 
-    memset(&g_config_cache, 0, sizeof(g_config_cache));
-    memcpy(g_config_cache.config_data, config_data, length);
-    g_config_cache.config_length = length;
-    g_config_cache.has_config = true;
-    g_config_cache.is_fota = is_fota;
-
-    ESP_LOGI(TAG, "Config updated: %.*s (FOTA: %s)", length, config_data,
-             is_fota ? "Yes" : "No");
-    xSemaphoreGive(g_config_mutex);
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
+
+  ESP_LOGW(TAG, "FOTA handshake ACK timeout");
+  return ESP_FAIL;
 }
 
 void mcu_lan_handler_set_internet_status(internet_status_t status) {
@@ -168,57 +194,154 @@ void mcu_lan_handler_set_internet_status(internet_status_t status) {
   }
 }
 
-// ===== Main Task =====
+bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
+                              uint16_t len) {
+  if (g_downlink_queue == NULL || data == NULL || len == 0) {
+    ESP_LOGE(TAG, "Invalid downlink parameters");
+    return false;
+  }
+
+  if (len > MAX_DOWNLINK_PAYLOAD_SIZE) {
+    ESP_LOGE(TAG, "Downlink data too large");
+    return false;
+  }
+
+  downlink_item_t item;
+  item.target_id = target_id;
+  item.length = len;
+  memcpy(item.data, data, len);
+
+  if (xQueueSend(g_downlink_queue, &item, pdMS_TO_TICKS(100)) != pdTRUE) {
+    ESP_LOGW(TAG, "Downlink queue full");
+    return false;
+  }
+
+  ESP_LOGD(TAG, "Downlink queued for handler %d (%u bytes)", target_id, len);
+  return true;
+}
+
+void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
+                                   bool is_fota) {
+  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (config_data && length > 0 &&
+        length <= sizeof(g_config_cache.config_data)) {
+      memcpy(g_config_cache.config_data, config_data, length);
+      g_config_cache.config_length = length;
+      g_config_cache.has_config = true;
+      g_config_cache.is_fota = is_fota;
+    }
+    xSemaphoreGive(g_config_mutex);
+  }
+}
+
+bool server_handler_enqueue_uplink(uint8_t *data, uint16_t len) {
+  if (data == NULL || len == 0)
+    return false;
+
+  // Forward to MQTT/HTTP based on config
+  switch (g_server_type) {
+  case CONFIG_SERVERTYPE_MQTT:
+    return mqtt_enqueue_telemetry(data, len);
+  case CONFIG_SERVERTYPE_HTTP:
+    ESP_LOGW(TAG, "HTTP not implemented");
+    return false;
+  default:
+    return mqtt_enqueue_telemetry(data, len);
+  }
+}
+
+// ===== Main Task (Diagram 2 Implementation) =====
 
 static void mcu_lan_handler_task(void *pvParameters) {
   ESP_LOGI(TAG, "MCU LAN Handler task started");
 
-  // Phase 1: Handshake
+  // ========================================
+  // PHASE 1: SPI Driver Init & Handshake
+  // ========================================
   ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
+
   while (g_handler_running) {
     if (perform_handshake_slave() == ESP_OK) {
-      ESP_LOGI(TAG, "Handshake successful, entering Data Mode");
+      ESP_LOGI(TAG, "Handshake complete, entering Data Reception Loop");
       break;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
-  // Phase 2: Data Reception Loop
+  // ========================================
+  // PHASE 2: Data Reception Loop
+  // ========================================
   ESP_LOGI(TAG, "Phase 2: Data Reception Loop");
+  TickType_t last_rtc_update = xTaskGetTickCount();
+  downlink_item_t downlink_item;
+
   while (g_handler_running) {
+    TickType_t now = xTaskGetTickCount();
+
+    // ===== Branch A: RTC & Internet Update Period =====
+    if ((now - last_rtc_update) >= pdMS_TO_TICKS(RTC_UPDATE_INTERVAL_MS)) {
+      // Preload RTC response into SPI buffer
+      send_rtc_response();
+      last_rtc_update = now;
+    }
+
     // Queue receive transaction
     lan_comm_queue_receive(g_lan_handle);
 
-    // Wait for data from LAN MCU
+    // ===== Check Received Data =====
     lan_comm_packet_t packet;
     lan_comm_status_t status =
         lan_comm_get_received_packet(g_lan_handle, &packet, RX_TIMEOUT_MS);
 
-    if (status == LAN_COMM_OK) {
-      // Check data type based on header
-      if (packet.header_type == LAN_COMM_HEADER_DT) {
-        // Standard telemetry data
-        ESP_LOGI(TAG, "Received data packet (%d bytes)", packet.payload_length);
-        handle_received_data(packet.payload, packet.payload_length);
+    if (status == LAN_COMM_OK && packet.payload_length >= 2) {
+      uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
 
-      } else if (packet.header_type == LAN_COMM_HEADER_CF) {
-        // Command received
-        uint8_t cmd = packet.payload[0];
-
-        if (cmd == CMD_HANDSHAKE_ACK) {
-          ESP_LOGD(TAG, "Handshake ACK (already in data mode)");
-          send_ack_to_lan(ACK_RECEIVED_INTERNET_OK);
-
-        } else if (cmd == CMD_REQUEST_RTC_CONFIG) {
-          ESP_LOGI(TAG, "Request for RTC/Config/Internet Status");
-          handle_rtc_config_request();
-
-        } else {
-          ESP_LOGW(TAG, "Unknown command: 0x%02X", cmd);
-        }
+      // ===== Branch: RTC Request from LAN =====
+      if (prefix[0] == 'R' && prefix[1] == 'T') {
+        ESP_LOGD(TAG, "RTC request received");
+        send_rtc_response();
       }
-    } else if (status != LAN_COMM_ERR_TIMEOUT) {
-      ESP_LOGE(TAG, "Error receiving packet: %d", status);
+      // ===== Branch: Data from MCU LAN =====
+      else if (prefix[0] == 'D' && prefix[1] == 'T') {
+        ESP_LOGI(TAG, "Data packet received from LAN");
+        handle_data_from_lan(packet.payload, packet.payload_length);
+      }
+      // ===== Branch: Handshake ACK =====
+      else if (packet.payload[0] == FRAME_TYPE_ACK &&
+               packet.payload[1] == ACK_TYPE_HANDSHAKE) {
+        // Already in data mode, respond with ACK
+        send_ack_to_lan(ACK_TYPE_HANDSHAKE, 0);
+      }
+      // ===== Branch: Config Request =====
+      else if (prefix[0] == 'C' && prefix[1] == 'F') {
+        ESP_LOGI(TAG, "Config request received");
+        handle_config_request();
+      }
+    }
+
+    // ===== Branch: From Server Handler Task - Downlink to LAN =====
+    if (xQueueReceive(g_downlink_queue, &downlink_item, 0) == pdTRUE) {
+      ESP_LOGI(TAG, "Sending downlink to handler %d (%u bytes)",
+               downlink_item.target_id, downlink_item.length);
+      send_downlink_to_lan(&downlink_item);
+    }
+
+    // ===== Branch: From Config Task =====
+    if (xSemaphoreTake(g_config_mutex, 0) == pdTRUE) {
+      if (g_config_cache.has_config) {
+        if (g_config_cache.is_fota) {
+          // FOTA: Send CFFW command and start update sequence
+          ESP_LOGI(TAG, "FOTA config detected, initiating firmware update");
+          if (wait_for_fota_handshake_ack(5000) == ESP_OK) {
+            ESP_LOGI(TAG, "FOTA pre-handshake completed, ready for FW update");
+            fota_handler_task_start();
+          } else {
+            ESP_LOGW(TAG, "FOTA pre-handshake failed or timed out");
+          }
+        }
+        // Config will be sent on next request
+      }
+      xSemaphoreGive(g_config_mutex);
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -228,191 +351,179 @@ static void mcu_lan_handler_task(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-// ===== Handshake Implementation =====
-
+// ===== Handshake Implementation (Slave Side) =====
 static esp_err_t perform_handshake_slave(void) {
-  // Queue receive transaction
   lan_comm_queue_receive(g_lan_handle);
 
-  // Wait for handshake ACK from LAN MCU
   lan_comm_packet_t packet;
   lan_comm_status_t status =
       lan_comm_get_received_packet(g_lan_handle, &packet, RX_TIMEOUT_MS);
 
-  if (status == LAN_COMM_OK) {
-    if (packet.header_type == LAN_COMM_HEADER_CF &&
-        packet.payload[0] == CMD_HANDSHAKE_ACK) {
-      ESP_LOGI(TAG, "Received handshake ACK from LAN MCU");
-
-      // Send ACK back
-      uint8_t ack_response[3] = {(LAN_COMM_HEADER_CF >> 8) & 0xFF,
-                                 LAN_COMM_HEADER_CF & 0xFF, CMD_HANDSHAKE_ACK};
-
-      lan_comm_load_tx_data(g_lan_handle, ack_response, sizeof(ack_response));
-      ESP_LOGI(TAG, "Sent ACK back to LAN MCU");
+  if (status == LAN_COMM_OK && packet.payload_length >= 2) {
+    if (packet.payload[0] == FRAME_TYPE_ACK &&
+        packet.payload[1] == ACK_TYPE_HANDSHAKE) {
+      // Received handshake ACK from LAN MCU, send ACK back
+      send_ack_to_lan(ACK_TYPE_HANDSHAKE, 0);
       return ESP_OK;
     }
   }
-
   return ESP_FAIL;
 }
 
-// ===== Data Handling =====
+// ===== Send RTC Response =====
+static void send_rtc_response(void) {
+  rtc_config_response_t response;
 
-static esp_err_t handle_received_data(const uint8_t *payload, uint16_t length) {
-  if (payload == NULL || length < 19) { // Minimum: RTC timestamp
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  // Extract RTC timestamp (first 19 bytes)
-  char rtc_str[20] = {0};
-  memcpy(rtc_str, payload, 19);
-
-  // Extract actual data (after RTC)
-  const uint8_t *data = &payload[19];
-  uint16_t data_length = length - 19;
-
-  ESP_LOGI(TAG, "Data with RTC: %s, Data length: %d", rtc_str, data_length);
-
-  // Check internet status
-  if (g_internet_status == INTERNET_STATUS_ONLINE) {
-    // Forward to server handler based on g_server_type
-    forward_to_server(data, data_length);
-    send_ack_to_lan(ACK_RECEIVED_INTERNET_OK);
-  } else {
-    ESP_LOGW(TAG, "Internet offline, cannot forward to server");
-    send_ack_to_lan(ACK_RECEIVED_NO_INTERNET);
-  }
-
-  return ESP_OK;
-}
-
-// ===== Server Forwarding =====
-
-static void forward_to_server(const uint8_t *data, uint16_t length) {
-  // Use g_server_type from config_handler to determine server type
-  switch (g_server_type) {
-  case CONFIG_SERVERTYPE_MQTT:
-    ESP_LOGI(TAG, "Forwarding to MQTT server");
-    mqtt_enqueue_telemetry(data, length);
-    break;
-
-  case CONFIG_SERVERTYPE_COAP:
-    ESP_LOGW(TAG, "CoAP server not implemented yet");
-    // TODO: Implement CoAP forwarding
-    break;
-
-  case CONFIG_SERVERTYPE_HTTP:
-    ESP_LOGW(TAG, "HTTP server not implemented yet");
-    // TODO: Implement HTTP forwarding
-    break;
-
-  default:
-    ESP_LOGE(TAG, "Unknown server type: %d, defaulting to MQTT", g_server_type);
-    mqtt_enqueue_telemetry(data, length);
-    break;
-  }
-}
-
-// ===== RTC & Config Request Handler =====
-
-static esp_err_t handle_rtc_config_request(void) {
-  uint8_t response[512] = {0};
-  uint16_t offset = 0;
-
-  // Header
-  response[offset++] = (LAN_COMM_HEADER_CF >> 8) & 0xFF;
-  response[offset++] = LAN_COMM_HEADER_CF & 0xFF;
-  response[offset++] = CMD_REQUEST_RTC_CONFIG;
+  // Set prefix "RT"
+  response.prefix[0] = 'R';
+  response.prefix[1] = 'T';
 
   // Get current RTC time
-  rtc_time_t rtc;
-  get_rtc_time(&rtc);
+  get_rtc_string(response.rtc_string);
 
-  // Format RTC (19 bytes): dd/mm/yyyy-hh:mm:ss
-  int rtc_len =
-      snprintf((char *)&response[offset], 20, "%02d/%02d/%04d-%02d:%02d:%02d",
-               rtc.day, rtc.month, rtc.year, rtc.hour, rtc.minute, rtc.second);
+  // Set network status
+  response.network_status =
+      (g_internet_status == INTERNET_STATUS_ONLINE) ? 1 : 0;
 
-  if (rtc_len == 19) {
-    offset += 19;
-  } else {
-    ESP_LOGE(TAG, "RTC format error");
-    return ESP_FAIL;
-  }
+  // Load into TX buffer
+  lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
 
-  // Separator
-  response[offset++] = '-';
-
-  // Config data
-  if (g_config_cache.has_config) {
-    memcpy(&response[offset], g_config_cache.config_data,
-           g_config_cache.config_length);
-    offset += g_config_cache.config_length;
-  } else {
-    // No config
-    const char *no_config = "NO_CF";
-    memcpy(&response[offset], no_config, 5);
-    offset += 5;
-  }
-
-  // Separator
-  response[offset++] = '-';
-
-  // Internet status
-  response[offset++] =
-      (g_internet_status == INTERNET_STATUS_ONLINE) ? 0x01 : 0x00;
-
-  // Load TX data
-  lan_comm_load_tx_data(g_lan_handle, response, offset);
-
-  ESP_LOGI(TAG, "Sent RTC/Config/Status response (%d bytes)", offset);
-  ESP_LOGI(TAG, "  RTC: %02d/%02d/%04d-%02d:%02d:%02d", rtc.day, rtc.month,
-           rtc.year, rtc.hour, rtc.minute, rtc.second);
-  ESP_LOGI(TAG, "  Config: %s", g_config_cache.has_config ? "Yes" : "No");
-  ESP_LOGI(TAG, "  Internet: %s",
-           g_internet_status == INTERNET_STATUS_ONLINE ? "ONLINE" : "OFFLINE");
-
-  // Check if FOTA config and notify config task
-  if (g_config_cache.is_fota && g_config_cache.has_config) {
-    ESP_LOGI(TAG, "FOTA config detected - notifying config task");
-    // TODO: Notify config task to start firmware update
-    // This could be done via event group or direct function call
-  }
-
-  return ESP_OK;
+  ESP_LOGD(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
+           response.network_status);
 }
 
-// ===== Send ACK =====
-
-static void send_ack_to_lan(uint8_t ack_type) {
-  uint8_t ack_response[3] = {(LAN_COMM_HEADER_CF >> 8) & 0xFF,
-                             LAN_COMM_HEADER_CF & 0xFF, ack_type};
-
-  lan_comm_load_tx_data(g_lan_handle, ack_response, sizeof(ack_response));
-  ESP_LOGD(TAG, "ACK sent to LAN MCU (type: 0x%02X)", ack_type);
+// ===== Send ACK to LAN =====
+static void send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
+  uint8_t ack[3] = {FRAME_TYPE_ACK, ack_type, internet_flag};
+  lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
+  ESP_LOGD(TAG, "ACK sent: type=0x%02X, inet=0x%02X", ack_type, internet_flag);
 }
 
-// ===== RTC Functions =====
+// ===== Handle Data from LAN MCU =====
+static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
+  if (payload == NULL || length < DATA_PACKET_HEADER_SIZE) {
+    ESP_LOGE(TAG, "Invalid data packet");
+    return;
+  }
 
-static void get_rtc_time(rtc_time_t *rtc) {
-  // TODO: Read from RTC hardware (DS1307, DS3231, etc.)
-  /*
-   * Pseudo implementation:
-   * 1. I2C read from RTC device
-   * 2. Convert BCD to decimal
-   * 3. Fill rtc structure
-   */
+  // Parse data_packet_t: [DT][handler_type(3)][length(2)][data]
+  uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
+  uint16_t data_length = (payload[5] << 8) | payload[6];
+  const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
 
-  // Fallback: use system time
+  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
+
+  // Send ACK with internet status
+  if (g_internet_status == INTERNET_STATUS_ONLINE) {
+    send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_INTERNET_OK);
+    // Forward to server handler
+    server_handler_enqueue_uplink((uint8_t *)data, data_length);
+  } else {
+    send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_NO_INTERNET);
+    // LAN MCU will save to SD card
+  }
+}
+
+// ===== Handle Config Request =====
+static void handle_config_request(void) {
+  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (g_config_cache.has_config) {
+      // Build config_data_t: [CF][length(2)][config_data]
+      uint8_t config_packet[260];
+      config_packet[0] = 'C';
+      config_packet[1] = 'F';
+      config_packet[2] = (g_config_cache.config_length >> 8) & 0xFF;
+      config_packet[3] = g_config_cache.config_length & 0xFF;
+      memcpy(&config_packet[4], g_config_cache.config_data,
+             g_config_cache.config_length);
+
+      lan_comm_load_tx_data(g_lan_handle, config_packet,
+                            4 + g_config_cache.config_length);
+
+      g_config_cache.has_config = false; // Clear after sending
+    }
+    xSemaphoreGive(g_config_mutex);
+  }
+}
+
+// ===== Send Downlink to LAN with Retry =====
+static void send_downlink_to_lan(const downlink_item_t *item) {
+  // Build data_packet_t: [DT][handler_type(3)][length(2)][payload]
+  uint16_t packet_size = DATA_PACKET_HEADER_SIZE + item->length;
+  uint8_t packet[packet_size];
+
+  packet[0] = 'D';
+  packet[1] = 'T';
+
+  const char *type_str = handler_id_to_string(item->target_id);
+  memcpy(&packet[2], type_str, 3);
+
+  packet[5] = (item->length >> 8) & 0xFF;
+  packet[6] = item->length & 0xFF;
+
+  memcpy(&packet[DATA_PACKET_HEADER_SIZE], item->data, item->length);
+
+  // Send with retry
+  for (int retry = 0; retry < MAX_RETRY_COUNT; retry++) {
+    lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+
+    // Wait for ACK from LAN MCU
+    vTaskDelay(pdMS_TO_TICKS(ACK_WAIT_TIMEOUT_MS));
+
+    lan_comm_queue_receive(g_lan_handle);
+    lan_comm_packet_t ack_packet;
+    lan_comm_status_t status = lan_comm_get_received_packet(
+        g_lan_handle, &ack_packet, ACK_WAIT_TIMEOUT_MS);
+
+    if (status == LAN_COMM_OK && ack_packet.payload[0] == FRAME_TYPE_ACK &&
+        ack_packet.payload[1] == ACK_TYPE_RECEIVED_OK) {
+      ESP_LOGD(TAG, "Downlink ACK received");
+      return;
+    }
+
+    ESP_LOGW(TAG, "Downlink ACK timeout, retry %d/%d", retry + 1,
+             MAX_RETRY_COUNT);
+  }
+
+  ESP_LOGE(TAG, "Downlink send failed after max retries");
+}
+
+// ===== Get RTC String =====
+static void get_rtc_string(char *buffer) {
   time_t now = time(NULL);
   struct tm timeinfo;
   localtime_r(&now, &timeinfo);
 
-  rtc->day = timeinfo.tm_mday;
-  rtc->month = timeinfo.tm_mon + 1;
-  rtc->year = timeinfo.tm_year + 1900;
-  rtc->hour = timeinfo.tm_hour;
-  rtc->minute = timeinfo.tm_min;
-  rtc->second = timeinfo.tm_sec;
+  int year = timeinfo.tm_year + 1900;
+  if (year > 9999) {
+    year = 9999;
+  } else if (year < 0) {
+    year = 0;
+  }
+
+  /* Format into a large temporary buffer to avoid -Wformat-truncation */
+  char tmp[64];
+
+  // "dd/mm/yyyy-hh:mm:ss" = 19 chars
+  snprintf(tmp, sizeof(tmp), "%02d/%02d/%04d-%02d:%02d:%02d", timeinfo.tm_mday,
+           timeinfo.tm_mon + 1, year, timeinfo.tm_hour, timeinfo.tm_min,
+           timeinfo.tm_sec);
+
+  /* Copy exactly 19 characters into the 20-byte field and terminate */
+  memcpy(buffer, tmp, 19);
+  buffer[19] = '\0';
+}
+
+// ===== Helper =====
+static const char *handler_id_to_string(handler_id_t id) {
+  switch (id) {
+  case HANDLER_CAN:
+    return "CAN";
+  case HANDLER_LORA:
+    return "LOR";
+  case HANDLER_ZIGBEE:
+    return "ZIG";
+  default:
+    return "UNK";
+  }
 }

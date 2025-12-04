@@ -20,7 +20,7 @@ static esp_mqtt_client_handle_t m_client = NULL;
 static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 
-QueueHandle_t g_server_cmd_queue = NULL;
+QueueHandle_t g_server_data_queue = NULL;
 QueueHandle_t g_mqtt_publish_queue = NULL;
 static bool mqtt_task_close = false;
 
@@ -33,7 +33,7 @@ mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
-  if (!g_server_cmd_queue)
+  if (!g_server_data_queue)
     return;
 
   char buf[128];
@@ -41,7 +41,7 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
   memcpy(buf, data, copy_len);
   buf[copy_len] = '\0';
 
-  xQueueSend(g_server_cmd_queue, buf, 0);
+  xQueueSend(g_server_data_queue, buf, 0);
 }
 
 /**
@@ -327,8 +327,8 @@ void mqtt_handler_task_start(void) {
   esp_mqtt_client_start(m_client);
 
   // Create queues
-  if (!g_server_cmd_queue) {
-    g_server_cmd_queue = xQueueCreate(8, 128);
+  if (!g_server_data_queue) {
+    g_server_data_queue = xQueueCreate(8, 128);
   }
 
   if (!g_mqtt_publish_queue) {
@@ -382,20 +382,20 @@ void mqtt_handler_task_stop(void) {
 /**
  * @brief Unified function to enqueue any data for publishing.
  */
-void mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   if (!g_mqtt_publish_queue) {
     ESP_LOGW(TAG, "Publish queue not initialized");
-    return;
+    return false;
   }
 
   if (!data || data_len == 0) {
     ESP_LOGW(TAG, "Invalid data for enqueue");
-    return;
+    return false;
   }
 
   if (!m_mqtt_connected) {
     ESP_LOGW(TAG, "MQTT not connected, dropping data");
-    return;
+    return false;
   }
 
   mqtt_publish_data_t queue_data = {.data = (uint8_t *)data,
@@ -404,7 +404,9 @@ void mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(100)) ==
       pdTRUE) {
     ESP_LOGI(TAG, "Enqueued %d bytes for MQTT publish", data_len);
+    return true;
   } else {
     ESP_LOGW(TAG, "Failed to enqueue data - queue full");
+    return false;
   }
 }
