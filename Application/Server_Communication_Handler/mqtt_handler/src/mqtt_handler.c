@@ -5,6 +5,7 @@
 
 #include "mqtt_handler.h"
 #include "config_handler.h"
+#include "mcu_lan_handler.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "38kozd1weulcnl6ytz8f"
@@ -20,28 +21,84 @@ static esp_mqtt_client_handle_t m_client = NULL;
 static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 
-QueueHandle_t g_server_data_queue = NULL;
 QueueHandle_t g_mqtt_publish_queue = NULL;
 static bool mqtt_task_close = false;
 
 // Global MQTT config
 mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
-                                 .device_token = DEVICE_TOKEN,
-                                 .subscribe_topic = SUBSCRIBE_TOPIC,
-                                 .attribute_topic = ATTRIBUTE_TOPIC,
-                                 .publish_topic = PUBLISH_TOPIC};
+                                    .device_token = DEVICE_TOKEN,
+                                    .subscribe_topic = SUBSCRIBE_TOPIC,
+                                    .attribute_topic = ATTRIBUTE_TOPIC,
+                                    .publish_topic = PUBLISH_TOPIC};
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
-  ESP_LOGI(TAG, "Received data to enqueue: %.*s", (int)len, data);
-  if (!g_server_data_queue)
+  if (data == NULL || len == 0) {
+    ESP_LOGW(TAG, "Invalid parameters");
     return;
+  }
 
-  char buf[128];
-  int copy_len = (len > 127) ? (int)len : 127;
-  memcpy(buf, data, copy_len);
-  buf[copy_len] = '\0';
+  // ===== Check if Config Command (starts with "CF") =====
+  if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
+    ESP_LOGI(TAG, "Config command received from MQTT");
 
-  xQueueSend(g_server_data_queue, buf, 0);
+    // Skip "CF" prefix and send to config handler
+    const char *cmd_data = data + 2;
+    int cmd_len = len - 2;
+
+    // Parse command type
+    config_type_t type = config_parse_type(cmd_data, cmd_len);
+
+    if (type != CONFIG_TYPE_UNKNOWN) {
+      config_command_t cmd;
+      cmd.type = type;
+      cmd.data_len = cmd_len;
+      memcpy(cmd.raw_data, cmd_data, cmd_len);
+      cmd.raw_data[cmd_len] = '\0';
+
+      // Send to config handler
+      extern QueueHandle_t g_config_handler_queue;
+      if (g_config_handler_queue && xQueueSend(g_config_handler_queue, &cmd,
+                                               pdMS_TO_TICKS(100)) == pdTRUE) {
+        ESP_LOGI(TAG, "Config forwarded to config handler");
+      } else {
+        ESP_LOGW(TAG, "Failed to send to config handler");
+      }
+    } else {
+      ESP_LOGW(TAG, "Unknown config type");
+    }
+
+    return;
+  }
+  // ===== Not Config → Route to MCU LAN Handler =====
+
+  // Expected format: [DT][handler_type(3)][length(2)][payload]
+  if (len >= 7 && data[0] == 'D' && data[1] == 'T') {
+    uint8_t handler_type[4] = {data[2], data[3], data[4], '\0'};
+    uint16_t payload_len = ((uint16_t)data[5] << 8) | (uint8_t)data[6];
+
+    // Map handler string to ID
+    handler_id_t target_id;
+    if (memcmp(handler_type, "CAN", 3) == 0) {
+      target_id = HANDLER_CAN;
+    } else if (memcmp(handler_type, "LOR", 3) == 0) {
+      target_id = HANDLER_LORA;
+    } else if (memcmp(handler_type, "ZIG", 3) == 0) {
+      target_id = HANDLER_ZIGBEE;
+    } else {
+      ESP_LOGW(TAG, "Unknown handler: %s", handler_type);
+      return;
+    }
+
+    // Forward to MCU LAN
+    const uint8_t *payload = (const uint8_t *)data + 7;
+    if (mcu_lan_enqueue_downlink(target_id, (uint8_t *)payload, payload_len)) {
+      ESP_LOGI(TAG, "Downlink → %s (%u bytes)", handler_type, payload_len);
+    } else {
+      ESP_LOGW(TAG, "Downlink enqueue failed");
+    }
+  } else {
+    ESP_LOGW(TAG, "Invalid format");
+  }
 }
 
 /**
@@ -250,12 +307,15 @@ static void mqtt_config_task(void *arg) {
       if (xQueueReceive(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(500)) ==
           pdTRUE) {
         ESP_LOGI(TAG, "Received MQTT config from queue");
-        ESP_LOGI(TAG, "Broker: %s, Token: %s", mqtt_cfg.broker_uri, mqtt_cfg.device_token);
-        ESP_LOGI(TAG, "Publish: %s, Subscribe: %s, Attribute: %s", 
-                 mqtt_cfg.publish_topic, mqtt_cfg.subscribe_topic, mqtt_cfg.attribute_topic);
+        ESP_LOGI(TAG, "Broker: %s, Token: %s", mqtt_cfg.broker_uri,
+                 mqtt_cfg.device_token);
+        ESP_LOGI(TAG, "Publish: %s, Subscribe: %s, Attribute: %s",
+                 mqtt_cfg.publish_topic, mqtt_cfg.subscribe_topic,
+                 mqtt_cfg.attribute_topic);
 
         // Update all config fields
-        strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri, sizeof(g_mqtt_ctx.broker_uri) - 1);
+        strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri,
+                sizeof(g_mqtt_ctx.broker_uri) - 1);
         g_mqtt_ctx.broker_uri[sizeof(g_mqtt_ctx.broker_uri) - 1] = '\0';
 
         strncpy(g_mqtt_ctx.device_token, mqtt_cfg.device_token,
@@ -264,11 +324,13 @@ static void mqtt_config_task(void *arg) {
 
         strncpy(g_mqtt_ctx.subscribe_topic, mqtt_cfg.subscribe_topic,
                 sizeof(g_mqtt_ctx.subscribe_topic) - 1);
-        g_mqtt_ctx.subscribe_topic[sizeof(g_mqtt_ctx.subscribe_topic) - 1] = '\0';
+        g_mqtt_ctx.subscribe_topic[sizeof(g_mqtt_ctx.subscribe_topic) - 1] =
+            '\0';
 
         strncpy(g_mqtt_ctx.attribute_topic, mqtt_cfg.attribute_topic,
                 sizeof(g_mqtt_ctx.attribute_topic) - 1);
-        g_mqtt_ctx.attribute_topic[sizeof(g_mqtt_ctx.attribute_topic) - 1] = '\0';
+        g_mqtt_ctx.attribute_topic[sizeof(g_mqtt_ctx.attribute_topic) - 1] =
+            '\0';
 
         strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
                 sizeof(g_mqtt_ctx.publish_topic) - 1);
@@ -325,11 +387,6 @@ void mqtt_handler_task_start(void) {
   esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID, mqtt_event_handler,
                                  NULL);
   esp_mqtt_client_start(m_client);
-
-  // Create queues
-  if (!g_server_data_queue) {
-    g_server_data_queue = xQueueCreate(8, 128);
-  }
 
   if (!g_mqtt_publish_queue) {
     g_mqtt_publish_queue = xQueueCreate(10, sizeof(mqtt_publish_data_t));
