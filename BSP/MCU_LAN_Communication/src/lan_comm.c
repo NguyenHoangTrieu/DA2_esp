@@ -179,7 +179,7 @@ lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle) {
   }
 
   if (handle->transaction_queued) {
-    ESP_LOGW(TAG, "Transaction already queued");
+    ESP_LOGD(TAG, "Transaction already queued");
     return LAN_COMM_ERR_INVALID_STATE;
   }
 
@@ -376,7 +376,10 @@ static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
 
   // Extract header (first 2 bytes)
   packet->header_type = (buffer[0] << 8) | buffer[1];
-
+  if (packet->header_type == 0x0000) {
+    // Silent ignore - empty transaction
+    return LAN_COMM_ERR_NO_DATA;
+  }
   // Validate header
   if (packet->header_type != LAN_COMM_HEADER_CF &&
       packet->header_type != LAN_COMM_HEADER_DT) {

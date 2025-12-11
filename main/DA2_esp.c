@@ -78,9 +78,8 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
         return;
     }
     
-    ESP_LOGI(TAG, "==> Switching to CONFIG mode");
-    
-    if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
+    ESP_LOGI(TAG, "==> Switching to Straight CONFIG mode");
+    jtag_task_start();
     led_show_yellow();
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
@@ -223,7 +222,7 @@ void app_main(void) {
     init_led_strip();
     led_on();
     
-    setup_gpio45_interrupt();
+    // setup_gpio45_interrupt();
     main_task_handle = xTaskGetCurrentTaskHandle();
     
     ESP_ERROR_CHECK(esp_netif_init());

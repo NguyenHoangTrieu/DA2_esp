@@ -10,9 +10,9 @@
  */
 #include "mcu_lan_handler.h"
 #include "config_handler.h"
-#include "fota_handler.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "fota_handler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -74,12 +74,53 @@ static void get_rtc_string(char *buffer);
 static const char *handler_id_to_string(handler_id_t id);
 static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms);
 
+// ===== GPIO Handshake Configuration =====
+#define GPIO_DATA_READY_PIN 14
+
+// Setup GPIO 14 as output
+static esp_err_t setup_data_ready_gpio(void) {
+  gpio_config_t io_conf = {.pin_bit_mask = BIT64(GPIO_DATA_READY_PIN),
+                           .mode = GPIO_MODE_OUTPUT,
+                           .pull_up_en = GPIO_PULLUP_DISABLE,
+                           .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                           .intr_type = GPIO_INTR_DISABLE};
+
+  esp_err_t ret = gpio_config(&io_conf);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to configure GPIO %d", GPIO_DATA_READY_PIN);
+    return ret;
+  }
+
+  // Initialize to LOW
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
+
+  ESP_LOGI(TAG, "GPIO %d configured for data-ready signaling",
+           GPIO_DATA_READY_PIN);
+  return ESP_OK;
+}
+
+// Signal that data is ready
+static void signal_data_ready(void) {
+  gpio_set_level(GPIO_DATA_READY_PIN, 1);
+  ESP_LOGD(TAG, "Data-ready signal HIGH");
+}
+
+// Clear data-ready signal
+static void clear_data_ready(void) {
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
+  ESP_LOGD(TAG, "Data-ready signal LOW");
+}
+
 // ===== Public API =====
 
 esp_err_t mcu_lan_handler_start(void) {
   if (g_handler_running) {
     ESP_LOGW(TAG, "Handler already running");
     return ESP_OK;
+  }
+  if (setup_data_ready_gpio() != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to setup data-ready GPIO");
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
@@ -116,6 +157,7 @@ esp_err_t mcu_lan_handler_start(void) {
   g_config_mutex = xSemaphoreCreateMutex();
 
   // Create handler task
+  g_handler_running = true;
   BaseType_t ret =
       xTaskCreate(mcu_lan_handler_task, "mcu_lan_task", MCU_LAN_TASK_STACK_SIZE,
                   NULL, MCU_LAN_TASK_PRIORITY, &g_task_handle);
@@ -126,7 +168,6 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_FAIL;
   }
 
-  g_handler_running = true;
   ESP_LOGI(TAG, "MCU LAN Handler started successfully");
   return ESP_OK;
 }
@@ -439,8 +480,13 @@ static void handle_config_request(void) {
 
       lan_comm_load_tx_data(g_lan_handle, config_packet,
                             4 + g_config_cache.config_length);
+      signal_data_ready(); // Signal new config available
 
       g_config_cache.has_config = false; // Clear after sending
+
+      // Clear GPIO after a short delay (LAN will poll)
+      vTaskDelay(pdMS_TO_TICKS(200));
+      clear_data_ready();
     }
     xSemaphoreGive(g_config_mutex);
   }
@@ -454,23 +500,21 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
   packet[0] = 'D';
   packet[1] = 'T';
-
   const char *type_str = handler_id_to_string(item->target_id);
   memcpy(&packet[2], type_str, 3);
-
   packet[5] = (item->length >> 8) & 0xFF;
   packet[6] = item->length & 0xFF;
-
   memcpy(&packet[DATA_PACKET_HEADER_SIZE], item->data, item->length);
 
-  // Send with retry
+  // Load data and signal GPIO
+  lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+  signal_data_ready(); // Trigger GPIO 14 HIGH
+
+  // Wait for ACK from LAN MCU
   for (int retry = 0; retry < MAX_RETRY_COUNT; retry++) {
-    lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
-
-    // Wait for ACK from LAN MCU
     vTaskDelay(pdMS_TO_TICKS(ACK_WAIT_TIMEOUT_MS));
-
     lan_comm_queue_receive(g_lan_handle);
+
     lan_comm_packet_t ack_packet;
     lan_comm_status_t status = lan_comm_get_received_packet(
         g_lan_handle, &ack_packet, ACK_WAIT_TIMEOUT_MS);
@@ -478,6 +522,7 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
     if (status == LAN_COMM_OK && ack_packet.payload[0] == FRAME_TYPE_ACK &&
         ack_packet.payload[1] == ACK_TYPE_RECEIVED_OK) {
       ESP_LOGD(TAG, "Downlink ACK received");
+      clear_data_ready(); // Clear GPIO 14 after successful transfer
       return;
     }
 
@@ -485,6 +530,7 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
              MAX_RETRY_COUNT);
   }
 
+  clear_data_ready(); // Clear even on failure
   ESP_LOGE(TAG, "Downlink send failed after max retries");
 }
 
