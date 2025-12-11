@@ -35,5 +35,6 @@ extern esp_netif_t *g_wifi_netif;
 // Function prototypes
 void wifi_connect_task_start(void);
 void wifi_connect_task_stop(void);
-
+bool wifi_is_sntp_synced(void);
+uint8_t wifi_get_connection_status(void);
 #endif // WIFI_CONNECT_H

@@ -6,6 +6,8 @@
 
 #include "wifi_connect.h"
 #include "config_handler.h"
+#include "esp_sntp.h"
+#include "ds1307_rtc.h"
 
 #define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
 #define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
@@ -41,9 +43,61 @@ static volatile uint8_t s_reconnect_request =
     0;                                       // Flag for reconnection request
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
+static bool g_sntp_synced = false;
 
 // Network interface handle (global)
 esp_netif_t *g_wifi_netif = NULL;
+
+// SNTP sync notification callback
+static void sntp_sync_notification_cb(struct timeval *tv) {
+    ESP_LOGI(TAG, "SNTP time synchronized!");
+    g_sntp_synced = true;
+    
+    // Sync system time to DS1307
+    time_t now = tv->tv_sec;
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    
+    esp_err_t ret = ds1307_write_time(&timeinfo);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "System time synced to DS1307 RTC");
+    } else {
+        ESP_LOGW(TAG, "Failed to sync time to DS1307: %s", esp_err_to_name(ret));
+    }
+}
+
+// Function to initialize SNTP
+static void wifi_init_sntp(void) {
+    ESP_LOGI(TAG, "Initializing SNTP");
+    
+    // Set timezone to Vietnam (GMT+7)
+    setenv("TZ", "ICT-7", 1);
+    tzset();
+    
+    // Initialize SNTP
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.google.com");
+    esp_sntp_setservername(2, "time.cloudflare.com");
+    
+    // Set notification callback
+    esp_sntp_set_time_sync_notification_cb(sntp_sync_notification_cb);
+    
+    // Set sync mode to smooth adjustment
+    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+    
+    esp_sntp_init();
+    
+    ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
+}
+
+bool wifi_is_sntp_synced(void) {
+    return g_sntp_synced;
+}
+
+uint8_t wifi_get_connection_status(void) {
+    return s_wifi_connected;
+}
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -82,6 +136,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     s_retry_num = 0;
     s_wifi_connected = 1;
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    wifi_init_sntp();
   }
 }
 

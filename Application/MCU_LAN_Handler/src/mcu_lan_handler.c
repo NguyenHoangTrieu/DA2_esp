@@ -10,6 +10,7 @@
  */
 #include "mcu_lan_handler.h"
 #include "config_handler.h"
+#include "ds1307_rtc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "fota_handler.h"
@@ -123,6 +124,11 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_FAIL;
   }
 
+  if (ds1307_init() != ESP_OK) {
+    ESP_LOGW(TAG, "DS1307 init failed, time fallback to system");
+    // Continue without DS1307
+  }
+
   ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
 
   // Initialize LAN communication (SPI Slave)
@@ -177,6 +183,7 @@ esp_err_t mcu_lan_handler_stop(void) {
     return ESP_OK;
 
   ESP_LOGI(TAG, "Stopping MCU LAN Handler");
+  ds1307_deinit();
   g_handler_running = false;
 
   if (g_task_handle != NULL) {
@@ -536,26 +543,41 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
 // ===== Get RTC String =====
 static void get_rtc_string(char *buffer) {
-  time_t now = time(NULL);
   struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
+  memset(&timeinfo, 0, sizeof(struct tm));
+
+  // Check internet status and SNTP sync
+  if (g_internet_status == INTERNET_STATUS_ONLINE && wifi_is_sntp_synced()) {
+    // ONLINE: Use system time from SNTP
+    time_t now = time(NULL);
+    localtime_r(&now, &timeinfo);
+    ESP_LOGD(TAG, "Using SNTP time");
+  } else {
+    // OFFLINE or not synced: Read from DS1307
+    esp_err_t ret = ds1307_read_time(&timeinfo);
+    if (ret != ESP_OK) {
+      // Fallback to system time if DS1307 fails
+      ESP_LOGW(TAG, "DS1307 read failed, using system time");
+      time_t now = time(NULL);
+      localtime_r(&now, &timeinfo);
+    } else {
+      ESP_LOGD(TAG, "Using DS1307 RTC time");
+    }
+  }
 
   int year = timeinfo.tm_year + 1900;
   if (year > 9999) {
     year = 9999;
-  } else if (year < 0) {
-    year = 0;
+  } else if (year < 2000) {
+    year = 2000; // Default to 2000 if invalid
   }
 
-  /* Format into a large temporary buffer to avoid -Wformat-truncation */
+  // Format: "dd/mm/yyyy-hh:mm:ss"
   char tmp[64];
-
-  // "dd/mm/yyyy-hh:mm:ss" = 19 chars
   snprintf(tmp, sizeof(tmp), "%02d/%02d/%04d-%02d:%02d:%02d", timeinfo.tm_mday,
            timeinfo.tm_mon + 1, year, timeinfo.tm_hour, timeinfo.tm_min,
            timeinfo.tm_sec);
 
-  /* Copy exactly 19 characters into the 20-byte field and terminate */
   memcpy(buffer, tmp, 19);
   buffer[19] = '\0';
 }
