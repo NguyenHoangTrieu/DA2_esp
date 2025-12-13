@@ -23,6 +23,8 @@ extern "C" {
  */
 #define LAN_COMM_HEADER_CF 0x4346 // "CF" - Command Frame
 #define LAN_COMM_HEADER_DT 0x4454 // "DT" - Data Frame
+#define LAN_COMM_HEADER_DQ 0x4451 // "DQ" - Data Query
+#define LAN_COMM_HEADER_CQ 0x4351 // "CQ" - Config Query
 #define LAN_COMM_HEADER_SIZE 2
 
 /**

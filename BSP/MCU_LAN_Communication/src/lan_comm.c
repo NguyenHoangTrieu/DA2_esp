@@ -51,7 +51,7 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  ESP_LOGI(TAG,
+  ESP_LOGD(TAG,
            "Initializing LAN communication library (Slave mode for WAN MCU)");
 
   // Allocate handle
@@ -138,8 +138,8 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
   h->error_count = 0;
 
   *handle = h;
-  ESP_LOGI(TAG, "LAN communication initialized successfully (WAN MCU Slave)");
-  ESP_LOGI(TAG, "Mode: %d, RX Buffer: %d bytes, TX Buffer: %d bytes",
+  ESP_LOGD(TAG, "LAN communication initialized successfully (WAN MCU Slave)");
+  ESP_LOGD(TAG, "Mode: %d, RX Buffer: %d bytes, TX Buffer: %d bytes",
            config->mode, h->config.rx_buffer_size, h->config.tx_buffer_size);
 
   return LAN_COMM_OK;
@@ -153,7 +153,7 @@ lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  ESP_LOGI(TAG, "Deinitializing LAN communication library");
+  ESP_LOGD(TAG, "Deinitializing LAN communication library");
 
   // Free SPI slave
   spi_slave_free(handle->config.host_id);
@@ -166,7 +166,7 @@ lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
   handle->is_initialized = false;
   free(handle);
 
-  ESP_LOGI(TAG, "LAN communication deinitialized");
+  ESP_LOGD(TAG, "LAN communication deinitialized");
   return LAN_COMM_OK;
 }
 
@@ -266,7 +266,7 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
 
   // Convert trans_len from bits to bytes
   size_t received_bytes = trans->trans_len / 8;
-  ESP_LOGI(TAG, "Transaction complete: %d bytes received", received_bytes);
+  ESP_LOGD(TAG, "Transaction complete: %d bytes received", received_bytes);
 
   // Parse packet
   lan_comm_status_t status =
@@ -278,7 +278,7 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
   }
 
   handle->packets_received++;
-  ESP_LOGI(TAG, "Packet parsed: Header=0x%04X, Payload=%d bytes",
+  ESP_LOGD(TAG, "Packet parsed: Header=0x%04X, Payload=%d bytes",
            packet->header_type, packet->payload_length);
 
   return LAN_COMM_OK;
@@ -312,12 +312,13 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
   }
 
   // Copy data to TX buffer
+  memset(handle->tx_buffer, 0, handle->config.tx_buffer_size);
   memcpy(handle->tx_buffer, data_to_send, length);
   handle->tx_buffer_len = length;
 
   xSemaphoreGive(handle->buffer_mutex);
 
-  ESP_LOGI(TAG, "TX data loaded: %d bytes", length);
+  ESP_LOGD(TAG, "TX data loaded: %d bytes", length);
   return LAN_COMM_OK;
 }
 
@@ -382,7 +383,7 @@ static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
   }
   // Validate header
   if (packet->header_type != LAN_COMM_HEADER_CF &&
-      packet->header_type != LAN_COMM_HEADER_DT) {
+      packet->header_type != LAN_COMM_HEADER_DT && packet->header_type != LAN_COMM_HEADER_DQ) {
     ESP_LOGE(TAG, "Invalid header: 0x%04X", packet->header_type);
     return LAN_COMM_ERR_INVALID_HEADER;
   }
