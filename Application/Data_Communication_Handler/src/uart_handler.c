@@ -4,6 +4,10 @@
 
 #include "uart_handler.h"
 #include "config_handler.h"
+#include "lte_connect.h"
+#include "mcu_lan_handler.h"
+#include "mqtt_handler.h"
+#include "wifi_connect.h"
 #include <string.h>
 
 #define DEFAULT_UART_PORT_NUM UART_NUM_0
@@ -13,27 +17,194 @@
 #define UART_BUF_SIZE 512
 
 static const char *TAG = "uart_handler";
-
 static bool uart_handler_running = false;
-
-// Current UART configuration
 static bool s_uart_initialized = false;
-
-// Callback for mode switching
 static uart_mode_switch_cb_t s_mode_switch_callback = NULL;
+
+// External global variables from config_load_save.c (WAN)
+extern wifi_config_context_t g_wifi_ctx;
+extern lte_config_context_t g_lte_ctx;
+extern mqtt_config_context_t g_mqtt_ctx;
+extern config_internet_type_t g_internet_type;
+extern config_server_type_t g_server_type;
+
+// Gateway info
+#define GATEWAY_MODEL "ESP32S3_IoT_Gateway"
+#define GATEWAY_FW_VERSION "v1.2.0"
+#define GATEWAY_HW_VERSION "HW_v2.0"
+#define GATEWAY_SERIAL "GW2025001"
+
+/**
+ * @brief Send string to UART
+ */
+static void uart_print(const char *str) {
+  uart_write_bytes(DEFAULT_UART_PORT_NUM, str, strlen(str));
+}
+
+/**
+ * @brief Send string with newline
+ */
+static void uart_println(const char *str) {
+  uart_print(str);
+  uart_print("\r\n");
+}
+
+/**
+ * @brief Format and send key=value pair
+ */
+static void uart_send_kv(const char *key, const char *value) {
+  char buffer[256];
+  snprintf(buffer, sizeof(buffer), "%s=%s", key, value);
+  uart_println(buffer);
+}
+
+/**
+ * @brief Format and send key=value pair (integer)
+ */
+static void uart_send_kv_int(const char *key, int value) {
+  char buffer[256];
+  snprintf(buffer, sizeof(buffer), "%s=%d", key, value);
+  uart_println(buffer);
+}
+
+/**
+ * @brief Format and send key=value pair (unsigned long)
+ */
+static void uart_send_kv_ulong(const char *key, unsigned long value) {
+  char buffer[256];
+  snprintf(buffer, sizeof(buffer), "%s=%lu", key, value);
+  uart_println(buffer);
+}
+
+/**
+ * @brief Handle CFSC (Config Scan) command
+ * Combines local WAN config + remote LAN config (via SPI)
+ */
+static void handle_cfsc_command(void) {
+  ESP_LOGI(TAG, "Processing CFSC (scan) command");
+
+  // Start marker
+  uart_println("CFSC_RESP:START");
+
+  // ==================== GATEWAY INFO ====================
+  uart_println("[GATEWAY_INFO]");
+  uart_send_kv("model", GATEWAY_MODEL);
+  uart_send_kv("firmware", GATEWAY_FW_VERSION);
+  uart_send_kv("hardware", GATEWAY_HW_VERSION);
+  uart_send_kv("serial", GATEWAY_SERIAL);
+
+  // Internet status (from mcu_lan_handler which connects to LAN MCU)
+  internet_status_t inet_status = mcu_lan_handler_get_internet_status();
+  uart_send_kv("internet_status",
+               inet_status == INTERNET_STATUS_ONLINE ? "ONLINE" : "OFFLINE");
+
+  // RTC time (from mcu_lan_handler)
+  char rtc_buffer[20] = {0};
+  if (mcu_lan_handler_get_rtc(rtc_buffer) == ESP_OK) {
+    uart_send_kv("rtc_time", rtc_buffer);
+  } else {
+    uart_send_kv("rtc_time", "UNAVAILABLE");
+  }
+
+  // ==================== WAN CONFIG (LOCAL) ====================
+  uart_println("");
+  uart_println("[WAN_CONFIG]");
+
+  // Internet type
+  const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI) ? "WIFI"
+                              : (g_internet_type == CONFIG_INTERNET_LTE)
+                                  ? "LTE"
+                                  : "UNKNOWN";
+  uart_send_kv("internet_type", inet_type_str);
+
+  // WiFi settings
+  uart_send_kv("wifi_ssid", g_wifi_ctx.ssid);
+  uart_send_kv("wifi_password",
+               strlen(g_wifi_ctx.pass) > 0 ? "***HIDDEN***" : "");
+  uart_send_kv("wifi_username", g_wifi_ctx.username);
+  uart_send_kv_int("wifi_auth_mode", g_wifi_ctx.auth_mode);
+
+  // LTE settings
+  uart_send_kv("lte_apn", g_lte_ctx.apn);
+  uart_send_kv("lte_username", g_lte_ctx.username);
+  uart_send_kv("lte_password",
+               strlen(g_lte_ctx.password) > 0 ? "***HIDDEN***" : "");
+  const char *lte_comm_str =
+      (g_lte_ctx.comm_type == LTE_HANDLER_UART) ? "UART" : "USB";
+  uart_send_kv("lte_comm_type", lte_comm_str);
+  uart_send_kv_ulong("lte_max_retries", g_lte_ctx.max_reconnect_attempts);
+  uart_send_kv_ulong("lte_timeout_ms", g_lte_ctx.reconnect_timeout_ms);
+  uart_send_kv("lte_auto_reconnect",
+               g_lte_ctx.auto_reconnect ? "true" : "false");
+
+  // Server settings
+  const char *srv_type_str = (g_server_type == CONFIG_SERVERTYPE_MQTT) ? "MQTT"
+                             : (g_server_type == CONFIG_SERVERTYPE_HTTP)
+                                 ? "HTTP"
+                                 : "UNKNOWN";
+  uart_send_kv("server_type", srv_type_str);
+
+  // MQTT settings
+  uart_send_kv("mqtt_broker", g_mqtt_ctx.broker_uri);
+  uart_send_kv("mqtt_pub_topic", g_mqtt_ctx.publish_topic);
+  uart_send_kv("mqtt_sub_topic", g_mqtt_ctx.subscribe_topic);
+  uart_send_kv("mqtt_device_token",
+               strlen(g_mqtt_ctx.device_token) > 0 ? "***HIDDEN***" : "");
+  uart_send_kv("mqtt_attribute_topic", g_mqtt_ctx.attribute_topic);
+
+  // ==================== LAN CONFIG (FROM LAN MCU VIA SPI) ====================
+  uart_println("");
+  uart_println("[LAN_CONFIG]");
+
+  // Request LAN config from LAN MCU via mcu_lan_handler (SPI Master)
+  uint8_t lan_config_buffer[512] = {0};
+  uint16_t lan_config_len = 0;
+
+  esp_err_t ret = mcu_lan_handler_request_config_async(
+    lan_config_buffer, &lan_config_len, sizeof(lan_config_buffer), 3000);
+
+  if (ret == ESP_OK && lan_config_len > 0) {
+    // Parse LAN config: format is "key=value|key=value|key=value"
+    // Convert | to newline and send
+    char *line_start = (char *)lan_config_buffer;
+    char *line_end = NULL;
+
+    while ((line_end = strchr(line_start, '|')) != NULL) {
+      *line_end = '\0';          // Replace | with null terminator
+      uart_println(line_start);  // Send key=value line
+      line_start = line_end + 1; // Move to next line
+    }
+
+    // Send remaining data (last line without |)
+    if (strlen(line_start) > 0) {
+      uart_println(line_start);
+    }
+
+    ESP_LOGI(TAG, "LAN config received and sent (%u bytes)", lan_config_len);
+  } else {
+    // Fallback: LAN config unavailable
+    uart_send_kv("lan_status", "UNAVAILABLE");
+    ESP_LOGW(TAG, "Failed to retrieve LAN config from LAN MCU");
+  }
+
+  // End marker
+  uart_println("");
+  uart_println("CFSC_RESP:END");
+
+  ESP_LOGI(TAG, "CFSC response completed");
+}
 
 /**
  * @brief Reinitialize UART with new configuration
  */
 static void uart_reinit(uart_port_t port, uint32_t baud_rate, int tx_pin,
                         int rx_pin) {
-  // Delete existing driver if initialized
   if (s_uart_initialized) {
     uart_driver_delete(DEFAULT_UART_PORT_NUM);
     s_uart_initialized = false;
     vTaskDelay(pdMS_TO_TICKS(100));
   }
-  // Configure UART
+
   uart_config_t uart_config = {
       .baud_rate = DEFAULT_UART_BAUD_RATE,
       .data_bits = UART_DATA_8_BITS,
@@ -42,101 +213,89 @@ static void uart_reinit(uart_port_t port, uint32_t baud_rate, int tx_pin,
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
       .source_clk = UART_SCLK_DEFAULT,
   };
-
   ESP_ERROR_CHECK(uart_param_config(DEFAULT_UART_PORT_NUM, &uart_config));
   ESP_ERROR_CHECK(uart_set_pin(DEFAULT_UART_PORT_NUM, DEFAULT_UART_TX_PIN,
                                DEFAULT_UART_RX_PIN, UART_PIN_NO_CHANGE,
                                UART_PIN_NO_CHANGE));
   ESP_ERROR_CHECK(uart_driver_install(DEFAULT_UART_PORT_NUM, UART_BUF_SIZE * 2,
                                       0, 0, NULL, 0));
-
   s_uart_initialized = true;
-  ESP_LOGI(TAG, "UART reinitialized: Port=%d, Baud=%u, TX=%d, RX=%d",
-           DEFAULT_UART_PORT_NUM, DEFAULT_UART_BAUD_RATE, DEFAULT_UART_TX_PIN,
-           DEFAULT_UART_RX_PIN);
+  ESP_LOGI(TAG, "UART initialized: Baud=%u, TX=%d, RX=%d",
+           DEFAULT_UART_BAUD_RATE, DEFAULT_UART_TX_PIN, DEFAULT_UART_RX_PIN);
 }
 
 /**
  * @brief Check for mode switch commands (CONFIG/NORMAL)
- * @return 0=CONFIG, 1=NORMAL, -1=no command
  */
 static int check_mode_command(const char *data, int len) {
-  // Check for CONFIG command (case insensitive)
   if (len >= 6) {
     if (strncasecmp(data, "CONFIG", 6) == 0) {
       return 0; // CONFIG mode
     }
-  }
-
-  // Check for NORMAL command (case insensitive)
-  if (len >= 6) {
     if (strncasecmp(data, "NORMAL", 6) == 0) {
       return 1; // NORMAL mode
     }
   }
-
-  return -1; // No mode command
+  return -1;
 }
 
 /**
- * @brief UART handler task - receives data from UART and sends to config
- * handler Now also checks for CONFIG/NORMAL commands for mode switching
- * @param arg Task argument (unused)
+ * @brief UART handler task
  */
 static void uart_handler_task(void *arg) {
   uint8_t data[UART_BUF_SIZE];
 
-  // Initialize UART with default config
   uart_reinit(DEFAULT_UART_PORT_NUM, DEFAULT_UART_BAUD_RATE,
               DEFAULT_UART_TX_PIN, DEFAULT_UART_RX_PIN);
 
   ESP_LOGI(TAG, "UART handler task started");
-  ESP_LOGI(TAG, "- 'CONFIG' -> switch to config mode");
-  ESP_LOGI(TAG, "- 'NORMAL' -> switch to normal mode");
-  ESP_LOGI(TAG, "- 'CF...' -> config commands");
+  uart_println("\r\nGateway UART Interface Ready");
+  uart_println("Commands: CFSC (scan config), CONFIG, NORMAL, CF...");
 
   while (uart_handler_running) {
-    // Read UART data
     int len = uart_read_bytes(DEFAULT_UART_PORT_NUM, data, UART_BUF_SIZE - 1,
                               pdMS_TO_TICKS(100));
 
     if (len > 0) {
       data[len] = '\0';
 
-      // Check for mode switch commands FIRST (before CF check)
-      int mode_cmd = check_mode_command((char *)data, len);
-      if (mode_cmd != -1) {
-        ESP_LOGI(TAG, "Mode switch command detected: %s", (char *)data);
-
-        // Call callback if registered
-        if (s_mode_switch_callback) {
-          s_mode_switch_callback(mode_cmd);
-
-          // Send acknowledgment
-          if (mode_cmd == 0) {
-            uart_write_bytes(DEFAULT_UART_PORT_NUM, "OK: CONFIG mode\r\n", 17);
-          } else {
-            uart_write_bytes(DEFAULT_UART_PORT_NUM, "OK: NORMAL mode\r\n", 17);
-          }
-        } else {
-          ESP_LOGW(TAG, "Mode switch callback not registered");
-        }
-
-        continue; // Skip config command processing
+      // Trim whitespace
+      while (len > 0 && (data[len - 1] == '\r' || data[len - 1] == '\n' ||
+                         data[len - 1] == ' ')) {
+        data[--len] = '\0';
       }
 
-      // Check if command starts with "CF" (config command)
-      if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
-        ESP_LOGI(TAG, "Config command received via UART: %s", (char *)data);
+      if (len == 0)
+        continue;
 
-        // Skip "CF" prefix and parse actual command
+      ESP_LOGI(TAG, "Received: %s (len=%d)", data, len);
+
+      // Check for mode switch commands FIRST
+      int mode_cmd = check_mode_command((char *)data, len);
+      if (mode_cmd != -1) {
+        ESP_LOGI(TAG, "Mode switch: %s", (char *)data);
+        if (s_mode_switch_callback) {
+          s_mode_switch_callback(mode_cmd);
+        }
+        uart_println(mode_cmd == 0 ? "OK:CONFIG_MODE" : "OK:NORMAL_MODE");
+        continue;
+      }
+
+      // Check for CFSC command (scan config)
+      if (strncasecmp((char *)data, "CFSC", 4) == 0) {
+        handle_cfsc_command();
+        continue;
+      }
+
+      // Check for config commands starting with "CF"
+      if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
+        ESP_LOGI(TAG, "Config command: %s", (char *)data);
+
         if (len > 2) {
           const char *cmd_data = (const char *)(data + 2);
           int cmd_len = len - 2;
 
-          // Parse command type
           config_type_t type = config_parse_type(cmd_data, cmd_len);
-
           if (type != CONFIG_TYPE_UNKNOWN) {
             config_command_t cmd;
             cmd.type = type;
@@ -144,22 +303,27 @@ static void uart_handler_task(void *arg) {
             memcpy(cmd.raw_data, cmd_data, cmd_len);
             cmd.raw_data[cmd_len] = '\0';
 
-            // Send to config handler
             if (g_config_handler_queue) {
               if (xQueueSend(g_config_handler_queue, &cmd,
                              pdMS_TO_TICKS(100)) == pdTRUE) {
                 ESP_LOGI(TAG, "Command forwarded to config handler");
+                uart_println("OK:CMD_QUEUED");
               } else {
-                ESP_LOGW(TAG, "Failed to send to config handler queue");
+                ESP_LOGW(TAG, "Config queue full");
+                uart_println("ERROR:QUEUE_FULL");
               }
+            } else {
+              uart_println("ERROR:NO_HANDLER");
             }
           } else {
-            ESP_LOGW(TAG, "Unknown command type in: %s", cmd_data);
+            ESP_LOGW(TAG, "Unknown command type");
+            uart_println("ERROR:UNKNOWN_CMD");
           }
         }
       } else {
-        // Not a config command, just log
-        ESP_LOGD(TAG, "Non-config UART data: %.*s", len, data);
+        // Unknown command
+        uart_println("ERROR:INVALID_CMD");
+        ESP_LOGD(TAG, "Invalid command: %s", data);
       }
     }
   }
@@ -172,9 +336,6 @@ static void uart_handler_task(void *arg) {
   vTaskDelete(NULL);
 }
 
-/**
- * @brief Start UART handler task
- */
 void uart_handler_task_start(void) {
   if (uart_handler_running) {
     ESP_LOGW(TAG, "UART handler already running");
@@ -186,19 +347,11 @@ void uart_handler_task_start(void) {
   ESP_LOGI(TAG, "UART handler task created");
 }
 
-/**
- * @brief Stop UART handler task
- */
 void uart_handler_task_stop(void) {
   uart_handler_running = false;
   ESP_LOGI(TAG, "UART handler task stopping");
 }
 
-/**
- * @brief Register callback for mode switching
- * @param callback Function to call when CONFIG/NORMAL detected
- *                 Parameter: 0=CONFIG, 1=NORMAL
- */
 void uart_handler_register_mode_callback(uart_mode_switch_cb_t callback) {
   s_mode_switch_callback = callback;
   ESP_LOGI(TAG, "Mode switch callback registered");

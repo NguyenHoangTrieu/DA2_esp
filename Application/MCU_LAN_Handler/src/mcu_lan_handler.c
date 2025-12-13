@@ -10,9 +10,10 @@
  */
 #include "mcu_lan_handler.h"
 #include "config_handler.h"
-#include "fota_handler.h"
+#include "ds1307_rtc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "fota_handler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -32,7 +33,7 @@ static const char *TAG = "MCU_LAN";
 #define DOWNLINK_QUEUE_SIZE 20
 #define MAX_RETRY_COUNT 3
 #define ACK_WAIT_TIMEOUT_MS 500
-#define MAX_DOWNLINK_PAYLOAD_SIZE 256
+#define MAX_DOWNLINK_PAYLOAD_SIZE 1024
 
 // ===== Downlink Queue Item =====
 typedef struct {
@@ -43,7 +44,7 @@ typedef struct {
 
 // ===== Config Cache =====
 typedef struct {
-  uint8_t config_data[256];
+  uint8_t config_data[512];
   uint16_t config_length;
   bool has_config;
   bool is_fota;
@@ -58,6 +59,32 @@ static bool g_handler_running = false;
 
 static internet_status_t g_internet_status = INTERNET_STATUS_OFFLINE;
 static config_cache_t g_config_cache = {0};
+// ===== Pending Downlink =====
+static downlink_item_t g_pending_downlink;
+static bool g_pending_downlink_valid = false; // WAN pending data for LAN
+static bool g_config_handshake_sent = false; // GPIO already signaled for config
+// ===== Config Request Queue =====
+#define CONFIG_REQUEST_QUEUE_SIZE 2
+static QueueHandle_t g_config_request_queue = NULL;
+
+typedef enum {
+  CONFIG_REQ_STATE_IDLE = 0,
+  CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ, // waiting DQ before sending CFCQ
+  CONFIG_REQ_STATE_WAIT_CONFIG_RESP  // waiting CQ response from LAN
+} config_req_state_t;
+
+static config_req_state_t g_config_req_state = CONFIG_REQ_STATE_IDLE;
+static config_request_t *g_active_config_request_ptr = NULL;
+static bool g_active_config_request_valid = false;
+
+// ===== RTC Cache (Thread-safe) =====
+typedef struct {
+  char rtc_string[20];
+  bool valid;
+  SemaphoreHandle_t mutex;
+} rtc_cache_t;
+
+static rtc_cache_t g_rtc_cache = {.valid = false};
 
 // External reference
 extern config_server_type_t g_server_type;
@@ -74,7 +101,137 @@ static void get_rtc_string(char *buffer);
 static const char *handler_id_to_string(handler_id_t id);
 static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms);
 
+// ===== GPIO Handshake Configuration =====
+#define GPIO_DATA_READY_PIN 14
+
+// Setup GPIO 14 as output
+static esp_err_t setup_data_ready_gpio(void) {
+  gpio_config_t io_conf = {.pin_bit_mask = BIT64(GPIO_DATA_READY_PIN),
+                           .mode = GPIO_MODE_OUTPUT,
+                           .pull_up_en = GPIO_PULLUP_DISABLE,
+                           .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                           .intr_type = GPIO_INTR_DISABLE};
+
+  esp_err_t ret = gpio_config(&io_conf);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to configure GPIO %d", GPIO_DATA_READY_PIN);
+    return ret;
+  }
+
+  // Initialize to LOW
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
+
+  ESP_LOGD(TAG, "GPIO %d configured for data-ready signaling",
+           GPIO_DATA_READY_PIN);
+  return ESP_OK;
+}
+
+// Signal that data is ready
+static void signal_data_ready(void) {
+  vTaskDelay(pdMS_TO_TICKS(10)); // Short delay to ensure readiness
+  gpio_set_level(GPIO_DATA_READY_PIN, 1);
+  ESP_LOGD(TAG, "Data-ready signal HIGH");
+}
+
+// Clear data-ready signal
+static void clear_data_ready(void) {
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
+  ESP_LOGD(TAG, "Data-ready signal LOW");
+}
+
+// ===== Config Request Handling =====
+static void handle_config_request_queue(void) {
+  config_request_t *request_ptr;
+  if (!g_active_config_request_valid) {
+    if (xQueueReceive(g_config_request_queue, &request_ptr, 0) != pdTRUE) {
+      return;
+    }
+
+    ESP_LOGD(TAG, "New config request from UART handler");
+
+    // Cache request POINTER for later processing on DQ
+    g_active_config_request_ptr = request_ptr;
+    g_active_config_request_valid = true;
+    g_config_req_state = CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ;
+
+    // Notify LAN that some TX data (CFCQ) will be available after DQ
+    signal_data_ready();
+    return;
+  }
+}
+
 // ===== Public API =====
+esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
+                                               uint16_t *out_len,
+                                               uint16_t max_len,
+                                               uint32_t timeout_ms) {
+  if (buffer == NULL || out_len == NULL || g_config_request_queue == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  // Create completion semaphore
+  SemaphoreHandle_t completion_sem = xSemaphoreCreateBinary();
+  if (completion_sem == NULL) {
+    ESP_LOGE(TAG, "Failed to create completion semaphore");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Build request (local variable on stack)
+  config_request_t request = {
+      .type = CONFIG_REQ_LAN_CONFIG,
+      .response_buffer = buffer,
+      .response_len = out_len,
+      .buffer_size = max_len,
+      .completion_sem = completion_sem,
+      .result = ESP_FAIL // Default to fail
+  };
+
+  // Send POINTER to request to handler task
+  config_request_t *request_ptr = &request;
+  if (xQueueSend(g_config_request_queue, &request_ptr, pdMS_TO_TICKS(100)) !=
+      pdTRUE) {
+    ESP_LOGE(TAG, "Config request queue full");
+    vSemaphoreDelete(completion_sem);
+    return ESP_ERR_TIMEOUT;
+  }
+
+  // Wait for completion (handler will update request.result via pointer)
+  if (xSemaphoreTake(completion_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+    ESP_LOGE(TAG, "Config request timeout");
+    vSemaphoreDelete(completion_sem);
+    return ESP_ERR_TIMEOUT;
+  }
+
+  // Now request.result is updated via pointer!
+  esp_err_t result = request.result;
+  ESP_LOGD(TAG, "Config request completed with result: %s",
+           esp_err_to_name(result));
+
+  vSemaphoreDelete(completion_sem);
+  return result;
+}
+
+// Thread-safe getters (no SPI access)
+internet_status_t mcu_lan_handler_get_internet_status(void) {
+  return g_internet_status;
+}
+
+esp_err_t mcu_lan_handler_get_rtc(char *buffer) {
+  if (buffer == NULL || g_rtc_cache.mutex == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  if (xSemaphoreTake(g_rtc_cache.mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (g_rtc_cache.valid) {
+      memcpy(buffer, g_rtc_cache.rtc_string, 20);
+      xSemaphoreGive(g_rtc_cache.mutex);
+      return ESP_OK;
+    }
+    xSemaphoreGive(g_rtc_cache.mutex);
+  }
+
+  return ESP_ERR_NOT_FOUND;
+}
 
 esp_err_t mcu_lan_handler_start(void) {
   if (g_handler_running) {
@@ -82,7 +239,31 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_OK;
   }
 
-  ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
+  g_rtc_cache.mutex = xSemaphoreCreateMutex();
+  if (g_rtc_cache.mutex == NULL) {
+    ESP_LOGE(TAG, "Failed to create RTC mutex");
+    return ESP_FAIL;
+  }
+
+  g_config_request_queue =
+      xQueueCreate(CONFIG_REQUEST_QUEUE_SIZE, sizeof(config_request_t *));
+  if (g_config_request_queue == NULL) {
+    ESP_LOGE(TAG, "Failed to create config request queue");
+    vSemaphoreDelete(g_rtc_cache.mutex);
+    return ESP_FAIL;
+  }
+
+  if (setup_data_ready_gpio() != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to setup data-ready GPIO");
+    return ESP_FAIL;
+  }
+
+  if (ds1307_init() != ESP_OK) {
+    ESP_LOGW(TAG, "DS1307 init failed, time fallback to system");
+    // Continue without DS1307
+  }
+
+  ESP_LOGD(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
 
   // Initialize LAN communication (SPI Slave)
   lan_comm_config_t lan_config = {.gpio_sck = 12,
@@ -116,6 +297,7 @@ esp_err_t mcu_lan_handler_start(void) {
   g_config_mutex = xSemaphoreCreateMutex();
 
   // Create handler task
+  g_handler_running = true;
   BaseType_t ret =
       xTaskCreate(mcu_lan_handler_task, "mcu_lan_task", MCU_LAN_TASK_STACK_SIZE,
                   NULL, MCU_LAN_TASK_PRIORITY, &g_task_handle);
@@ -126,8 +308,7 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_FAIL;
   }
 
-  g_handler_running = true;
-  ESP_LOGI(TAG, "MCU LAN Handler started successfully");
+  ESP_LOGD(TAG, "MCU LAN Handler started successfully");
   return ESP_OK;
 }
 
@@ -135,8 +316,19 @@ esp_err_t mcu_lan_handler_stop(void) {
   if (!g_handler_running)
     return ESP_OK;
 
-  ESP_LOGI(TAG, "Stopping MCU LAN Handler");
+  ESP_LOGD(TAG, "Stopping MCU LAN Handler");
+  ds1307_deinit();
   g_handler_running = false;
+
+  if (g_config_request_queue != NULL) {
+    vQueueDelete(g_config_request_queue);
+    g_config_request_queue = NULL;
+  }
+
+  if (g_rtc_cache.mutex != NULL) {
+    vSemaphoreDelete(g_rtc_cache.mutex);
+    g_rtc_cache.mutex = NULL;
+  }
 
   if (g_task_handle != NULL) {
     vTaskDelete(g_task_handle);
@@ -174,7 +366,7 @@ static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
     if (status == LAN_COMM_OK && packet.payload_length >= 2) {
       if (packet.payload[0] == FRAME_TYPE_ACK &&
           packet.payload[1] == ACK_TYPE_HANDSHAKE) {
-        ESP_LOGI(TAG, "FOTA handshake ACK received from LAN MCU");
+        ESP_LOGD(TAG, "FOTA handshake ACK received from LAN MCU");
         return ESP_OK;
       }
     }
@@ -189,7 +381,7 @@ static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
 void mcu_lan_handler_set_internet_status(internet_status_t status) {
   if (g_internet_status != status) {
     g_internet_status = status;
-    ESP_LOGI(TAG, "Internet status: %s",
+    ESP_LOGD(TAG, "Internet status: %s",
              status == INTERNET_STATUS_ONLINE ? "ONLINE" : "OFFLINE");
   }
 }
@@ -253,16 +445,16 @@ bool server_handler_enqueue_uplink(uint8_t *data, uint16_t len) {
 // ===== Main Task (Diagram 2 Implementation) =====
 
 static void mcu_lan_handler_task(void *pvParameters) {
-  ESP_LOGI(TAG, "MCU LAN Handler task started");
+  ESP_LOGD(TAG, "MCU LAN Handler task started");
 
   // ========================================
   // PHASE 1: SPI Driver Init & Handshake
   // ========================================
-  ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
+  ESP_LOGD(TAG, "Phase 1: Waiting for handshake from LAN MCU");
 
   while (g_handler_running) {
     if (perform_handshake_slave() == ESP_OK) {
-      ESP_LOGI(TAG, "Handshake complete, entering Data Reception Loop");
+      ESP_LOGD(TAG, "Handshake complete, entering Data Reception Loop");
       break;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -271,20 +463,10 @@ static void mcu_lan_handler_task(void *pvParameters) {
   // ========================================
   // PHASE 2: Data Reception Loop
   // ========================================
-  ESP_LOGI(TAG, "Phase 2: Data Reception Loop");
-  TickType_t last_rtc_update = xTaskGetTickCount();
+  ESP_LOGD(TAG, "Phase 2: Data Reception Loop");
   downlink_item_t downlink_item;
 
   while (g_handler_running) {
-    TickType_t now = xTaskGetTickCount();
-
-    // ===== Branch A: RTC & Internet Update Period =====
-    if ((now - last_rtc_update) >= pdMS_TO_TICKS(RTC_UPDATE_INTERVAL_MS)) {
-      // Preload RTC response into SPI buffer
-      send_rtc_response();
-      last_rtc_update = now;
-    }
-
     // Queue receive transaction
     lan_comm_queue_receive(g_lan_handle);
 
@@ -295,16 +477,102 @@ static void mcu_lan_handler_task(void *pvParameters) {
 
     if (status == LAN_COMM_OK && packet.payload_length >= 2) {
       uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
-
       // ===== Branch: RTC Request from LAN =====
       if (prefix[0] == 'R' && prefix[1] == 'T') {
         ESP_LOGD(TAG, "RTC request received");
         send_rtc_response();
       }
+      // ===== Branch: Generic data/config request from LAN (after GPIO
+      // handshake) =====
+      else if (prefix[0] == 'D' && prefix[1] == 'Q') {
+        ESP_LOGD(TAG, "DQ request received from LAN MCU");
+        bool served = false;
+
+        // 1) PC-side config scan: send CFCQ only after DQ
+        if (g_active_config_request_valid &&
+            g_config_req_state == CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ) {
+
+          uint8_t config_request[4];
+          config_request[0] = (LAN_COMM_HEADER_CF >> 8) & 0xFF;
+          config_request[1] = LAN_COMM_HEADER_CF & 0xFF;
+          config_request[2] = 'C';
+          config_request[3] = 'Q';
+
+          // Load CFCQ into TX only here (after DQ)
+          lan_comm_load_tx_data(g_lan_handle, config_request,
+                                sizeof(config_request));
+          g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
+          served = true;
+          ESP_LOGD(TAG, "CFCQ command loaded to TX after DQ");
+        }
+
+        // 2) Config/FOTA downlink to LAN (from WAN config cache)
+        if (!served &&
+            xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+          if (g_config_cache.has_config) {
+            handle_config_request(); // only loads TX for CF payload
+            served = true;
+          }
+          xSemaphoreGive(g_config_mutex);
+        }
+
+        // 3) Normal downlink data (DT) to LAN
+        if (!served && g_pending_downlink_valid) {
+          send_downlink_to_lan(
+              &g_pending_downlink); // only loads TX + waits ACK
+          g_pending_downlink_valid = false;
+          served = true;
+        }
+
+        if (served) {
+          // Clear GPIO handshake once something has been served for this DQ
+          clear_data_ready();
+        } else {
+          ESP_LOGW(TAG, "DQ received but nothing pending to send");
+        }
+      }
       // ===== Branch: Data from MCU LAN =====
       else if (prefix[0] == 'D' && prefix[1] == 'T') {
-        ESP_LOGI(TAG, "Data packet received from LAN");
+        ESP_LOGD(TAG, "Data packet received from LAN");
         handle_data_from_lan(packet.payload, packet.payload_length);
+      }
+      // ===== Branch: LAN config response for PC (CQ) =====
+      else if (prefix[0] == 'C' && prefix[1] == 'Q') {
+        if (g_active_config_request_valid &&
+            g_config_req_state == CONFIG_REQ_STATE_WAIT_CONFIG_RESP &&
+            packet.payload_length >= 4) {
+
+          uint16_t config_len = (packet.payload[2] << 8) | packet.payload[3];
+          if (config_len > g_active_config_request_ptr->buffer_size - 1) {
+            config_len = g_active_config_request_ptr->buffer_size - 1;
+          }
+
+          // Copy config data to response buffer
+          memcpy(g_active_config_request_ptr->response_buffer,
+                 &packet.payload[4], config_len);
+          g_active_config_request_ptr->response_buffer[config_len] = '\0';
+          *g_active_config_request_ptr->response_len = config_len;
+
+          // Update result in ORIGINAL struct (via pointer)
+          g_active_config_request_ptr->result = ESP_OK;
+
+          ESP_LOGD(TAG, "LAN config response processed (%u bytes)", config_len);
+
+          // Signal completion semaphore BEFORE resetting
+          if (g_active_config_request_ptr->completion_sem) {
+            xSemaphoreGive(g_active_config_request_ptr->completion_sem);
+          }
+
+          // Reset state AFTER signaling
+          g_active_config_request_valid = false;
+          g_active_config_request_ptr = NULL;
+          g_config_req_state = CONFIG_REQ_STATE_IDLE;
+
+        } else {
+          ESP_LOGW(TAG,
+                   "Unexpected CQ packet or no active config request (len=%u)",
+                   (unsigned)packet.payload_length);
+        }
       }
       // ===== Branch: Handshake ACK =====
       else if (packet.payload[0] == FRAME_TYPE_ACK &&
@@ -314,40 +582,50 @@ static void mcu_lan_handler_task(void *pvParameters) {
       }
       // ===== Branch: Config Request =====
       else if (prefix[0] == 'C' && prefix[1] == 'F') {
-        ESP_LOGI(TAG, "Config request received");
+        ESP_LOGD(TAG, "Config request received");
         handle_config_request();
       }
     }
 
     // ===== Branch: From Server Handler Task - Downlink to LAN =====
     if (xQueueReceive(g_downlink_queue, &downlink_item, 0) == pdTRUE) {
-      ESP_LOGI(TAG, "Sending downlink to handler %d (%u bytes)",
+      ESP_LOGD(TAG, "Queueing downlink for handler %d (%u bytes)",
                downlink_item.target_id, downlink_item.length);
-      send_downlink_to_lan(&downlink_item);
+      // Cache downlink, do not load SPI TX here
+      g_pending_downlink = downlink_item;
+      g_pending_downlink_valid = true;
+      // Only signal GPIO so LAN MCU can send DQ command later
+      signal_data_ready(); // WAN only notifies data-ready here
     }
 
     // ===== Branch: From Config Task =====
     if (xSemaphoreTake(g_config_mutex, 0) == pdTRUE) {
       if (g_config_cache.has_config) {
+        // Optional: keep FOTA pre-handshake flow
         if (g_config_cache.is_fota) {
-          // FOTA: Send CFFW command and start update sequence
-          ESP_LOGI(TAG, "FOTA config detected, initiating firmware update");
-          if (wait_for_fota_handshake_ack(5000) == ESP_OK) {
-            ESP_LOGI(TAG, "FOTA pre-handshake completed, ready for FW update");
+          ESP_LOGD(TAG, "FOTA config detected, initiating firmware update");
+          if (wait_for_fota_handshake_ack(50000) == ESP_OK) {
+            ESP_LOGD(TAG, "FOTA pre-handshake completed, ready for FW update");
             fota_handler_task_start();
           } else {
             ESP_LOGW(TAG, "FOTA pre-handshake failed or timed out");
           }
         }
-        // Config will be sent on next request
+        // Only raise GPIO once to notify LAN that config/FOTA is pending
+        if (!g_config_handshake_sent) {
+          signal_data_ready(); // WAN only signals GPIO here
+          g_config_handshake_sent = true;
+        }
       }
       xSemaphoreGive(g_config_mutex);
     }
+    // ===== Branch: From Config Request Queue =====
+    handle_config_request_queue();
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 
-  ESP_LOGI(TAG, "MCU LAN Handler task exiting");
+  ESP_LOGD(TAG, "MCU LAN Handler task exiting");
   vTaskDelete(NULL);
 }
 
@@ -411,7 +689,7 @@ static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
   uint16_t data_length = (payload[5] << 8) | payload[6];
   const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
 
-  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
+  ESP_LOGD(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
 
   // Send ACK with internet status
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
@@ -437,10 +715,13 @@ static void handle_config_request(void) {
       memcpy(&config_packet[4], g_config_cache.config_data,
              g_config_cache.config_length);
 
+      // Only load TX, do not touch GPIO here
       lan_comm_load_tx_data(g_lan_handle, config_packet,
                             4 + g_config_cache.config_length);
 
-      g_config_cache.has_config = false; // Clear after sending
+      // Mark config consumed; handshake state will be cleared in DQ handler
+      g_config_cache.has_config = false;
+      g_config_handshake_sent = false; // allow next handshake later
     }
     xSemaphoreGive(g_config_mutex);
   }
@@ -454,23 +735,20 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
   packet[0] = 'D';
   packet[1] = 'T';
-
   const char *type_str = handler_id_to_string(item->target_id);
   memcpy(&packet[2], type_str, 3);
-
   packet[5] = (item->length >> 8) & 0xFF;
   packet[6] = item->length & 0xFF;
-
   memcpy(&packet[DATA_PACKET_HEADER_SIZE], item->data, item->length);
 
-  // Send with retry
+  // Load data and signal GPIO
+  lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+
+  // Wait for ACK from LAN MCU
   for (int retry = 0; retry < MAX_RETRY_COUNT; retry++) {
-    lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
-
-    // Wait for ACK from LAN MCU
     vTaskDelay(pdMS_TO_TICKS(ACK_WAIT_TIMEOUT_MS));
-
     lan_comm_queue_receive(g_lan_handle);
+
     lan_comm_packet_t ack_packet;
     lan_comm_status_t status = lan_comm_get_received_packet(
         g_lan_handle, &ack_packet, ACK_WAIT_TIMEOUT_MS);
@@ -485,33 +763,55 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
              MAX_RETRY_COUNT);
   }
 
+  clear_data_ready(); // Clear even on failure
   ESP_LOGE(TAG, "Downlink send failed after max retries");
 }
 
 // ===== Get RTC String =====
 static void get_rtc_string(char *buffer) {
-  time_t now = time(NULL);
   struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
+  memset(&timeinfo, 0, sizeof(struct tm));
+
+  // Check internet status and SNTP sync
+  if (g_internet_status == INTERNET_STATUS_ONLINE && wifi_is_sntp_synced()) {
+    // ONLINE: Use system time from SNTP
+    time_t now = time(NULL);
+    localtime_r(&now, &timeinfo);
+    ESP_LOGD(TAG, "Using SNTP time");
+  } else {
+    // OFFLINE or not synced: Read from DS1307
+    esp_err_t ret = ds1307_read_time(&timeinfo);
+    if (ret != ESP_OK) {
+      // Fallback to system time if DS1307 fails
+      ESP_LOGW(TAG, "DS1307 read failed, using system time");
+      time_t now = time(NULL);
+      localtime_r(&now, &timeinfo);
+    } else {
+      ESP_LOGD(TAG, "Using DS1307 RTC time");
+    }
+  }
 
   int year = timeinfo.tm_year + 1900;
   if (year > 9999) {
     year = 9999;
-  } else if (year < 0) {
-    year = 0;
+  } else if (year < 2000) {
+    year = 2000; // Default to 2000 if invalid
   }
 
-  /* Format into a large temporary buffer to avoid -Wformat-truncation */
+  // Format: "dd/mm/yyyy-hh:mm:ss"
   char tmp[64];
-
-  // "dd/mm/yyyy-hh:mm:ss" = 19 chars
   snprintf(tmp, sizeof(tmp), "%02d/%02d/%04d-%02d:%02d:%02d", timeinfo.tm_mday,
            timeinfo.tm_mon + 1, year, timeinfo.tm_hour, timeinfo.tm_min,
            timeinfo.tm_sec);
 
-  /* Copy exactly 19 characters into the 20-byte field and terminate */
   memcpy(buffer, tmp, 19);
   buffer[19] = '\0';
+
+  if (g_rtc_cache.mutex && xSemaphoreTake(g_rtc_cache.mutex, 0) == pdTRUE) {
+    memcpy(g_rtc_cache.rtc_string, buffer, 20);
+    g_rtc_cache.valid = true;
+    xSemaphoreGive(g_rtc_cache.mutex);
+  }
 }
 
 // ===== Helper =====
