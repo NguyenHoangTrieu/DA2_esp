@@ -560,32 +560,11 @@ class GatewayConfigTool:
             return
             
         try:
-            # Debug logging
-            self.log("="*60, 'DEBUG')
-            self.log("Sending CFSC command...", 'INFO')
-            self.log(f"Port: {self.serial_port.port}", 'DEBUG')
-            self.log(f"Baud: {self.serial_port.baudrate}", 'DEBUG')
-            self.log(f"In Waiting: {self.serial_port.in_waiting}", 'DEBUG')
-            
-            # Clear any pending data
-            if self.serial_port.in_waiting > 0:
-                junk = self.serial_port.read(self.serial_port.in_waiting)
-                self.log(f"Cleared {len(junk)} bytes from buffer", 'WARN')
-            
-            # Send command with CRLF
-            cmd = b"CFSC\r\n"
-            self.log(f"Command: {cmd}", 'DEBUG')
-            bytes_written = self.serial_port.write(cmd)
-            self.serial_port.flush()
-            
-            self.log(f"Sent {bytes_written} bytes, waiting for response...", 'SUCCESS')
-            self.log("="*60, 'DEBUG')
-            
+            self.serial_port.write(b"CFSC\r\n")
+            self.log("Sent CFSC command, waiting for response...")
         except Exception as e:
             self.log(f"Failed to send command: {e}", 'ERROR')
-            self.log(traceback.format_exc(), 'ERROR')
-            messagebox.showerror("Error", f"Failed to send command: {e}")
-    
+
     def write_incremental_config(self):
         """Write only changed configuration fields"""
         if not self.serial_port or not self.serial_port.is_open:
@@ -805,9 +784,9 @@ class GatewayConfigTool:
                     ])
                 if not target or target == "-LAN":
                     required_files.extend([
-                        self.app_path / "bootloaderLAN.bin",
-                        self.app_path / "partition-tableLAN.bin",
-                        self.app_path / "DA2_espLAN.bin"
+                        self.app_path / "bootloader_LAN.bin",
+                        self.app_path / "partition-table_LAN.bin",
+                        self.app_path / "DA2_esp_LAN.bin"
                     ])
                 
                 missing = [f.name for f in required_files if not f.exists()]
