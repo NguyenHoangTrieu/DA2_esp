@@ -1,67 +1,59 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Gateway Configuration Protocol Module - WITH CAN WHITELIST
-Contains all command definitions matching firmware exactly
+Gateway Configuration Protocol Module
 """
-
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from enum import Enum
 
+# ===== COMMAND MAPPINGS FROM FIRMWARE =====
 
-# ===== COMMAND MAPPINGS FROM FIRMWARE (WITH WHITELIST) =====
-
-# WAN MCU Configuration Commands
+# WAN MCU Configuration Commands (with CF prefix)
 WAN_CONFIG_COMMANDS = {
-    'internet_type': 'CFIN:',           # CFIN:WIFI|LTE|ETHERNET|NBIOT
-    'wifi_full': 'WF:',                 # WF:SSID:PASSWORD:AUTH_MODE
-    'mqtt_full': 'MQ:',                 # MQ:BROKER|TOKEN|SUB|PUB|ATTR
-    'lte_full': 'LT:',                  # LT:COMM:APN:USER:PASS:...
-    'server_type': 'SV:',               # SV:MQTT|HTTP|COAP
-    'firmware_update': 'FW',            # FW | FW:url | FW:url:FORCE
+    'internet_type': 'CFIN:',      # CFIN:WIFI|LTE|ETHERNET|NBIOT
+    'wifi_full': 'CFWF:',          # CFWF:SSID:PASSWORD:AUTH_MODE
+    'mqtt_full': 'CFMQ:',          # CFMQ:BROKER|TOKEN|SUB|PUB|ATTR
+    'lte_full': 'CFLT:',           # CFLT:COMM:APN:USER:PASS:...
+    'server_type': 'CFSV:',        # CFSV:MQTT|HTTP|COAP
+    # REMOVED: 'firmware_update': 'FW' - only for debug OTA
 }
 
-# LAN MCU Configuration Commands
+# LAN MCU Configuration Commands (with CFML prefix)
 LAN_CONFIG_COMMANDS = {
     # CAN Configuration
-    'can_baud_rate': 'CFCB:',           # CFCB:baudrate
-    'can_mode': 'CFCM:',                # CFCM:NORMAL|LOOPBACK|SILENT
-    
-    # CAN Whitelist Management (NEW)
-    'can_whitelist_add': 'CFCW:ADD:',   # CFCW:ADD:0x123 (add single ID)
-    'can_whitelist_remove': 'CFCW:REM:',# CFCW:REM:0x123 (remove single ID)
-    'can_whitelist_clear': 'CFCW:CLR',  # CFCW:CLR (clear all)
-    'can_whitelist_set': 'CFCW:SET:',   # CFCW:SET:0x123,0x456,0x789 (set entire list)
-    
+    'can_baud_rate': 'CFML:CFCB:',           # CFML:CFCB:baudrate
+    'can_mode': 'CFML:CFCM:',                # CFML:CFCM:NORMAL|LOOPBACK|SILENT
+    # CAN Whitelist Management
+    'can_whitelist_add': 'CFML:CFCW:ADD:',   # CFML:CFCW:ADD:0x123
+    'can_whitelist_remove': 'CFML:CFCW:REM:',# CFML:CFCW:REM:0x123
+    'can_whitelist_clear': 'CFML:CFCW:CLR',  # CFML:CFCW:CLR
+    'can_whitelist_set': 'CFML:CFCW:SET:',   # CFML:CFCW:SET:0x123,0x456,0x789
     # LoRa Configuration
-    'lora_modem': 'CFLR:MODEM:',        # CFLR:MODEM:<6 bytes binary>
-    'lora_handler': 'CFLR:HDLCF:',      # CFLR:HDLCF:<11 bytes binary>
-    'lora_crypto': 'CFLR:CRYPT:',       # CFLR:CRYPT:<key_len><key_bytes>
-    
-    # Firmware Update (LAN MCU)
-    'firmware_update': 'CFFW',          # CFFW | CFFW:url | CFFW:url:FORCE
+    'lora_modem': 'CFML:CFLR:MODEM:',        # CFML:CFLR:MODEM:<6 bytes binary>
+    'lora_handler': 'CFML:CFLR:HDLCF:',      # CFML:CFLR:HDLCF:<11 bytes binary>
+    'lora_crypto': 'CFML:CFLR:CRYPT:',       # CFML:CFLR:CRYPT:<keylen><key bytes>
+    # REMOVED: 'firmware_update': 'CFFW' - only for debug OTA
 }
-
 
 @dataclass
 class WiFiConfig:
-    """WiFi Configuration"""
+    """WiFi Configuration - generates SINGLE command"""
     ssid: str
     password: str
     username: str = ""
     auth_mode: str = "PERSONAL"
     
     def to_command(self) -> str:
+        """Generate SINGLE WiFi command with CF prefix"""
         if self.username:
-            return f"WF:{self.ssid}:{self.password}:{self.username}:{self.auth_mode}"
+            return f"CFWF:{self.ssid}:{self.password}:{self.username}:{self.auth_mode}"
         else:
-            return f"WF:{self.ssid}:{self.password}:{self.auth_mode}"
-
+            return f"CFWF:{self.ssid}:{self.password}:{self.auth_mode}"
 
 @dataclass
 class LTEConfig:
-    """LTE Configuration"""
+    """LTE Configuration - generates SINGLE command"""
     comm_type: str
     apn: str
     username: str = ""
@@ -71,14 +63,14 @@ class LTEConfig:
     max_reconnect_attempts: int = 0
     
     def to_command(self) -> str:
+        """Generate SINGLE LTE command with CF prefix"""
         reconnect_str = "true" if self.auto_reconnect else "false"
-        return (f"LT:{self.comm_type}:{self.apn}:{self.username}:{self.password}:"
+        return (f"CFLT:{self.comm_type}:{self.apn}:{self.username}:{self.password}:"
                 f"{reconnect_str}:{self.reconnect_timeout_ms}:{self.max_reconnect_attempts}")
-
 
 @dataclass
 class MQTTConfig:
-    """MQTT Configuration"""
+    """MQTT Configuration - generates SINGLE command"""
     broker_uri: str
     device_token: str
     subscribe_topic: str
@@ -86,9 +78,9 @@ class MQTTConfig:
     attribute_topic: str
     
     def to_command(self) -> str:
-        return (f"MQ:{self.broker_uri}|{self.device_token}|{self.subscribe_topic}|"
+        """Generate SINGLE MQTT command with CF prefix"""
+        return (f"CFMQ:{self.broker_uri}|{self.device_token}|{self.subscribe_topic}|"
                 f"{self.publish_topic}|{self.attribute_topic}")
-
 
 @dataclass
 class CANConfig:
@@ -97,39 +89,38 @@ class CANConfig:
     mode: str
     
     def to_commands(self) -> list:
+        """Generate CAN commands with CFML: prefix"""
         return [
-            f"CFCB:{self.baud_rate}",
-            f"CFCM:{self.mode}"
+            f"CFML:CFCB:{self.baud_rate}",
+            f"CFML:CFCM:{self.mode}"
         ]
-
 
 @dataclass
 class CANWhitelist:
-    """CAN Whitelist Management"""
-    ids: List[int]  # List of CAN IDs (0x000 - 0x7FF for standard, 0x00000000 - 0x1FFFFFFF for extended)
+    """CAN Whitelist Management - with CFML prefix"""
+    ids: List[int]
     
     def to_add_commands(self) -> List[str]:
-        """Generate ADD commands for each ID"""
-        return [f"CFCW:ADD:{id:#05X}" for id in self.ids]
+        """Generate ADD commands for each ID with CFML prefix"""
+        return [f"CFML:CFCW:ADD:{id:#05X}" for id in self.ids]
     
     def to_remove_commands(self) -> List[str]:
-        """Generate REMOVE commands for each ID"""
-        return [f"CFCW:REM:{id:#05X}" for id in self.ids]
+        """Generate REMOVE commands for each ID with CFML prefix"""
+        return [f"CFML:CFCW:REM:{id:#05X}" for id in self.ids]
     
     def to_set_command(self) -> str:
-        """Generate SET command with comma-separated IDs"""
+        """Generate SET command with comma-separated IDs and CFML prefix"""
         id_list = ",".join([f"{id:#05X}" for id in self.ids])
-        return f"CFCW:SET:{id_list}"
+        return f"CFML:CFCW:SET:{id_list}"
     
     @staticmethod
     def to_clear_command() -> str:
-        """Generate CLEAR command"""
-        return "CFCW:CLR"
-
+        """Generate CLEAR command with CFML prefix"""
+        return "CFML:CFCW:CLR"
 
 @dataclass
 class LoRaModemConfig:
-    """LoRa E32 Modem Configuration (6 bytes)"""
+    """LoRa E32 Modem Configuration (6 bytes) - with CFML prefix"""
     head: int
     addh: int
     addl: int
@@ -149,10 +140,9 @@ class LoRaModemConfig:
             sped=data[3], chan=data[4], option=data[5]
         )
 
-
 @dataclass
 class LoRaTDMAConfig:
-    """LoRa TDMA Handler Configuration (11 bytes)"""
+    """LoRa TDMA Handler Configuration (11 bytes) - with CFML prefix"""
     role: int
     node_id: int
     gateway_id: int
@@ -188,91 +178,83 @@ class LoRaTDMAConfig:
             slot_duration_ms=(data[7] << 24) | (data[8] << 16) | (data[9] << 8) | data[10]
         )
 
-
 class ConfigCommandBuilder:
     """Builds configuration commands according to firmware protocol"""
     
     @staticmethod
     def build_internet_type(internet_type: str) -> str:
+        """Build internet type command with CF prefix"""
         return f"CFIN:{internet_type}"
     
     @staticmethod
     def build_wifi_config(wifi: WiFiConfig) -> str:
+        """Build SINGLE WiFi command (CFWF:SSID:PASSWORD:AUTH)"""
         return wifi.to_command()
     
     @staticmethod
     def build_lte_config(lte: LTEConfig) -> str:
+        """Build SINGLE LTE command (CFLT:...)"""
         return lte.to_command()
     
     @staticmethod
     def build_mqtt_config(mqtt: MQTTConfig) -> str:
+        """Build SINGLE MQTT command (CFMQ:...)"""
         return mqtt.to_command()
     
     @staticmethod
     def build_server_type(server_type: str) -> str:
-        return f"SV:{server_type}"
+        """Build server type command with CF prefix"""
+        return f"CFSV:{server_type}"
     
     @staticmethod
     def build_can_config(can: CANConfig) -> list:
+        """Build CAN commands with CFML: prefix"""
         return can.to_commands()
     
-    # NEW: CAN Whitelist commands
+    # CAN Whitelist commands (with CFML prefix)
     @staticmethod
     def build_can_whitelist_add(can_id: int) -> str:
-        """Add single CAN ID to whitelist"""
-        return f"CFCW:ADD:{can_id:#05X}"
+        """Add single CAN ID to whitelist with CFML prefix"""
+        return f"CFML:CFCW:ADD:{can_id:#05X}"
     
     @staticmethod
     def build_can_whitelist_remove(can_id: int) -> str:
-        """Remove single CAN ID from whitelist"""
-        return f"CFCW:REM:{can_id:#05X}"
+        """Remove single CAN ID from whitelist with CFML prefix"""
+        return f"CFML:CFCW:REM:{can_id:#05X}"
     
     @staticmethod
     def build_can_whitelist_clear() -> str:
-        """Clear entire CAN whitelist"""
-        return "CFCW:CLR"
+        """Clear entire CAN whitelist with CFML prefix"""
+        return "CFML:CFCW:CLR"
     
     @staticmethod
     def build_can_whitelist_set(can_ids: List[int]) -> str:
-        """Set entire CAN whitelist (replaces existing)"""
+        """Set entire CAN whitelist with CFML prefix"""
         id_list = ",".join([f"{can_id:#05X}" for can_id in can_ids])
-        return f"CFCW:SET:{id_list}"
+        return f"CFML:CFCW:SET:{id_list}"
     
     @staticmethod
     def build_lora_modem_command(config: LoRaModemConfig) -> bytes:
-        prefix = b"CFLR:MODEM:"
+        """Build LoRa modem command with CFML prefix"""
+        prefix = b"CFML:CFLR:MODEM:"
         return prefix + config.to_bytes()
     
     @staticmethod
     def build_lora_tdma_command(config: LoRaTDMAConfig) -> bytes:
-        prefix = b"CFLR:HDLCF:"
+        """Build LoRa TDMA command with CFML prefix"""
+        prefix = b"CFML:CFLR:HDLCF:"
         return prefix + config.to_bytes()
     
     @staticmethod
     def build_lora_crypto_command(key: bytes) -> bytes:
+        """Build LoRa crypto command with CFML prefix"""
         if len(key) == 0 or len(key) > 32:
             raise ValueError("Crypto key must be 1-32 bytes")
-        prefix = b"CFLR:CRYPT:"
+        prefix = b"CFML:CFLR:CRYPT:"
         return prefix + bytes([len(key)]) + key
     
-    @staticmethod
-    def build_firmware_update_wan(url: Optional[str] = None, force: bool = False) -> str:
-        if url is None:
-            return "FW"
-        elif force:
-            return f"FW:{url}:FORCE"
-        else:
-            return f"FW:{url}"
-    
-    @staticmethod
-    def build_firmware_update_lan(url: Optional[str] = None, force: bool = False) -> str:
-        if url is None:
-            return "CFFW"
-        elif force:
-            return f"CFFW:{url}:FORCE"
-        else:
-            return f"CFFW:{url}"
-
+    # REMOVED: build_firmware_update_wan() and build_firmware_update_lan()
+    # These are debug-only OTA commands, not for production use
 
 class ConfigResponseParser:
     """Parses configuration responses from gateway"""
@@ -287,21 +269,17 @@ class ConfigResponseParser:
         }
         
         current_section = None
-        
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-            
             if line.startswith('[') and line.endswith(']'):
                 current_section = line[1:-1]
                 continue
-            
             if '=' in line and current_section:
                 key, value = line.split('=', 1)
                 key = key.strip()
                 value = value.strip()
-                
                 if current_section in config_data:
                     config_data[current_section][key] = value
         
@@ -324,7 +302,6 @@ class ConfigResponseParser:
                 except ValueError:
                     pass
         return ids
-
 
 class ProtocolValidator:
     """Validates configuration values"""
@@ -361,27 +338,24 @@ class ProtocolValidator:
             return False, f"Invalid internet type. Valid: {valid_types}"
         return True, ""
 
-
 # Command format documentation
 COMMAND_FORMAT_DOCS = {
     'CFIN': 'Internet Type: CFIN:WIFI|LTE|ETHERNET|NBIOT',
-    'WF': 'WiFi Config: WF:SSID:PASSWORD:AUTH_MODE or WF:SSID:PASSWORD:USERNAME:AUTH_MODE',
-    'LT': 'LTE Config: LT:COMM_TYPE:APN:USER:PASS:AUTO_RECONNECT:TIMEOUT:MAX_RETRY',
-    'MQ': 'MQTT Config: MQ:BROKER|TOKEN|SUB_TOPIC|PUB_TOPIC|ATTR_TOPIC',
-    'SV': 'Server Type: SV:MQTT|HTTP|COAP',
-    'FW': 'WAN Firmware: FW | FW:url | FW:url:FORCE',
-    'CFCB': 'CAN Baud: CFCB:baudrate (125000/250000/500000/800000/1000000)',
-    'CFCM': 'CAN Mode: CFCM:NORMAL|LOOPBACK|SILENT',
-    'CFCW:ADD': 'CAN Whitelist Add: CFCW:ADD:0x123',
-    'CFCW:REM': 'CAN Whitelist Remove: CFCW:REM:0x123',
-    'CFCW:CLR': 'CAN Whitelist Clear: CFCW:CLR',
-    'CFCW:SET': 'CAN Whitelist Set: CFCW:SET:0x123,0x456,0x789',
-    'CFFW': 'LAN Firmware: CFFW | CFFW:url | CFFW:url:FORCE',
-    'CFLR:MODEM': 'LoRa Modem: CFLR:MODEM:<6 bytes binary>',
-    'CFLR:HDLCF': 'LoRa TDMA: CFLR:HDLCF:<11 bytes binary>',
-    'CFLR:CRYPT': 'LoRa Crypto: CFLR:CRYPT:<key_len><key_bytes>',
+    'CFWF': 'WiFi Config: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE',
+    'CFLT': 'LTE Config: CFLT:COMM_TYPE:APN:USER:PASS:AUTO_RECONNECT:TIMEOUT:MAX_RETRY',
+    'CFMQ': 'MQTT Config: CFMQ:BROKER|TOKEN|SUB_TOPIC|PUB_TOPIC|ATTR_TOPIC',
+    'CFSV': 'Server Type: CFSV:MQTT|HTTP|COAP',
+    'CFML:CFCB': 'CAN Baud: CFML:CFCB:baudrate (125000/250000/500000/800000/1000000)',
+    'CFML:CFCM': 'CAN Mode: CFML:CFCM:NORMAL|LOOPBACK|SILENT',
+    'CFML:CFCW:ADD': 'CAN Whitelist Add: CFML:CFCW:ADD:0x123',
+    'CFML:CFCW:REM': 'CAN Whitelist Remove: CFML:CFCW:REM:0x123',
+    'CFML:CFCW:CLR': 'CAN Whitelist Clear: CFML:CFCW:CLR',
+    'CFML:CFCW:SET': 'CAN Whitelist Set: CFML:CFCW:SET:0x123,0x456,0x789',
+    'CFML:CFLR:MODEM': 'LoRa Modem: CFML:CFLR:MODEM:<6 bytes binary>',
+    'CFML:CFLR:HDLCF': 'LoRa TDMA: CFML:CFLR:HDLCF:<11 bytes binary>',
+    'CFML:CFLR:CRYPT': 'LoRa Crypto: CFML:CFLR:CRYPT:<keylen><key bytes>',
+    # REMOVED: CFFW and FW commands (debug OTA only)
 }
-
 
 def get_command_help(command: str) -> str:
     """Get help text for a specific command"""

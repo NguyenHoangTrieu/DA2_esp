@@ -18,7 +18,7 @@ a = Analysis(
         'serial',
         'serial.tools',
         'serial.tools.list_ports',
-        'config_protocol',  # ← QUAN TRỌNG: Module protocol
+        'config_protocol',
         'tkinter',
         'tkinter.ttk',
         'tkinter.scrolledtext',
@@ -64,12 +64,12 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # ← SỬA: True để debug, False cho release
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Thêm icon.ico nếu có
-    version_file=None,  # Thêm version info nếu cần
+    icon=None,
+    version_file=None,
 )

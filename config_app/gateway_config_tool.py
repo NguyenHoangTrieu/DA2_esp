@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ESP32 IoT Gateway Configuration Tool v3.0
-- FIXED: Commands match firmware protocol exactly
-- NEW: CAN Whitelist management UI
-- NEW: Full WiFi/MQTT/LTE configuration with proper formats
-- Incremental config updates (only changed fields)
+ESP32 IoT Gateway Configuration Tool v1.0
 """
 
 import tkinter as tk
@@ -45,6 +41,10 @@ def get_application_path():
 
 
 class GatewayConfigTool:
+    READ_ONLY_FIELDS = {
+        'GATEWAY_INFO': '*',  # All fields read-only
+        'LAN_CONFIG': ['can_whitelist_count', 'can_whitelist', 'lora_e32_baud', 'lora_e32_header'],  # Specific read-only fields
+    }
     def __init__(self, root):
         self.root = root
         self.root.title("ESP32 Gateway Config Tool v3.0")
@@ -54,6 +54,7 @@ class GatewayConfigTool:
         self.config_data = {}
         self.original_config = {}
         self.reading_config = False
+        self.config_buffer = []
         self.config_modified = False
         
         # CAN whitelist tracking
@@ -390,7 +391,8 @@ class GatewayConfigTool:
                 rtscts=False,
                 dsrdtr=False
             )
-            
+            self.serial_port.dtr = False
+            self.serial_port.rts = False
             self.serial_port.reset_input_buffer()
             self.serial_port.reset_output_buffer()
             threading.Event().wait(0.1)
@@ -551,7 +553,7 @@ class GatewayConfigTool:
         self.edit_selected_item()
 
     def edit_selected_item(self):
-        """Edit selected item"""
+        """Edit selected item - with READ-ONLY protection"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showwarning("Warning", "Please select an item to edit")
@@ -566,9 +568,14 @@ class GatewayConfigTool:
         current_value = self.tree.item(item, 'values')[0]
         section = self.tree.item(parent, 'text').strip('[]')
         
-        if section == 'GATEWAY_INFO':
-            messagebox.showinfo("Info", "Gateway info is read-only")
-            return
+        # ===== CHECK READ-ONLY =====
+        if section in self.READ_ONLY_FIELDS:
+            if self.READ_ONLY_FIELDS[section] == '*':  # All fields read-only
+                messagebox.showinfo("Info", f"{section} is read-only")
+                return
+            elif key in self.READ_ONLY_FIELDS[section]:  # Specific field read-only
+                messagebox.showinfo("Info", f"'{key}' is read-only. Use CAN Whitelist tab to manage whitelist.")
+                return
         
         # Create edit dialog
         dialog = tk.Toplevel(self.root)
@@ -584,7 +591,6 @@ class GatewayConfigTool:
         
         ttk.Label(dialog, text=f"Key: {key}", font=('TkDefaultFont', 10, 'bold')).pack(pady=15)
         ttk.Label(dialog, text="Value:").pack()
-        
         entry = ttk.Entry(dialog, width=60, font=('Courier New', 10))
         entry.insert(0, current_value)
         entry.pack(pady=10, padx=20)
@@ -680,7 +686,16 @@ class GatewayConfigTool:
                 messagebox.showinfo("Info", "No changes to write")
                 return
             
-            summary = "\n".join(commands[:10])  # Show first 10
+            # Build summary (handle both str and bytes)
+            summary_lines = []
+            for cmd in commands[:10]:
+                if isinstance(cmd, bytes):
+                    # For bytes, show hex representation
+                    summary_lines.append(f"[BINARY] {cmd[:20].hex()}{'...' if len(cmd) > 20 else ''}")
+                else:
+                    summary_lines.append(str(cmd)[:60] + ('...' if len(str(cmd)) > 60 else ''))
+            
+            summary = "\n".join(summary_lines)
             if len(commands) > 10:
                 summary += f"\n... and {len(commands)-10} more"
             
@@ -692,43 +707,144 @@ class GatewayConfigTool:
             self.log(f"Sending {len(commands)} commands...", 'INFO')
             
             for i, cmd in enumerate(commands, 1):
-                if isinstance(cmd, bytes):
-                    self.serial_port.write(cmd + b"\r\n")
-                else:
-                    self.serial_port.write(f"{cmd}\r\n".encode('utf-8'))
-                self.serial_port.flush()
-                
-                display_cmd = str(cmd)[:60] + '...' if len(str(cmd)) > 60 else str(cmd)
-                self.log(f" [{i}/{len(commands)}] {display_cmd}", 'INFO')
-                threading.Event().wait(0.15)
+                try:
+                    if isinstance(cmd, bytes):
+                        # Binary command (LoRa configs)
+                        self.serial_port.write(cmd + b"\r\n")
+                        self.serial_port.flush()
+                        display_cmd = f"[BINARY {len(cmd)} bytes] {cmd[:30].hex()}{'...' if len(cmd) > 30 else ''}"
+                        self.log(f" [{i}/{len(commands)}] {display_cmd}", 'INFO')
+                    else:
+                        # Text command (WiFi, MQTT, CAN, etc.)
+                        self.serial_port.write(f"{cmd}\r\n".encode('utf-8'))
+                        self.serial_port.flush()
+                        display_cmd = str(cmd)[:60] + '...' if len(str(cmd)) > 60 else str(cmd)
+                        self.log(f" [{i}/{len(commands)}] {display_cmd}", 'SUCCESS')
+                    
+                    threading.Event().wait(0.15)  # Delay between commands
+                    
+                except Exception as e:
+                    self.log(f" [{i}/{len(commands)}] FAILED: {e}", 'ERROR')
+                    raise
             
             self.log("="*60, 'INFO')
             self.log("Configuration written successfully", 'SUCCESS')
             
+            # Update original config after successful write
             self.original_config = deepcopy(self.config_data)
             self.config_modified = False
             self.update_changes_status()
             
-            messagebox.showinfo("Success", f"{len(commands)} command(s) sent")
+            messagebox.showinfo("Success", f"{len(commands)} command(s) sent successfully")
             
         except Exception as e:
             self.log(f"Write failed: {e}", 'ERROR')
             self.log(traceback.format_exc(), 'ERROR')
             messagebox.showerror("Error", str(e))
 
+
+    @staticmethod
+    def parse_int_value(value: any, default: int = 0) -> int:
+        """
+        Parse integer value from various formats:
+        - int: return as-is
+        - hex string (0xXX): parse as hex
+        - decimal string: parse as decimal
+        """
+        if value is None:
+            return default
+        
+        if isinstance(value, int):
+            return value
+        
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return default
+            
+            # Hex format: 0x123 or 0X123
+            if value.lower().startswith('0x'):
+                try:
+                    return int(value, 16)
+                except ValueError:
+                    return default
+            
+            # Decimal format
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        
+        return default
+    
     def generate_config_commands(self) -> List:
-        """Generate protocol commands from config data"""
+        """Generate ONLY commands for CHANGED fields (incremental update)"""
         commands = []
         
         wan_cfg = self.config_data.get('WAN_CONFIG', {})
         lan_cfg = self.config_data.get('LAN_CONFIG', {})
+        orig_wan = self.original_config.get('WAN_CONFIG', {})
+        orig_lan = self.original_config.get('LAN_CONFIG', {})
         
-        # Internet type
-        if 'internet_type' in wan_cfg:
+        # ========================================
+        # Detect CHANGED field groups
+        # ========================================
+        
+        # WiFi changed?
+        wifi_changed = any(
+            wan_cfg.get(key) != orig_wan.get(key)
+            for key in ['wifi_ssid', 'wifi_password', 'wifi_username', 'wifi_auth_mode']
+        )
+        
+        # MQTT changed?
+        mqtt_changed = any(
+            wan_cfg.get(key) != orig_wan.get(key)
+            for key in ['mqtt_broker', 'mqtt_device_token', 'mqtt_sub_topic',
+                        'mqtt_pub_topic', 'mqtt_attribute_topic']
+        )
+        
+        # LTE changed?
+        lte_changed = any(
+            wan_cfg.get(key) != orig_wan.get(key)
+            for key in ['lte_apn', 'lte_username', 'lte_password', 'lte_comm_type',
+                        'lte_auto_reconnect', 'lte_reconnect_timeout_ms', 'lte_max_reconnect_attempts']
+        )
+        
+        # CAN changed?
+        can_changed = any(
+            lan_cfg.get(key) != orig_lan.get(key)
+            for key in ['can_baud_rate', 'can_mode']
+        )
+        
+        # LoRa E32 Modem changed?
+        lora_e32_changed = any(
+            lan_cfg.get(key) != orig_lan.get(key)
+            for key in ['lora_e32_header', 'lora_e32_addh', 'lora_e32_addl', 
+                        'lora_e32_sped', 'lora_e32_chan', 'lora_e32_option']
+        )
+        
+        # LoRa TDMA Handler changed?
+        lora_handler_changed = any(
+            lan_cfg.get(key) != orig_lan.get(key)
+            for key in ['lora_role', 'lora_node_id', 'lora_gateway_id', 
+                        'lora_num_slots', 'lora_my_slot', 'lora_slot_duration_ms']
+        )
+        
+        # LoRa Crypto changed?
+        lora_crypto_changed = (
+            lan_cfg.get('lora_crypto_key_len') != orig_lan.get('lora_crypto_key_len')
+        )
+        
+        # ========================================
+        # Generate commands ONLY for changed groups
+        # ========================================
+        
+        # 1. Internet type (if changed)
+        if wan_cfg.get('internet_type') != orig_wan.get('internet_type'):
             commands.append(ConfigCommandBuilder.build_internet_type(wan_cfg['internet_type']))
         
-        # WiFi (full format)
-        if all(k in wan_cfg for k in ['wifi_ssid', 'wifi_password']):
+        # 2. WiFi - ONLY if WiFi fields changed
+        if wifi_changed and wan_cfg.get('wifi_ssid'):
             wifi = WiFiConfig(
                 ssid=wan_cfg['wifi_ssid'],
                 password=wan_cfg.get('wifi_password', ''),
@@ -737,19 +853,8 @@ class GatewayConfigTool:
             )
             commands.append(ConfigCommandBuilder.build_wifi_config(wifi))
         
-        # MQTT (full format)
-        if 'mqtt_broker' in wan_cfg:
-            mqtt = MQTTConfig(
-                broker_uri=wan_cfg.get('mqtt_broker', ''),
-                device_token=wan_cfg.get('mqtt_device_token', ''),
-                subscribe_topic=wan_cfg.get('mqtt_sub_topic', ''),
-                publish_topic=wan_cfg.get('mqtt_pub_topic', ''),
-                attribute_topic=wan_cfg.get('mqtt_attribute_topic', '')
-            )
-            commands.append(ConfigCommandBuilder.build_mqtt_config(mqtt))
-        
-        # LTE (if configured)
-        if 'lte_apn' in wan_cfg:
+        # 3. LTE - ONLY if LTE fields changed
+        if lte_changed and wan_cfg.get('lte_apn'):
             lte = LTEConfig(
                 comm_type=wan_cfg.get('lte_comm_type', 'UART'),
                 apn=wan_cfg['lte_apn'],
@@ -761,17 +866,89 @@ class GatewayConfigTool:
             )
             commands.append(ConfigCommandBuilder.build_lte_config(lte))
         
-        # Server type
-        if 'server_type' in wan_cfg:
+        # 4. MQTT - ONLY if MQTT fields changed
+        if mqtt_changed and wan_cfg.get('mqtt_broker'):
+            mqtt = MQTTConfig(
+                broker_uri=wan_cfg['mqtt_broker'],
+                device_token=wan_cfg.get('mqtt_device_token', ''),
+                subscribe_topic=wan_cfg.get('mqtt_sub_topic', ''),
+                publish_topic=wan_cfg.get('mqtt_pub_topic', ''),
+                attribute_topic=wan_cfg.get('mqtt_attribute_topic', '')
+            )
+            commands.append(ConfigCommandBuilder.build_mqtt_config(mqtt))
+        
+        # 5. Server type (if changed)
+        if wan_cfg.get('server_type') != orig_wan.get('server_type'):
             commands.append(ConfigCommandBuilder.build_server_type(wan_cfg['server_type']))
         
-        # CAN config
-        if all(k in lan_cfg for k in ['can_baud_rate', 'can_mode']):
+        # 6. CAN - ONLY if CAN fields changed
+        if can_changed:
             can = CANConfig(
-                baud_rate=int(lan_cfg['can_baud_rate']),
-                mode=lan_cfg['can_mode']
+                baud_rate=int(lan_cfg.get('can_baud_rate', 500000)),
+                mode=lan_cfg.get('can_mode', 'NORMAL')
             )
             commands.extend(ConfigCommandBuilder.build_can_config(can))
+        
+        # 7. LoRa E32 Modem - ONLY if changed (FIXED PARSING)
+        if lora_e32_changed:
+            try:
+                modem_cfg = LoRaModemConfig(
+                    head=self.parse_int_value(lan_cfg.get('lora_e32_header', 0x00)),
+                    addh=self.parse_int_value(lan_cfg.get('lora_e32_addh', 0x00)),
+                    addl=self.parse_int_value(lan_cfg.get('lora_e32_addl', 0x00)),
+                    sped=self.parse_int_value(lan_cfg.get('lora_e32_sped', 0x00)),
+                    chan=self.parse_int_value(lan_cfg.get('lora_e32_chan', 0x00)),
+                    option=self.parse_int_value(lan_cfg.get('lora_e32_option', 0x00))
+                )
+                
+                # Validate byte range (0-255)
+                for field_name, field_value in [
+                    ('head', modem_cfg.head), ('addh', modem_cfg.addh), ('addl', modem_cfg.addl),
+                    ('sped', modem_cfg.sped), ('chan', modem_cfg.chan), ('option', modem_cfg.option)
+                ]:
+                    if not (0 <= field_value <= 255):
+                        raise ValueError(f"LoRa E32 {field_name}={field_value} out of range (0-255)")
+                
+                commands.append(ConfigCommandBuilder.build_lora_modem_command(modem_cfg))
+                self.log(f"LoRa E32: head={modem_cfg.head:02X} addh={modem_cfg.addh:02X} addl={modem_cfg.addl:02X} "
+                        f"sped={modem_cfg.sped:02X} chan={modem_cfg.chan:02X} option={modem_cfg.option:02X}", 'INFO')
+            except Exception as e:
+                self.log(f"Failed to build LoRa E32 command: {e}", 'ERROR')
+        
+        # 8. LoRa TDMA Handler - ONLY if changed (FIXED PARSING)
+        if lora_handler_changed:
+            try:
+                # Parse role (string to int)
+                role_str = lan_cfg.get('lora_role', 'GATEWAY')
+                role = 0 if role_str == 'GATEWAY' else 1
+                
+                handler_cfg = LoRaTDMAConfig(
+                    role=role,
+                    node_id=self.parse_int_value(lan_cfg.get('lora_node_id', 0x0001)),
+                    gateway_id=self.parse_int_value(lan_cfg.get('lora_gateway_id', 0x0001)),
+                    num_slots=self.parse_int_value(lan_cfg.get('lora_num_slots', 8)),
+                    my_slot=self.parse_int_value(lan_cfg.get('lora_my_slot', 0)),
+                    slot_duration_ms=self.parse_int_value(lan_cfg.get('lora_slot_duration_ms', 200))
+                )
+                
+                commands.append(ConfigCommandBuilder.build_lora_tdma_command(handler_cfg))
+                self.log(f"LoRa TDMA: role={role} node_id=0x{handler_cfg.node_id:04X} "
+                        f"gateway_id=0x{handler_cfg.gateway_id:04X} slots={handler_cfg.num_slots} "
+                        f"my_slot={handler_cfg.my_slot} duration={handler_cfg.slot_duration_ms}ms", 'INFO')
+            except Exception as e:
+                self.log(f"Failed to build LoRa TDMA command: {e}", 'ERROR')
+        
+        # 9. LoRa Crypto - ONLY if changed
+        if lora_crypto_changed:
+            try:
+                key_len = self.parse_int_value(lan_cfg.get('lora_crypto_key_len', 0))
+                if key_len > 0:
+                    # Generate dummy key (in real app, should get from secure storage)
+                    key = bytes([0xFF] * key_len)
+                    commands.append(ConfigCommandBuilder.build_lora_crypto_command(key))
+                    self.log(f"LoRa Crypto: key_len={key_len}", 'INFO')
+            except Exception as e:
+                self.log(f"Failed to build LoRa crypto command: {e}", 'ERROR')
         
         return commands
 
