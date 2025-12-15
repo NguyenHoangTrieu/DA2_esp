@@ -62,7 +62,6 @@ static config_cache_t g_config_cache = {0};
 // ===== Pending Downlink =====
 static downlink_item_t g_pending_downlink;
 static bool g_pending_downlink_valid = false; // WAN pending data for LAN
-static bool g_config_handshake_sent = false; // GPIO already signaled for config
 // ===== Config Request Queue =====
 #define CONFIG_REQUEST_QUEUE_SIZE 2
 static QueueHandle_t g_config_request_queue = NULL;
@@ -121,7 +120,7 @@ static esp_err_t setup_data_ready_gpio(void) {
   // Initialize to LOW
   gpio_set_level(GPIO_DATA_READY_PIN, 0);
 
-  ESP_LOGD(TAG, "GPIO %d configured for data-ready signaling",
+  ESP_LOGI(TAG, "GPIO %d configured for data-ready signaling",
            GPIO_DATA_READY_PIN);
   return ESP_OK;
 }
@@ -130,13 +129,13 @@ static esp_err_t setup_data_ready_gpio(void) {
 static void signal_data_ready(void) {
   vTaskDelay(pdMS_TO_TICKS(10)); // Short delay to ensure readiness
   gpio_set_level(GPIO_DATA_READY_PIN, 1);
-  ESP_LOGD(TAG, "Data-ready signal HIGH");
+  ESP_LOGI(TAG, "Data-ready signal HIGH");
 }
 
 // Clear data-ready signal
 static void clear_data_ready(void) {
   gpio_set_level(GPIO_DATA_READY_PIN, 0);
-  ESP_LOGD(TAG, "Data-ready signal LOW");
+  ESP_LOGI(TAG, "Data-ready signal LOW");
 }
 
 // ===== Config Request Handling =====
@@ -147,7 +146,7 @@ static void handle_config_request_queue(void) {
       return;
     }
 
-    ESP_LOGD(TAG, "New config request from UART handler");
+    ESP_LOGI(TAG, "New config request from UART handler");
 
     // Cache request POINTER for later processing on DQ
     g_active_config_request_ptr = request_ptr;
@@ -204,7 +203,7 @@ esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
 
   // Now request.result is updated via pointer!
   esp_err_t result = request.result;
-  ESP_LOGD(TAG, "Config request completed with result: %s",
+  ESP_LOGI(TAG, "Config request completed with result: %s",
            esp_err_to_name(result));
 
   vSemaphoreDelete(completion_sem);
@@ -263,7 +262,7 @@ esp_err_t mcu_lan_handler_start(void) {
     // Continue without DS1307
   }
 
-  ESP_LOGD(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
+  ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
 
   // Initialize LAN communication (SPI Slave)
   lan_comm_config_t lan_config = {.gpio_sck = 12,
@@ -308,7 +307,7 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_FAIL;
   }
 
-  ESP_LOGD(TAG, "MCU LAN Handler started successfully");
+  ESP_LOGI(TAG, "MCU LAN Handler started successfully");
   return ESP_OK;
 }
 
@@ -316,7 +315,7 @@ esp_err_t mcu_lan_handler_stop(void) {
   if (!g_handler_running)
     return ESP_OK;
 
-  ESP_LOGD(TAG, "Stopping MCU LAN Handler");
+  ESP_LOGI(TAG, "Stopping MCU LAN Handler");
   ds1307_deinit();
   g_handler_running = false;
 
@@ -366,7 +365,7 @@ static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
     if (status == LAN_COMM_OK && packet.payload_length >= 2) {
       if (packet.payload[0] == FRAME_TYPE_ACK &&
           packet.payload[1] == ACK_TYPE_HANDSHAKE) {
-        ESP_LOGD(TAG, "FOTA handshake ACK received from LAN MCU");
+        ESP_LOGI(TAG, "FOTA handshake ACK received from LAN MCU");
         return ESP_OK;
       }
     }
@@ -381,7 +380,7 @@ static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
 void mcu_lan_handler_set_internet_status(internet_status_t status) {
   if (g_internet_status != status) {
     g_internet_status = status;
-    ESP_LOGD(TAG, "Internet status: %s",
+    ESP_LOGI(TAG, "Internet status: %s",
              status == INTERNET_STATUS_ONLINE ? "ONLINE" : "OFFLINE");
   }
 }
@@ -408,7 +407,7 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
     return false;
   }
 
-  ESP_LOGD(TAG, "Downlink queued for handler %d (%u bytes)", target_id, len);
+  ESP_LOGI(TAG, "Downlink queued for handler %d (%u bytes)", target_id, len);
   return true;
 }
 
@@ -421,6 +420,7 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
       g_config_cache.config_length = length;
       g_config_cache.has_config = true;
       g_config_cache.is_fota = is_fota;
+      signal_data_ready();
     }
     xSemaphoreGive(g_config_mutex);
   }
@@ -445,16 +445,14 @@ bool server_handler_enqueue_uplink(uint8_t *data, uint16_t len) {
 // ===== Main Task (Diagram 2 Implementation) =====
 
 static void mcu_lan_handler_task(void *pvParameters) {
-  ESP_LOGD(TAG, "MCU LAN Handler task started");
-
+  ESP_LOGI(TAG, "MCU LAN Handler task started");
   // ========================================
   // PHASE 1: SPI Driver Init & Handshake
   // ========================================
-  ESP_LOGD(TAG, "Phase 1: Waiting for handshake from LAN MCU");
-
+  ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
   while (g_handler_running) {
     if (perform_handshake_slave() == ESP_OK) {
-      ESP_LOGD(TAG, "Handshake complete, entering Data Reception Loop");
+      ESP_LOGI(TAG, "Handshake complete, entering Data Reception Loop");
       break;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -463,7 +461,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
   // ========================================
   // PHASE 2: Data Reception Loop
   // ========================================
-  ESP_LOGD(TAG, "Phase 2: Data Reception Loop");
+  ESP_LOGI(TAG, "Phase 2: Data Reception Loop");
   downlink_item_t downlink_item;
 
   while (g_handler_running) {
@@ -479,13 +477,13 @@ static void mcu_lan_handler_task(void *pvParameters) {
       uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
       // ===== Branch: RTC Request from LAN =====
       if (prefix[0] == 'R' && prefix[1] == 'T') {
-        ESP_LOGD(TAG, "RTC request received");
+        ESP_LOGI(TAG, "RTC request received");
         send_rtc_response();
       }
       // ===== Branch: Generic data/config request from LAN (after GPIO
       // handshake) =====
       else if (prefix[0] == 'D' && prefix[1] == 'Q') {
-        ESP_LOGD(TAG, "DQ request received from LAN MCU");
+        ESP_LOGI(TAG, "DQ request received from LAN MCU");
         bool served = false;
 
         // 1) PC-side config scan: send CFCQ only after DQ
@@ -503,13 +501,14 @@ static void mcu_lan_handler_task(void *pvParameters) {
                                 sizeof(config_request));
           g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
           served = true;
-          ESP_LOGD(TAG, "CFCQ command loaded to TX after DQ");
+          ESP_LOGI(TAG, "CFCQ command loaded to TX after DQ");
         }
 
         // 2) Config/FOTA downlink to LAN (from WAN config cache)
         if (!served &&
             xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
           if (g_config_cache.has_config) {
+            ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
             handle_config_request(); // only loads TX for CF payload
             served = true;
           }
@@ -533,7 +532,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
       }
       // ===== Branch: Data from MCU LAN =====
       else if (prefix[0] == 'D' && prefix[1] == 'T') {
-        ESP_LOGD(TAG, "Data packet received from LAN");
+        ESP_LOGI(TAG, "Data packet received from LAN");
         handle_data_from_lan(packet.payload, packet.payload_length);
       }
       // ===== Branch: LAN config response for PC (CQ) =====
@@ -556,7 +555,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
           // Update result in ORIGINAL struct (via pointer)
           g_active_config_request_ptr->result = ESP_OK;
 
-          ESP_LOGD(TAG, "LAN config response processed (%u bytes)", config_len);
+          ESP_LOGI(TAG, "LAN config response processed (%u bytes)", config_len);
 
           // Signal completion semaphore BEFORE resetting
           if (g_active_config_request_ptr->completion_sem) {
@@ -582,19 +581,18 @@ static void mcu_lan_handler_task(void *pvParameters) {
       }
       // ===== Branch: Config Request =====
       else if (prefix[0] == 'C' && prefix[1] == 'F') {
-        ESP_LOGD(TAG, "Config request received");
+        ESP_LOGI(TAG, "Config request received");
         handle_config_request();
       }
     }
 
     // ===== Branch: From Server Handler Task - Downlink to LAN =====
     if (xQueueReceive(g_downlink_queue, &downlink_item, 0) == pdTRUE) {
-      ESP_LOGD(TAG, "Queueing downlink for handler %d (%u bytes)",
+      ESP_LOGI(TAG, "Queueing downlink for handler %d (%u bytes)",
                downlink_item.target_id, downlink_item.length);
       // Cache downlink, do not load SPI TX here
       g_pending_downlink = downlink_item;
       g_pending_downlink_valid = true;
-      // Only signal GPIO so LAN MCU can send DQ command later
       signal_data_ready(); // WAN only notifies data-ready here
     }
 
@@ -603,18 +601,13 @@ static void mcu_lan_handler_task(void *pvParameters) {
       if (g_config_cache.has_config) {
         // Optional: keep FOTA pre-handshake flow
         if (g_config_cache.is_fota) {
-          ESP_LOGD(TAG, "FOTA config detected, initiating firmware update");
+          ESP_LOGI(TAG, "FOTA config detected, initiating firmware update");
           if (wait_for_fota_handshake_ack(50000) == ESP_OK) {
-            ESP_LOGD(TAG, "FOTA pre-handshake completed, ready for FW update");
+            ESP_LOGI(TAG, "FOTA pre-handshake completed, ready for FW update");
             fota_handler_task_start();
           } else {
             ESP_LOGW(TAG, "FOTA pre-handshake failed or timed out");
           }
-        }
-        // Only raise GPIO once to notify LAN that config/FOTA is pending
-        if (!g_config_handshake_sent) {
-          signal_data_ready(); // WAN only signals GPIO here
-          g_config_handshake_sent = true;
         }
       }
       xSemaphoreGive(g_config_mutex);
@@ -625,7 +618,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 
-  ESP_LOGD(TAG, "MCU LAN Handler task exiting");
+  ESP_LOGI(TAG, "MCU LAN Handler task exiting");
   vTaskDelete(NULL);
 }
 
@@ -666,7 +659,7 @@ static void send_rtc_response(void) {
   // Load into TX buffer
   lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
 
-  ESP_LOGD(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
+  ESP_LOGI(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
            response.network_status);
 }
 
@@ -674,7 +667,7 @@ static void send_rtc_response(void) {
 static void send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
   uint8_t ack[3] = {FRAME_TYPE_ACK, ack_type, internet_flag};
   lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
-  ESP_LOGD(TAG, "ACK sent: type=0x%02X, inet=0x%02X", ack_type, internet_flag);
+  ESP_LOGI(TAG, "ACK sent: type=0x%02X, inet=0x%02X", ack_type, internet_flag);
 }
 
 // ===== Handle Data from LAN MCU =====
@@ -689,7 +682,7 @@ static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
   uint16_t data_length = (payload[5] << 8) | payload[6];
   const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
 
-  ESP_LOGD(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
+  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
 
   // Send ACK with internet status
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
@@ -704,26 +697,21 @@ static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
 
 // ===== Handle Config Request =====
 static void handle_config_request(void) {
-  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    if (g_config_cache.has_config) {
-      // Build config_data_t: [CF][length(2)][config_data]
-      uint8_t config_packet[260];
-      config_packet[0] = 'C';
-      config_packet[1] = 'F';
-      config_packet[2] = (g_config_cache.config_length >> 8) & 0xFF;
-      config_packet[3] = g_config_cache.config_length & 0xFF;
-      memcpy(&config_packet[4], g_config_cache.config_data,
-             g_config_cache.config_length);
+  if (g_config_cache.has_config) {
+    // Build config_data_t: [CF][length(2)][config_data]
+    uint8_t config_packet[260];
+    config_packet[0] = 'C';
+    config_packet[1] = 'F';
+    config_packet[2] = (g_config_cache.config_length >> 8) & 0xFF;
+    config_packet[3] = g_config_cache.config_length & 0xFF;
+    memcpy(&config_packet[4], g_config_cache.config_data,
+           g_config_cache.config_length);
 
-      // Only load TX, do not touch GPIO here
-      lan_comm_load_tx_data(g_lan_handle, config_packet,
-                            4 + g_config_cache.config_length);
-
-      // Mark config consumed; handshake state will be cleared in DQ handler
-      g_config_cache.has_config = false;
-      g_config_handshake_sent = false; // allow next handshake later
-    }
-    xSemaphoreGive(g_config_mutex);
+    // Only load TX, do not touch GPIO here
+    lan_comm_load_tx_data(g_lan_handle, config_packet,
+                          4 + g_config_cache.config_length);
+    // Mark config consumed; handshake state will be cleared in DQ handler
+    g_config_cache.has_config = false;
   }
 }
 
@@ -755,7 +743,7 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
     if (status == LAN_COMM_OK && ack_packet.payload[0] == FRAME_TYPE_ACK &&
         ack_packet.payload[1] == ACK_TYPE_RECEIVED_OK) {
-      ESP_LOGD(TAG, "Downlink ACK received");
+      ESP_LOGI(TAG, "Downlink ACK received");
       return;
     }
 
@@ -777,7 +765,7 @@ static void get_rtc_string(char *buffer) {
     // ONLINE: Use system time from SNTP
     time_t now = time(NULL);
     localtime_r(&now, &timeinfo);
-    ESP_LOGD(TAG, "Using SNTP time");
+    ESP_LOGI(TAG, "Using SNTP time");
   } else {
     // OFFLINE or not synced: Read from DS1307
     esp_err_t ret = ds1307_read_time(&timeinfo);
@@ -787,7 +775,7 @@ static void get_rtc_string(char *buffer) {
       time_t now = time(NULL);
       localtime_r(&now, &timeinfo);
     } else {
-      ESP_LOGD(TAG, "Using DS1307 RTC time");
+      ESP_LOGI(TAG, "Using DS1307 RTC time");
     }
   }
 
