@@ -9,6 +9,7 @@
  * - Handle config and FOTA distribution
  */
 #include "mcu_lan_handler.h"
+#include "DA2_esp.h"
 #include "config_handler.h"
 #include "ds1307_rtc.h"
 #include "esp_log.h"
@@ -20,6 +21,8 @@
 #include "freertos/task.h"
 #include "lan_comm.h"
 #include "mqtt_handler.h"
+#include "uart_handler.h"
+#include "usb_handler.h"
 #include <string.h>
 #include <time.h>
 
@@ -329,11 +332,6 @@ esp_err_t mcu_lan_handler_stop(void) {
     g_rtc_cache.mutex = NULL;
   }
 
-  if (g_task_handle != NULL) {
-    vTaskDelete(g_task_handle);
-    g_task_handle = NULL;
-  }
-
   if (g_downlink_queue != NULL) {
     vQueueDelete(g_downlink_queue);
     g_downlink_queue = NULL;
@@ -512,6 +510,20 @@ static void mcu_lan_handler_task(void *pvParameters) {
             handle_config_request(); // only loads TX for CF payload
             served = true;
           }
+          if (g_config_cache.is_fota) {
+            ESP_LOGI(TAG, "FOTA config detected, initiating firmware update");
+            if (wait_for_fota_handshake_ack(300000) == ESP_OK) {
+              ESP_LOGI(TAG,
+                       "FOTA pre-handshake completed, ready for FW update");
+              server_connect_stop(g_server_type);
+              vTaskDelay(pdMS_TO_TICKS(5000));
+              fota_handler_task_start();
+              vTaskDelay(pdMS_TO_TICKS(
+                  200000)); // Block this task until FOTA done and MCU reset
+            } else {
+              ESP_LOGW(TAG, "FOTA pre-handshake failed or timed out");
+            }
+          }
           xSemaphoreGive(g_config_mutex);
         }
 
@@ -596,22 +608,6 @@ static void mcu_lan_handler_task(void *pvParameters) {
       signal_data_ready(); // WAN only notifies data-ready here
     }
 
-    // ===== Branch: From Config Task =====
-    if (xSemaphoreTake(g_config_mutex, 0) == pdTRUE) {
-      if (g_config_cache.has_config) {
-        // Optional: keep FOTA pre-handshake flow
-        if (g_config_cache.is_fota) {
-          ESP_LOGI(TAG, "FOTA config detected, initiating firmware update");
-          if (wait_for_fota_handshake_ack(50000) == ESP_OK) {
-            ESP_LOGI(TAG, "FOTA pre-handshake completed, ready for FW update");
-            fota_handler_task_start();
-          } else {
-            ESP_LOGW(TAG, "FOTA pre-handshake failed or timed out");
-          }
-        }
-      }
-      xSemaphoreGive(g_config_mutex);
-    }
     // ===== Branch: From Config Request Queue =====
     handle_config_request_queue();
 
@@ -677,22 +673,22 @@ static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
     return;
   }
 
-  // Parse data_packet_t: [DT][handler_type(3)][length(2)][data]
-  uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
-  uint16_t data_length = (payload[5] << 8) | payload[6];
-  const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
-
-  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
-
   // Send ACK with internet status
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
     send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_INTERNET_OK);
-    // Forward to server handler
-    server_handler_enqueue_uplink((uint8_t *)data, data_length);
   } else {
     send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_NO_INTERNET);
     // LAN MCU will save to SD card
   }
+
+  // Parse data_packet_t: [DT][handler_type(3)][length(2)][data]
+  uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
+  uint16_t data_length = (payload[5] << 8) | payload[6];
+  const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
+  if (g_internet_status == INTERNET_STATUS_ONLINE) {
+    server_handler_enqueue_uplink((uint8_t *)data, data_length);
+  }
+  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
 }
 
 // ===== Handle Config Request =====

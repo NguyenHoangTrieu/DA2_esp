@@ -104,7 +104,7 @@ static void server_connect_start(config_server_type_t server_type){
 }
 
 // Helper functions to start/stop internet and server connections
-static void server_connect_stop(config_server_type_t server_type){
+void server_connect_stop(config_server_type_t server_type){
     switch(server_type){
         case CONFIG_SERVERTYPE_MQTT:
             mqtt_handler_task_stop();

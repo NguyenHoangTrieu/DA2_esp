@@ -19,7 +19,7 @@
 
 // Command buffer size
 #define CONFIG_CMD_MAX_LEN 256
-#define CONFIG_QUEUE_SIZE 10
+#define CONFIG_QUEUE_SIZE 20
 
 // Command type codes (2-character prefix)
 typedef enum {
