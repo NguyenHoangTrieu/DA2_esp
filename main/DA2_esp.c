@@ -143,9 +143,11 @@ static void internet_connect_stop(config_internet_type_t internet_type){
 static void internet_connect_start(config_internet_type_t internet_type){
     switch(internet_type){
         case CONFIG_INTERNET_LTE:
+            ESP_LOGI(TAG, "Starting PPP server for LTE");
             lte_connect_task_start();
             break;
         case CONFIG_INTERNET_WIFI:
+            ESP_LOGI(TAG, "Starting WiFi connection");
             wifi_connect_task_start();
             break;
         case CONFIG_INTERNET_ETHERNET:
