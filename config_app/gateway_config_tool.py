@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ESP32 IoT Gateway Configuration Tool v1.0
+ESP32 IoT Gateway Configuration Tool v3.1
 """
-
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import serial
@@ -31,7 +30,6 @@ except ImportError:
     print("Warning: config_protocol.py not found, using fallback mode")
     PROTOCOL_AVAILABLE = False
 
-
 def get_application_path():
     """Get the path where the application/script is located"""
     if getattr(sys, 'frozen', False):
@@ -39,27 +37,24 @@ def get_application_path():
     else:
         return Path(__file__).parent
 
-
 class GatewayConfigTool:
     READ_ONLY_FIELDS = {
         'GATEWAY_INFO': '*',  # All fields read-only
         'LAN_CONFIG': ['can_whitelist_count', 'can_whitelist', 'lora_e32_baud', 'lora_e32_header'],  # Specific read-only fields
     }
+
     def __init__(self, root):
         self.root = root
-        self.root.title("ESP32 Gateway Config Tool v3.0")
+        self.root.title("ESP32 Gateway Config Tool v3.1")
         self.root.geometry("1200x800")
-        
         self.serial_port = None
         self.config_data = {}
         self.original_config = {}
         self.reading_config = False
         self.config_buffer = []
         self.config_modified = False
-        
         # CAN whitelist tracking
         self.can_whitelist_ids = []
-        
         self.app_path = get_application_path()
         self.setup_ui()
         self.refresh_ports()
@@ -76,60 +71,73 @@ class GatewayConfigTool:
         # ===== Serial Connection Panel =====
         conn_frame = ttk.LabelFrame(main_frame, text="Serial Connection", padding="5")
         conn_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        
+
         ttk.Label(conn_frame, text="Port:").grid(row=0, column=0, padx=5)
         self.port_combo = ttk.Combobox(conn_frame, width=15, state='readonly')
         self.port_combo.grid(row=0, column=1, padx=5)
-        
+
         ttk.Label(conn_frame, text="Baud:").grid(row=0, column=2, padx=5)
         self.baud_combo = ttk.Combobox(conn_frame, width=10, state='readonly',
                                        values=['9600', '115200', '230400', '460800', '921600'])
         self.baud_combo.set('115200')
         self.baud_combo.grid(row=0, column=3, padx=5)
-        
+
         self.refresh_btn = ttk.Button(conn_frame, text="Refresh", command=self.refresh_ports)
         self.refresh_btn.grid(row=0, column=4, padx=5)
-        
+
         self.connect_btn = ttk.Button(conn_frame, text="Connect", command=self.toggle_connection)
         self.connect_btn.grid(row=0, column=5, padx=5)
-        
+
         self.test_btn = ttk.Button(conn_frame, text="Test", command=self.test_connection, state='disabled')
         self.test_btn.grid(row=0, column=6, padx=5)
-        
+
         self.status_label = ttk.Label(conn_frame, text="Disconnected", foreground="red")
         self.status_label.grid(row=0, column=7, padx=10)
 
         # ===== Actions Panel =====
         actions_frame = ttk.LabelFrame(main_frame, text="Actions", padding="5")
         actions_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        
+
         self.scan_btn = ttk.Button(actions_frame, text="Read Config (CFSC)",
                                    command=self.read_config, state='disabled', width=20)
         self.scan_btn.grid(row=0, column=0, padx=5)
-        
+
         self.write_btn = ttk.Button(actions_frame, text="Write Changes",
                                     command=self.write_config, state='disabled', width=20)
         self.write_btn.grid(row=0, column=1, padx=5)
-        
+
         ttk.Separator(actions_frame, orient='vertical').grid(row=0, column=2, sticky='ns', padx=10)
-        
+
+        # NEW: Config Mode button
+        self.config_mode_btn = ttk.Button(actions_frame, text="Config Mode",
+                                         command=self.enter_config_mode, state='disabled', width=15)
+        self.config_mode_btn.grid(row=0, column=3, padx=5)
+
+        # NEW: Normal Mode button
+        self.normal_mode_btn = ttk.Button(actions_frame, text="Normal Mode",
+                                         command=self.enter_normal_mode, state='disabled', width=15)
+        self.normal_mode_btn.grid(row=0, column=4, padx=5)
+
+        ttk.Separator(actions_frame, orient='vertical').grid(row=0, column=5, sticky='ns', padx=10)
+
         self.save_btn = ttk.Button(actions_frame, text="Save to File",
                                    command=self.save_to_file, state='disabled', width=15)
-        self.save_btn.grid(row=0, column=3, padx=5)
-        
+        self.save_btn.grid(row=0, column=6, padx=5)
+
         self.load_btn = ttk.Button(actions_frame, text="Load from File",
                                    command=self.load_from_file, width=15)
-        self.load_btn.grid(row=0, column=4, padx=5)
-        
-        ttk.Separator(actions_frame, orient='vertical').grid(row=0, column=5, sticky='ns', padx=10)
-        
+        self.load_btn.grid(row=0, column=7, padx=5)
+
+        ttk.Separator(actions_frame, orient='vertical').grid(row=0, column=8, sticky='ns', padx=10)
+
+        # UPDATED: Firmware Update button (no more target selection)
         self.firmware_btn = ttk.Button(actions_frame, text="Update Firmware",
-                                       command=self.update_firmware, width=15)
-        self.firmware_btn.grid(row=0, column=6, padx=5)
-        
+                                      command=self.update_firmware, width=20)
+        self.firmware_btn.grid(row=0, column=9, padx=5)
+
         self.clear_btn = ttk.Button(actions_frame, text="Clear",
                                     command=self.clear_config, width=10)
-        self.clear_btn.grid(row=0, column=7, padx=5)
+        self.clear_btn.grid(row=0, column=10, padx=5)
 
         # ===== Config Display Panel =====
         config_frame = ttk.LabelFrame(main_frame, text="Configuration Data", padding="5")
@@ -145,16 +153,16 @@ class GatewayConfigTool:
         raw_frame = ttk.Frame(self.notebook)
         self.notebook.add(raw_frame, text="Raw View")
         self.raw_text = scrolledtext.ScrolledText(raw_frame, wrap=tk.WORD,
-                                                   font=('Courier New', 10))
+                                                  font=('Courier New', 10))
         self.raw_text.pack(fill=tk.BOTH, expand=True)
 
         # Editable view tab
         edit_frame = ttk.Frame(self.notebook)
         self.notebook.add(edit_frame, text="Edit Config")
-        
+
         tree_frame = ttk.Frame(edit_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         self.tree = ttk.Treeview(tree_frame, columns=('value', 'changed'), show='tree headings')
         self.tree.heading('#0', text='Parameter')
         self.tree.heading('value', text='Value')
@@ -162,22 +170,20 @@ class GatewayConfigTool:
         self.tree.column('#0', width=250)
         self.tree.column('value', width=400)
         self.tree.column('changed', width=80)
-        
+
         tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scroll.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        
         self.tree.bind('<Double-Button-1>', self.edit_tree_item)
-        
+
         edit_controls = ttk.Frame(edit_frame)
         edit_controls.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Button(edit_controls, text="Edit Selected",
                   command=self.edit_selected_item).pack(side=tk.LEFT, padx=5)
         ttk.Button(edit_controls, text="Revert Changes",
                   command=self.revert_changes).pack(side=tk.LEFT, padx=5)
-        
         self.changes_label = ttk.Label(edit_controls, text="No changes", foreground="green")
         self.changes_label.pack(side=tk.LEFT, padx=20)
 
@@ -189,10 +195,9 @@ class GatewayConfigTool:
         # ===== Console Panel =====
         console_frame = ttk.LabelFrame(main_frame, text="Console Log", padding="5")
         console_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        
         self.console = scrolledtext.ScrolledText(console_frame, height=8,
-                                                 font=('Courier New', 9),
-                                                 bg='#1e1e1e', fg='#00ff00')
+                                                font=('Courier New', 9),
+                                                bg='#1e1e1e', fg='#00ff00')
         self.console.pack(fill=tk.BOTH, expand=True)
 
     def setup_can_whitelist_tab(self, parent):
@@ -200,37 +205,36 @@ class GatewayConfigTool:
         # Top frame with current whitelist
         top_frame = ttk.LabelFrame(parent, text="Current Whitelist", padding="10")
         top_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         # Listbox to show whitelist IDs
         list_frame = ttk.Frame(top_frame)
         list_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         self.whitelist_listbox = tk.Listbox(list_frame, font=('Courier New', 10), height=10)
         self.whitelist_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
+
         list_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.whitelist_listbox.yview)
         self.whitelist_listbox.configure(yscrollcommand=list_scroll.set)
         list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        
+
         # Controls frame
         controls_frame = ttk.Frame(parent, padding="5")
         controls_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         # Add ID section
         add_frame = ttk.LabelFrame(controls_frame, text="Add CAN ID", padding="5")
         add_frame.pack(side=tk.LEFT, padx=5)
-        
+
         ttk.Label(add_frame, text="CAN ID (hex):").grid(row=0, column=0, padx=5)
         self.can_id_entry = ttk.Entry(add_frame, width=12)
         self.can_id_entry.grid(row=0, column=1, padx=5)
         self.can_id_entry.insert(0, "0x")
-        
         ttk.Button(add_frame, text="Add", command=self.add_can_whitelist_id).grid(row=0, column=2, padx=5)
-        
+
         # Action buttons
         action_frame = ttk.Frame(controls_frame)
         action_frame.pack(side=tk.LEFT, padx=20)
-        
+
         ttk.Button(action_frame, text="Remove Selected",
                   command=self.remove_can_whitelist_id, width=18).pack(pady=2)
         ttk.Button(action_frame, text="Clear All",
@@ -238,30 +242,61 @@ class GatewayConfigTool:
         ttk.Button(action_frame, text="Apply to Gateway",
                   command=self.apply_can_whitelist, width=18).pack(pady=2)
 
+    # NEW: Config Mode function
+    def enter_config_mode(self):
+        """Send CONFIG command to enter config mode"""
+        if not self.serial_port or not self.serial_port.is_open:
+            messagebox.showerror("Error", "Not connected")
+            return
+
+        try:
+            self.serial_port.write(b"CONFIG\r\n")
+            self.serial_port.flush()
+            self.log("Sent CONFIG command - MCU entering config mode", 'SUCCESS')
+            messagebox.showinfo("Success", "Config mode command sent")
+        except Exception as e:
+            self.log(f"Failed to send CONFIG: {e}", 'ERROR')
+            messagebox.showerror("Error", str(e))
+
+    # NEW: Normal Mode function
+    def enter_normal_mode(self):
+        """Send NORMAL command to return to normal mode"""
+        if not self.serial_port or not self.serial_port.is_open:
+            messagebox.showerror("Error", "Not connected")
+            return
+
+        try:
+            self.serial_port.write(b"NORMAL\r\n")
+            self.serial_port.flush()
+            self.log("Sent NORMAL command - MCU returning to normal mode", 'SUCCESS')
+            messagebox.showinfo("Success", "Normal mode command sent")
+        except Exception as e:
+            self.log(f"Failed to send NORMAL: {e}", 'ERROR')
+            messagebox.showerror("Error", str(e))
+
     def add_can_whitelist_id(self):
         """Add CAN ID to whitelist"""
         id_str = self.can_id_entry.get().strip()
-        
         if not id_str:
             messagebox.showwarning("Warning", "Please enter a CAN ID")
             return
-        
+
         try:
             # Parse hex value
             can_id = int(id_str, 16)
-            
+
             # Validate
             if PROTOCOL_AVAILABLE:
                 valid, msg = ProtocolValidator.validate_can_id(can_id, extended=False)
                 if not valid:
                     messagebox.showerror("Error", msg)
                     return
-            
+
             # Check if already exists
             if can_id in self.can_whitelist_ids:
                 messagebox.showinfo("Info", f"ID {id_str} already in whitelist")
                 return
-            
+
             # Add to list
             self.can_whitelist_ids.append(can_id)
             self.can_whitelist_ids.sort()
@@ -269,11 +304,11 @@ class GatewayConfigTool:
             self.config_modified = True
             self.update_changes_status()
             self.log(f"Added CAN ID {id_str} to whitelist", 'INFO')
-            
+
             # Clear entry
             self.can_id_entry.delete(0, tk.END)
             self.can_id_entry.insert(0, "0x")
-            
+
         except ValueError:
             messagebox.showerror("Error", "Invalid hex format. Use 0xXXX")
 
@@ -283,7 +318,7 @@ class GatewayConfigTool:
         if not selection:
             messagebox.showwarning("Warning", "Please select an ID to remove")
             return
-        
+
         idx = selection[0]
         removed_id = self.can_whitelist_ids.pop(idx)
         self.update_whitelist_display()
@@ -296,7 +331,7 @@ class GatewayConfigTool:
         if not self.can_whitelist_ids:
             messagebox.showinfo("Info", "Whitelist is already empty")
             return
-        
+
         if messagebox.askyesno("Confirm", "Clear entire whitelist?"):
             self.can_whitelist_ids.clear()
             self.update_whitelist_display()
@@ -309,11 +344,11 @@ class GatewayConfigTool:
         if not self.serial_port or not self.serial_port.is_open:
             messagebox.showerror("Error", "Not connected")
             return
-        
+
         if not PROTOCOL_AVAILABLE:
             messagebox.showerror("Error", "config_protocol.py not available")
             return
-        
+
         try:
             if len(self.can_whitelist_ids) == 0:
                 # Clear whitelist on gateway
@@ -327,9 +362,8 @@ class GatewayConfigTool:
                 self.serial_port.write(f"{cmd}\r\n".encode('utf-8'))
                 self.serial_port.flush()
                 self.log(f"Sent: {cmd}", 'SUCCESS')
-            
+
             messagebox.showinfo("Success", "CAN whitelist applied to gateway")
-            
         except Exception as e:
             self.log(f"Failed to apply whitelist: {e}", 'ERROR')
             messagebox.showerror("Error", str(e))
@@ -350,7 +384,7 @@ class GatewayConfigTool:
             self.console.insert(tk.END, f"[{timestamp}] ", 'INFO')
             self.console.insert(tk.END, f"{message}\n", level)
             self.console.see(tk.END)
-        
+
         if threading.current_thread() != threading.main_thread():
             self.root.after(0, _log)
         else:
@@ -373,11 +407,11 @@ class GatewayConfigTool:
     def connect(self):
         port = self.port_combo.get()
         baud = int(self.baud_combo.get())
-        
+
         if not port:
             messagebox.showerror("Error", "Please select a serial port")
             return
-        
+
         try:
             self.serial_port = serial.Serial(
                 port=port,
@@ -391,21 +425,21 @@ class GatewayConfigTool:
                 rtscts=False,
                 dsrdtr=False
             )
-            self.serial_port.dtr = False
-            self.serial_port.rts = False
             self.serial_port.reset_input_buffer()
             self.serial_port.reset_output_buffer()
             threading.Event().wait(0.1)
-            
+
             self.status_label.config(text=f"Connected to {port}", foreground="green")
             self.connect_btn.config(text="Disconnect")
             self.scan_btn.config(state='normal')
             self.test_btn.config(state='normal')
+            self.config_mode_btn.config(state='normal')  # Enable config mode button
+            self.normal_mode_btn.config(state='normal')  # Enable normal mode button
             self.log(f"Connected to {port} at {baud} baud", 'SUCCESS')
-            
+
             self.reading_thread = threading.Thread(target=self.read_serial, daemon=True)
             self.reading_thread.start()
-            
+
         except Exception as e:
             messagebox.showerror("Connection Error", str(e))
             self.log(f"Connection failed: {e}", 'ERROR')
@@ -416,18 +450,21 @@ class GatewayConfigTool:
                 self.serial_port.close()
             except:
                 pass
-        self.serial_port = None
+            self.serial_port = None
+
         self.status_label.config(text="Disconnected", foreground="red")
         self.connect_btn.config(text="Connect")
         self.scan_btn.config(state='disabled')
         self.test_btn.config(state='disabled')
+        self.config_mode_btn.config(state='disabled')  # Disable config mode button
+        self.normal_mode_btn.config(state='disabled')  # Disable normal mode button
         self.log("Disconnected")
 
     def test_connection(self):
         if not self.serial_port or not self.serial_port.is_open:
             messagebox.showerror("Error", "Not connected")
             return
-        
+
         try:
             self.log("="*60, 'DEBUG')
             self.log("Testing connection...", 'INFO')
@@ -448,7 +485,7 @@ class GatewayConfigTool:
                 if self.serial_port.in_waiting:
                     data = self.serial_port.read(self.serial_port.in_waiting).decode('utf-8', errors='ignore')
                     buffer += data
-                    
+
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
                         line = line.strip()
@@ -462,7 +499,7 @@ class GatewayConfigTool:
         # Skip ESP-IDF log messages
         if line.startswith('I (') or line.startswith('W (') or line.startswith('E ('):
             return
-        
+
         if line == "CFSC_RESP:START":
             self.reading_config = True
             self.config_buffer = []
@@ -473,7 +510,7 @@ class GatewayConfigTool:
             self.parse_config(self.config_buffer)
             self.log("Config reading completed", 'SUCCESS')
             return
-        
+
         if self.reading_config:
             self.config_buffer.append(line)
 
@@ -485,7 +522,6 @@ class GatewayConfigTool:
             # Fallback parsing
             self.config_data = {'GATEWAY_INFO': {}, 'WAN_CONFIG': {}, 'LAN_CONFIG': {}}
             current_section = None
-            
             for line in lines:
                 line = line.strip()
                 if not line:
@@ -497,14 +533,14 @@ class GatewayConfigTool:
                     key, value = line.split('=', 1)
                     if current_section in self.config_data:
                         self.config_data[current_section][key.strip()] = value.strip()
-        
+
         # Parse CAN whitelist if present
         if 'can_whitelist' in self.config_data.get('LAN_CONFIG', {}):
             whitelist_str = self.config_data['LAN_CONFIG']['can_whitelist']
             if PROTOCOL_AVAILABLE:
                 self.can_whitelist_ids = ConfigResponseParser.parse_can_whitelist(whitelist_str)
-            self.update_whitelist_display()
-        
+                self.update_whitelist_display()
+
         self.original_config = deepcopy(self.config_data)
         self.config_modified = False
         self.display_config()
@@ -517,15 +553,14 @@ class GatewayConfigTool:
         self.raw_text.delete('1.0', tk.END)
         raw_content = self.format_config_raw()
         self.raw_text.insert('1.0', raw_content)
-        
+
         # Tree view
         self.tree.delete(*self.tree.get_children())
-        
         for section, params in self.config_data.items():
             section_node = self.tree.insert('', 'end', text=f'[{section}]',
                                            values=('', ''), open=True, tags=('section',))
             self.tree.tag_configure('section', font=('TkDefaultFont', 10, 'bold'))
-            
+
             for key, value in params.items():
                 status = ''
                 tag = ''
@@ -534,10 +569,9 @@ class GatewayConfigTool:
                     if orig_value != value:
                         status = 'Changed'
                         tag = 'changed'
-                
                 self.tree.insert(section_node, 'end', text=key,
                                values=(value, status), tags=(tag,))
-        
+
         self.tree.tag_configure('changed', foreground='blue', font=('TkDefaultFont', 9, 'bold'))
 
     def format_config_raw(self):
@@ -558,16 +592,16 @@ class GatewayConfigTool:
         if not selection:
             messagebox.showwarning("Warning", "Please select an item to edit")
             return
-        
+
         item = selection[0]
         parent = self.tree.parent(item)
         if not parent:
             return
-        
+
         key = self.tree.item(item, 'text')
         current_value = self.tree.item(item, 'values')[0]
         section = self.tree.item(parent, 'text').strip('[]')
-        
+
         # ===== CHECK READ-ONLY =====
         if section in self.READ_ONLY_FIELDS:
             if self.READ_ONLY_FIELDS[section] == '*':  # All fields read-only
@@ -576,19 +610,18 @@ class GatewayConfigTool:
             elif key in self.READ_ONLY_FIELDS[section]:  # Specific field read-only
                 messagebox.showinfo("Info", f"'{key}' is read-only. Use CAN Whitelist tab to manage whitelist.")
                 return
-        
+
         # Create edit dialog
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Edit: {key}")
         dialog.geometry("500x200")
         dialog.transient(self.root)
         dialog.grab_set()
-        
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
-        
+
         ttk.Label(dialog, text=f"Key: {key}", font=('TkDefaultFont', 10, 'bold')).pack(pady=15)
         ttk.Label(dialog, text="Value:").pack()
         entry = ttk.Entry(dialog, width=60, font=('Courier New', 10))
@@ -596,7 +629,7 @@ class GatewayConfigTool:
         entry.pack(pady=10, padx=20)
         entry.focus()
         entry.select_range(0, tk.END)
-        
+
         def save_edit():
             new_value = entry.get()
             if new_value != current_value:
@@ -606,22 +639,21 @@ class GatewayConfigTool:
                 self.update_changes_status()
                 self.log(f"Modified: {section}.{key} = {new_value}", 'INFO')
             dialog.destroy()
-        
+
         def cancel_edit():
             dialog.destroy()
-        
+
         btn_frame = ttk.Frame(dialog)
         btn_frame.pack(pady=15)
         ttk.Button(btn_frame, text="Save", command=save_edit, width=12).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Cancel", command=cancel_edit, width=12).pack(side=tk.LEFT, padx=5)
-        
+
         entry.bind('<Return>', lambda e: save_edit())
         entry.bind('<Escape>', lambda e: cancel_edit())
 
     def update_changes_status(self):
         """Update changes counter"""
         changes = self.get_changed_count()
-        
         if changes > 0 or self.config_modified:
             self.changes_label.config(text=f"{changes} field(s) modified", foreground="orange")
             self.write_btn.config(state='normal')
@@ -646,7 +678,7 @@ class GatewayConfigTool:
         if not self.config_modified and self.get_changed_count() == 0:
             messagebox.showinfo("Info", "No changes to revert")
             return
-        
+
         if messagebox.askyesno("Confirm", "Revert all changes?"):
             self.config_data = deepcopy(self.original_config)
             self.config_modified = False
@@ -661,7 +693,7 @@ class GatewayConfigTool:
         if not self.serial_port or not self.serial_port.is_open:
             messagebox.showerror("Error", "Not connected")
             return
-        
+
         try:
             self.serial_port.write(b"CFSC\r\n")
             self.serial_port.flush()
@@ -674,18 +706,18 @@ class GatewayConfigTool:
         if not self.serial_port or not self.serial_port.is_open:
             messagebox.showerror("Error", "Not connected")
             return
-        
+
         if not PROTOCOL_AVAILABLE:
             messagebox.showerror("Error", "config_protocol.py not available")
             return
-        
+
         try:
             commands = self.generate_config_commands()
-            
+
             if not commands:
                 messagebox.showinfo("Info", "No changes to write")
                 return
-            
+
             # Build summary (handle both str and bytes)
             summary_lines = []
             for cmd in commands[:10]:
@@ -694,18 +726,18 @@ class GatewayConfigTool:
                     summary_lines.append(f"[BINARY] {cmd[:20].hex()}{'...' if len(cmd) > 20 else ''}")
                 else:
                     summary_lines.append(str(cmd)[:60] + ('...' if len(str(cmd)) > 60 else ''))
-            
+
             summary = "\n".join(summary_lines)
             if len(commands) > 10:
                 summary += f"\n... and {len(commands)-10} more"
-            
+
             msg = f"Send {len(commands)} command(s)?\n\n{summary}"
             if not messagebox.askyesno("Confirm", msg):
                 return
-            
+
             self.log("="*60, 'INFO')
             self.log(f"Sending {len(commands)} commands...", 'INFO')
-            
+
             for i, cmd in enumerate(commands, 1):
                 try:
                     if isinstance(cmd, bytes):
@@ -720,28 +752,27 @@ class GatewayConfigTool:
                         self.serial_port.flush()
                         display_cmd = str(cmd)[:60] + '...' if len(str(cmd)) > 60 else str(cmd)
                         self.log(f" [{i}/{len(commands)}] {display_cmd}", 'SUCCESS')
-                    
+
                     threading.Event().wait(0.15)  # Delay between commands
-                    
+
                 except Exception as e:
                     self.log(f" [{i}/{len(commands)}] FAILED: {e}", 'ERROR')
                     raise
-            
+
             self.log("="*60, 'INFO')
             self.log("Configuration written successfully", 'SUCCESS')
-            
+
             # Update original config after successful write
             self.original_config = deepcopy(self.config_data)
             self.config_modified = False
             self.update_changes_status()
-            
+
             messagebox.showinfo("Success", f"{len(commands)} command(s) sent successfully")
-            
+
         except Exception as e:
             self.log(f"Write failed: {e}", 'ERROR')
             self.log(traceback.format_exc(), 'ERROR')
             messagebox.showerror("Error", str(e))
-
 
     @staticmethod
     def parse_int_value(value: any, default: int = 0) -> int:
@@ -753,96 +784,90 @@ class GatewayConfigTool:
         """
         if value is None:
             return default
-        
         if isinstance(value, int):
             return value
-        
         if isinstance(value, str):
             value = value.strip()
             if not value:
                 return default
-            
             # Hex format: 0x123 or 0X123
             if value.lower().startswith('0x'):
                 try:
                     return int(value, 16)
                 except ValueError:
                     return default
-            
             # Decimal format
             try:
                 return int(value)
             except ValueError:
                 return default
-        
         return default
-    
+
     def generate_config_commands(self) -> List:
         """Generate ONLY commands for CHANGED fields (incremental update)"""
         commands = []
-        
         wan_cfg = self.config_data.get('WAN_CONFIG', {})
         lan_cfg = self.config_data.get('LAN_CONFIG', {})
         orig_wan = self.original_config.get('WAN_CONFIG', {})
         orig_lan = self.original_config.get('LAN_CONFIG', {})
-        
+
         # ========================================
         # Detect CHANGED field groups
         # ========================================
-        
+
         # WiFi changed?
         wifi_changed = any(
             wan_cfg.get(key) != orig_wan.get(key)
             for key in ['wifi_ssid', 'wifi_password', 'wifi_username', 'wifi_auth_mode']
         )
-        
+
         # MQTT changed?
         mqtt_changed = any(
             wan_cfg.get(key) != orig_wan.get(key)
             for key in ['mqtt_broker', 'mqtt_device_token', 'mqtt_sub_topic',
-                        'mqtt_pub_topic', 'mqtt_attribute_topic']
+                       'mqtt_pub_topic', 'mqtt_attribute_topic']
         )
-        
+
         # LTE changed?
         lte_changed = any(
             wan_cfg.get(key) != orig_wan.get(key)
             for key in ['lte_apn', 'lte_username', 'lte_password', 'lte_comm_type',
-                        'lte_auto_reconnect', 'lte_reconnect_timeout_ms', 'lte_max_reconnect_attempts']
+                       'lte_auto_reconnect', 'lte_reconnect_timeout_ms', 'lte_max_reconnect_attempts']
         )
-        
+
         # CAN changed?
         can_changed = any(
             lan_cfg.get(key) != orig_lan.get(key)
             for key in ['can_baud_rate', 'can_mode']
         )
-        
+
         # LoRa E32 Modem changed?
         lora_e32_changed = any(
             lan_cfg.get(key) != orig_lan.get(key)
-            for key in ['lora_e32_header', 'lora_e32_addh', 'lora_e32_addl', 
-                        'lora_e32_sped', 'lora_e32_chan', 'lora_e32_option']
+            for key in ['lora_e32_header', 'lora_e32_addh', 'lora_e32_addl',
+                       'lora_e32_sped', 'lora_e32_chan', 'lora_e32_option']
         )
-        
+
         # LoRa TDMA Handler changed?
         lora_handler_changed = any(
             lan_cfg.get(key) != orig_lan.get(key)
-            for key in ['lora_role', 'lora_node_id', 'lora_gateway_id', 
-                        'lora_num_slots', 'lora_my_slot', 'lora_slot_duration_ms']
+            for key in ['lora_role', 'lora_node_id', 'lora_gateway_id',
+                       'lora_num_slots', 'lora_my_slot', 'lora_slot_duration_ms']
         )
-        
+
         # LoRa Crypto changed?
         lora_crypto_changed = (
             lan_cfg.get('lora_crypto_key_len') != orig_lan.get('lora_crypto_key_len')
         )
-        
+
         # ========================================
         # Generate commands ONLY for changed groups
         # ========================================
-        
+
         # 1. Internet type (if changed)
         if wan_cfg.get('internet_type') != orig_wan.get('internet_type'):
             commands.append(ConfigCommandBuilder.build_internet_type(wan_cfg['internet_type']))
-        
+
         # 2. WiFi - ONLY if WiFi fields changed
         if wifi_changed and wan_cfg.get('wifi_ssid'):
             wifi = WiFiConfig(
@@ -852,7 +877,7 @@ class GatewayConfigTool:
                 auth_mode=wan_cfg.get('wifi_auth_mode', 'PERSONAL')
             )
             commands.append(ConfigCommandBuilder.build_wifi_config(wifi))
-        
+
         # 3. LTE - ONLY if LTE fields changed
         if lte_changed and wan_cfg.get('lte_apn'):
             lte = LTEConfig(
@@ -865,7 +890,7 @@ class GatewayConfigTool:
                 max_reconnect_attempts=int(wan_cfg.get('lte_max_reconnect_attempts', 0))
             )
             commands.append(ConfigCommandBuilder.build_lte_config(lte))
-        
+
         # 4. MQTT - ONLY if MQTT fields changed
         if mqtt_changed and wan_cfg.get('mqtt_broker'):
             mqtt = MQTTConfig(
@@ -876,11 +901,11 @@ class GatewayConfigTool:
                 attribute_topic=wan_cfg.get('mqtt_attribute_topic', '')
             )
             commands.append(ConfigCommandBuilder.build_mqtt_config(mqtt))
-        
+
         # 5. Server type (if changed)
         if wan_cfg.get('server_type') != orig_wan.get('server_type'):
             commands.append(ConfigCommandBuilder.build_server_type(wan_cfg['server_type']))
-        
+
         # 6. CAN - ONLY if CAN fields changed
         if can_changed:
             can = CANConfig(
@@ -888,7 +913,7 @@ class GatewayConfigTool:
                 mode=lan_cfg.get('can_mode', 'NORMAL')
             )
             commands.extend(ConfigCommandBuilder.build_can_config(can))
-        
+
         # 7. LoRa E32 Modem - ONLY if changed (FIXED PARSING)
         if lora_e32_changed:
             try:
@@ -900,7 +925,7 @@ class GatewayConfigTool:
                     chan=self.parse_int_value(lan_cfg.get('lora_e32_chan', 0x00)),
                     option=self.parse_int_value(lan_cfg.get('lora_e32_option', 0x00))
                 )
-                
+
                 # Validate byte range (0-255)
                 for field_name, field_value in [
                     ('head', modem_cfg.head), ('addh', modem_cfg.addh), ('addl', modem_cfg.addl),
@@ -908,20 +933,21 @@ class GatewayConfigTool:
                 ]:
                     if not (0 <= field_value <= 255):
                         raise ValueError(f"LoRa E32 {field_name}={field_value} out of range (0-255)")
-                
+
                 commands.append(ConfigCommandBuilder.build_lora_modem_command(modem_cfg))
                 self.log(f"LoRa E32: head={modem_cfg.head:02X} addh={modem_cfg.addh:02X} addl={modem_cfg.addl:02X} "
                         f"sped={modem_cfg.sped:02X} chan={modem_cfg.chan:02X} option={modem_cfg.option:02X}", 'INFO')
+
             except Exception as e:
                 self.log(f"Failed to build LoRa E32 command: {e}", 'ERROR')
-        
+
         # 8. LoRa TDMA Handler - ONLY if changed (FIXED PARSING)
         if lora_handler_changed:
             try:
                 # Parse role (string to int)
                 role_str = lan_cfg.get('lora_role', 'GATEWAY')
                 role = 0 if role_str == 'GATEWAY' else 1
-                
+
                 handler_cfg = LoRaTDMAConfig(
                     role=role,
                     node_id=self.parse_int_value(lan_cfg.get('lora_node_id', 0x0001)),
@@ -930,14 +956,15 @@ class GatewayConfigTool:
                     my_slot=self.parse_int_value(lan_cfg.get('lora_my_slot', 0)),
                     slot_duration_ms=self.parse_int_value(lan_cfg.get('lora_slot_duration_ms', 200))
                 )
-                
+
                 commands.append(ConfigCommandBuilder.build_lora_tdma_command(handler_cfg))
                 self.log(f"LoRa TDMA: role={role} node_id=0x{handler_cfg.node_id:04X} "
                         f"gateway_id=0x{handler_cfg.gateway_id:04X} slots={handler_cfg.num_slots} "
                         f"my_slot={handler_cfg.my_slot} duration={handler_cfg.slot_duration_ms}ms", 'INFO')
+
             except Exception as e:
                 self.log(f"Failed to build LoRa TDMA command: {e}", 'ERROR')
-        
+
         # 9. LoRa Crypto - ONLY if changed
         if lora_crypto_changed:
             try:
@@ -949,7 +976,7 @@ class GatewayConfigTool:
                     self.log(f"LoRa Crypto: key_len={key_len}", 'INFO')
             except Exception as e:
                 self.log(f"Failed to build LoRa crypto command: {e}", 'ERROR')
-        
+
         return commands
 
     def save_to_file(self):
@@ -957,13 +984,13 @@ class GatewayConfigTool:
         if not self.config_data:
             messagebox.showwarning("Warning", "No configuration data to save")
             return
-        
+
         filename = filedialog.asksaveasfilename(
             defaultextension=".json",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
             initialfile=f"gateway_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         )
-        
+
         if filename:
             try:
                 # Include whitelist in save
@@ -972,10 +999,10 @@ class GatewayConfigTool:
                     if 'LAN_CONFIG' not in save_data:
                         save_data['LAN_CONFIG'] = {}
                     save_data['LAN_CONFIG']['can_whitelist_ids'] = self.can_whitelist_ids
-                
+
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(save_data, f, indent=2, ensure_ascii=False)
-                
+
                 self.log(f"Configuration saved to {filename}", 'SUCCESS')
                 messagebox.showinfo("Success", "Configuration saved")
             except Exception as e:
@@ -987,23 +1014,23 @@ class GatewayConfigTool:
         filename = filedialog.askopenfilename(
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
-        
+
         if filename:
             try:
                 with open(filename, 'r', encoding='utf-8') as f:
                     loaded_config = json.load(f)
-                
+
                 # Merge
                 for section, params in loaded_config.items():
                     if section not in self.config_data:
                         self.config_data[section] = {}
                     self.config_data[section].update(params)
-                
+
                 # Load whitelist if present
                 if 'can_whitelist_ids' in loaded_config.get('LAN_CONFIG', {}):
                     self.can_whitelist_ids = loaded_config['LAN_CONFIG']['can_whitelist_ids']
                     self.update_whitelist_display()
-                
+
                 self.config_modified = True
                 self.display_config()
                 self.save_btn.config(state='normal')
@@ -1014,10 +1041,10 @@ class GatewayConfigTool:
                 self.log(f"Load failed: {e}", 'ERROR')
                 messagebox.showerror("Error", str(e))
 
+    # UPDATED: Firmware update - always update both WAN and LAN
     def update_firmware(self):
-        """Update firmware using flash_WAN.bat"""
+        """Update firmware for both WAN and LAN (no target selection)"""
         flash_script = self.app_path / "flash_WAN.bat"
-        
         if not flash_script.exists():
             error_msg = (
                 f"flash_WAN.bat not found!\n\n"
@@ -1026,7 +1053,7 @@ class GatewayConfigTool:
             )
             messagebox.showerror("Error", error_msg)
             return
-        
+
         # Disconnect if connected
         port = None
         if self.serial_port and self.serial_port.is_open:
@@ -1035,65 +1062,33 @@ class GatewayConfigTool:
             threading.Event().wait(1)
         else:
             port = self.port_combo.get()
-        
-        if not port:
-            messagebox.showerror("Error", "Please select a COM port")
+            if not port:
+                messagebox.showerror("Error", "Please select a COM port")
+                return
+
+        # Confirm firmware update
+        if not messagebox.askyesno("Confirm Firmware Update", 
+                                   f"Update firmware for both WAN and LAN MCU?\n\nPort: {port}"):
             return
-        
-        # Target selection dialog
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Firmware Update")
-        dialog.geometry("400x220")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
-        
-        ttk.Label(dialog, text="Select firmware to update:",
-                 font=('TkDefaultFont', 11, 'bold')).pack(pady=15)
-        
-        var = tk.StringVar(value="-WAN")
-        radio_frame = ttk.Frame(dialog)
-        radio_frame.pack(pady=10)
-        
-        ttk.Radiobutton(radio_frame, text="WAN MCU Only", variable=var,
-                       value="-WAN").pack(anchor=tk.W, padx=50, pady=5)
-        ttk.Radiobutton(radio_frame, text="LAN MCU Only", variable=var,
-                       value="-LAN").pack(anchor=tk.W, padx=50, pady=5)
-        ttk.Radiobutton(radio_frame, text="Both WAN and LAN", variable=var,
-                       value="").pack(anchor=tk.W, padx=50, pady=5)
-        
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=15)
-        
-        def start_flash():
-            target = var.get()
-            dialog.destroy()
-            self.run_flash_script(port, target)
-        
-        ttk.Button(btn_frame, text="Start Update",
-                  command=start_flash, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel",
-                  command=dialog.destroy, width=15).pack(side=tk.LEFT, padx=5)
+
+        # Start firmware update (no target parameter = both)
+        self.run_flash_script(port, target="")
 
     def run_flash_script(self, port, target):
         """Run flash script with logging"""
-        target_name = target if target else 'BOTH'
+        target_name = target if target else 'BOTH WAN and LAN'
         self.log(f"Starting firmware update: {target_name}", 'INFO')
-        
+
         def flash_thread():
             try:
                 flash_script = self.app_path / "flash_WAN.bat"
                 cmd = f'"{flash_script}" {port}'
                 if target:
                     cmd += f' {target}'
-                
+
                 self.log("="*70, 'INFO')
                 self.log(f"Command: {cmd}", 'DEBUG')
-                
+
                 process = subprocess.Popen(
                     cmd,
                     shell=True,
@@ -1105,7 +1100,7 @@ class GatewayConfigTool:
                     errors='ignore',
                     bufsize=1
                 )
-                
+
                 for line in iter(process.stdout.readline, ''):
                     if line:
                         line = line.rstrip()
@@ -1115,23 +1110,23 @@ class GatewayConfigTool:
                             self.log(line, 'SUCCESS')
                         else:
                             self.log(line, 'DEBUG')
-                
+
                 return_code = process.wait()
                 self.log("="*70, 'INFO')
-                
+
                 if return_code == 0:
                     self.log("Firmware update completed!", 'SUCCESS')
                     self.root.after(0, lambda: messagebox.showinfo(
-                        "Success", "Firmware updated!\n\nPlease reset the device."))
+                        "Success", "Firmware updated for both WAN and LAN!\n\nPlease reset the device."))
                 else:
                     self.log(f"Flash failed (code {return_code})", 'ERROR')
                     self.root.after(0, lambda: messagebox.showerror(
                         "Error", "Firmware update failed\n\nCheck console log."))
-                
+
             except Exception as e:
                 self.log(f"Flash exception: {e}", 'ERROR')
                 self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
-        
+
         threading.Thread(target=flash_thread, daemon=True).start()
 
     def clear_config(self):
@@ -1139,7 +1134,7 @@ class GatewayConfigTool:
         if self.config_modified or self.get_changed_count() > 0:
             if not messagebox.askyesno("Confirm", "Clear all data? Unsaved changes will be lost."):
                 return
-        
+
         self.config_data = {}
         self.original_config = {}
         self.config_modified = False
@@ -1152,20 +1147,18 @@ class GatewayConfigTool:
         self.update_changes_status()
         self.log("Configuration cleared")
 
-
 def main():
     root = tk.Tk()
     root.option_add("*Font", ('Segoe UI', 9))
     app = GatewayConfigTool(root)
-    
+
     def on_closing():
         if app.serial_port and app.serial_port.is_open:
             app.disconnect()
         root.destroy()
-    
+
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
-
 
 if __name__ == '__main__':
     main()
