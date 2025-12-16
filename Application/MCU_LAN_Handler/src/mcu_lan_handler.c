@@ -65,9 +65,6 @@ static config_cache_t g_config_cache = {0};
 // ===== Pending Downlink =====
 static downlink_item_t g_pending_downlink;
 static bool g_pending_downlink_valid = false; // WAN pending data for LAN
-// ===== Config Request Queue =====
-#define CONFIG_REQUEST_QUEUE_SIZE 2
-static QueueHandle_t g_config_request_queue = NULL;
 
 typedef enum {
   CONFIG_REQ_STATE_IDLE = 0,
@@ -142,33 +139,19 @@ static void clear_data_ready(void) {
 }
 
 // ===== Config Request Handling =====
-static void handle_config_request_queue(void) {
-  config_request_t *request_ptr;
-  if (!g_active_config_request_valid) {
-    if (xQueueReceive(g_config_request_queue, &request_ptr, 0) != pdTRUE) {
-      return;
-    }
-
-    ESP_LOGI(TAG, "New config request from UART handler");
-
-    // Cache request POINTER for later processing on DQ
-    g_active_config_request_ptr = request_ptr;
-    g_active_config_request_valid = true;
-    g_config_req_state = CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ;
-
-    // Notify LAN that some TX data (CFCQ) will be available after DQ
-    signal_data_ready();
-    return;
-  }
-}
-
 // ===== Public API =====
 esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
                                                uint16_t *out_len,
                                                uint16_t max_len,
                                                uint32_t timeout_ms) {
-  if (buffer == NULL || out_len == NULL || g_config_request_queue == NULL) {
+  if (buffer == NULL || out_len == NULL) {
     return ESP_ERR_INVALID_ARG;
+  }
+  ESP_LOGI(TAG, "Requesting config from LAN MCU asynchronously");
+
+  if (g_active_config_request_valid) {
+    ESP_LOGW(TAG, "Config request already in progress");
+    return ESP_ERR_INVALID_STATE;
   }
 
   // Create completion semaphore
@@ -188,18 +171,21 @@ esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
       .result = ESP_FAIL // Default to fail
   };
 
-  // Send POINTER to request to handler task
-  config_request_t *request_ptr = &request;
-  if (xQueueSend(g_config_request_queue, &request_ptr, pdMS_TO_TICKS(100)) !=
-      pdTRUE) {
-    ESP_LOGE(TAG, "Config request queue full");
-    vSemaphoreDelete(completion_sem);
-    return ESP_ERR_TIMEOUT;
-  }
+  // Cache request POINTER for later processing on DQ
+  g_active_config_request_ptr = &request;
+  g_active_config_request_valid = true;
+  g_config_req_state = CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ;
+
+  ESP_LOGI(TAG, "New config request from UART handler");
+  signal_data_ready();
 
   // Wait for completion (handler will update request.result via pointer)
   if (xSemaphoreTake(completion_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     ESP_LOGE(TAG, "Config request timeout");
+    clear_data_ready(); // Clear handshake GPIO
+    g_active_config_request_valid = false;
+    g_active_config_request_ptr = NULL;
+    g_config_req_state = CONFIG_REQ_STATE_IDLE;
     vSemaphoreDelete(completion_sem);
     return ESP_ERR_TIMEOUT;
   }
@@ -244,14 +230,6 @@ esp_err_t mcu_lan_handler_start(void) {
   g_rtc_cache.mutex = xSemaphoreCreateMutex();
   if (g_rtc_cache.mutex == NULL) {
     ESP_LOGE(TAG, "Failed to create RTC mutex");
-    return ESP_FAIL;
-  }
-
-  g_config_request_queue =
-      xQueueCreate(CONFIG_REQUEST_QUEUE_SIZE, sizeof(config_request_t *));
-  if (g_config_request_queue == NULL) {
-    ESP_LOGE(TAG, "Failed to create config request queue");
-    vSemaphoreDelete(g_rtc_cache.mutex);
     return ESP_FAIL;
   }
 
@@ -321,11 +299,6 @@ esp_err_t mcu_lan_handler_stop(void) {
   ESP_LOGI(TAG, "Stopping MCU LAN Handler");
   ds1307_deinit();
   g_handler_running = false;
-
-  if (g_config_request_queue != NULL) {
-    vQueueDelete(g_config_request_queue);
-    g_config_request_queue = NULL;
-  }
 
   if (g_rtc_cache.mutex != NULL) {
     vSemaphoreDelete(g_rtc_cache.mutex);
@@ -593,6 +566,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
       }
       // ===== Branch: Config Request =====
       else if (prefix[0] == 'C' && prefix[1] == 'F') {
+        clear_data_ready(); // Clear handshake GPIO
         ESP_LOGI(TAG, "Config request received");
         handle_config_request();
       }
@@ -600,6 +574,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
 
     // ===== Branch: From Server Handler Task - Downlink to LAN =====
     if (xQueueReceive(g_downlink_queue, &downlink_item, 0) == pdTRUE) {
+      clear_data_ready(); // Clear handshake GPIO
       ESP_LOGI(TAG, "Queueing downlink for handler %d (%u bytes)",
                downlink_item.target_id, downlink_item.length);
       // Cache downlink, do not load SPI TX here
@@ -607,10 +582,6 @@ static void mcu_lan_handler_task(void *pvParameters) {
       g_pending_downlink_valid = true;
       signal_data_ready(); // WAN only notifies data-ready here
     }
-
-    // ===== Branch: From Config Request Queue =====
-    handle_config_request_queue();
-
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 
