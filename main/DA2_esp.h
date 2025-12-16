@@ -12,4 +12,5 @@
 #include "mcu_lan_handler.h"
 #include "ppp_server.h"
 extern TaskHandle_t main_task_handle;
+void server_connect_stop(config_server_type_t server_type);
 #endif // DA2_ESP_H

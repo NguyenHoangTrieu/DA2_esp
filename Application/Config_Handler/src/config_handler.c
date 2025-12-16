@@ -525,7 +525,6 @@ static void config_handler_task(void *arg) {
                         mcu_lan_config_data_t lan_cmd;
                         lan_cmd.length = cmd.data_len - 3;  // Skip "ML:" prefix
                         memcpy(lan_cmd.command, &cmd.raw_data[3], lan_cmd.length);
-                        lan_cmd.length -= 2;
 
                         // Check if this is a firmware update command
                         if (lan_cmd.length >= 4 && strncmp(lan_cmd.command, "CFFW", 4) == 0) {
