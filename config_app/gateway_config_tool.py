@@ -391,8 +391,6 @@ class GatewayConfigTool:
                 rtscts=False,
                 dsrdtr=False
             )
-            self.serial_port.dtr = False
-            self.serial_port.rts = False
             self.serial_port.reset_input_buffer()
             self.serial_port.reset_output_buffer()
             threading.Event().wait(0.1)
