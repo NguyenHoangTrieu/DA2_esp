@@ -79,7 +79,7 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     }
     
     ESP_LOGI(TAG, "==> Switching to Straight CONFIG mode");
-    jtag_task_start();
+    // if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
     led_show_yellow();
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
@@ -123,6 +123,7 @@ void server_connect_stop(config_server_type_t server_type){
 
 // Helper functions to start/stop internet connections
 static void internet_connect_stop(config_internet_type_t internet_type){
+    mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
     switch(internet_type){
         case CONFIG_INTERNET_LTE:
             lte_connect_task_stop();
@@ -170,7 +171,7 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
     
     ESP_LOGI(TAG, "==> Switching to NORMAL mode");
     
-    if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_stop();
+    // if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_stop();
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -188,7 +189,10 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
             }
         }
         internet_connect_start(*current_internet_type);
-        vTaskDelay(pdMS_TO_TICKS(15000));
+        ESP_LOGI(TAG, "Waiting for internet connection...");
+        while(is_internet_connected == false){
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
         server_connect_start(*current_server_type);
     }
     if (*current_server_type != g_server_type) {

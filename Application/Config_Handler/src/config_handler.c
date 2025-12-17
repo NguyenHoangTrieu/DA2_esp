@@ -18,6 +18,7 @@ QueueHandle_t g_config_handler_queue = NULL;
 // global config contexts
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to LTE
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
+bool is_internet_connected = false;
 
 static bool config_handler_running = false;
 static TaskHandle_t config_handler_task_handle = NULL;

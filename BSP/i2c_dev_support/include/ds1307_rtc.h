@@ -1,28 +1,25 @@
 /**
  * @file ds1307_rtc.h
- * @brief DS1307 RTC Driver using ESP-IDF 6.0 I2C Master API
+ * @brief DS1307 RTC Driver using I2C Device Support Layer
  */
 
 #ifndef DS1307_RTC_H
 #define DS1307_RTC_H
 
 #include "esp_err.h"
-#include <stdbool.h>
 #include <time.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // DS1307 Configuration
-#define DS1307_I2C_ADDR 0x68
-#define DS1307_I2C_PORT I2C_NUM_0
-#define DS1307_I2C_SDA_PIN 21
-#define DS1307_I2C_SCL_PIN 22
-#define DS1307_I2C_FREQ_HZ 100000 // 100kHz
+#define DS1307_I2C_ADDR     0x68
+#define DS1307_I2C_FREQ_HZ  100000  // 100kHz
 
 /**
- * @brief Initialize DS1307 RTC with I2C master
+ * @brief Initialize DS1307 RTC (requires i2c_dev_support to be initialized first)
  * @return ESP_OK on success
  */
 esp_err_t ds1307_init(void);

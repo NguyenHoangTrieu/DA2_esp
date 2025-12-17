@@ -1,5 +1,6 @@
 file(GLOB MODEM_UART_SRCS "../BSP/esp_modem_uart/src/*.c")
 file(GLOB MODEM_USB_SRCS "../BSP/esp_modem_usb/src/*.c")
+file(GLOB I2C_DEVICES "../BSP/i2c_dev_support/src/*.c")
 
 idf_component_register(SRCS "DA2_esp.c" 
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
@@ -13,10 +14,10 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Data_Communication_Handler/src/usb_handler.c"
                                 "../Application/Data_Communication_Handler/src/uart_handler.c"
                                 "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
-                                "../BSP/rbg_led_ws_handler/rbg_handler.c" 
-                                "../BSP/ds1307_rtc/src/ds1307_rtc.c"
+                                "../BSP/rbg_led_ws_handler/rbg_handler.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
+                                ${I2C_DEVICES}
                                 "../BSP/bg96_communication/src/bg96_comm.c"
                                 "../BSP/sim7600_communication/src/sim7600_comm.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
@@ -52,11 +53,11 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Data_Communication_Handler/include"
                                 "../Application/MCU_LAN_Handler/include"
                                 "../BSP/rbg_led_ws_handler"
-                                "../BSP/ds1307_rtc/include"
                                 "../BSP/esp_modem_uart/include"
                                 "../BSP/esp_modem_usb/include"
                                 "../BSP/bg96_communication/include"
                                 "../BSP/sim7600_communication/include"
                                 "../BSP/MCU_LAN_Communication/include"
+                                "../BSP/i2c_dev_support/include"
                                 "../Middleware/LTE_Handler/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)

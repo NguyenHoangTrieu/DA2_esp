@@ -12,6 +12,7 @@
 #define PUBLISH_TOPIC "v1/devices/me/telemetry"
 #define SUBSCRIBE_TOPIC "v1/devices/me/rpc/request/+"
 #define ATTRIBUTE_TOPIC "v1/devices/me/attributes"
+#define FIRMWARE_STATUS_TOPIC "v1/devices/me/attributes"
 #define DATA_BUFFER_SIZE (1024) // 1KB
 #define JSON_TX_BUFFER_SIZE (3072)
 #define HEX_STRING_BUFFER_SIZE (DATA_BUFFER_SIZE * 2 + 1)
@@ -47,6 +48,37 @@ static void binary_to_hex_string(const uint8_t *data, size_t len, char *hex_str,
         snprintf(&hex_str[hex_len], hex_buf_size - hex_len, "%02X", data[i]);
   }
   hex_str[hex_len] = '\0';
+}
+
+/**
+ * @brief Publish firmware update status to ThingsBoard
+ * @param status Status string ("success", "failed", "in_progress")
+ * @param fw_version Current firmware version
+ */
+void mqtt_publish_firmware_status(const char *status, const char *fw_version) {
+  if (!m_mqtt_connected || !m_client) {
+    ESP_LOGW(TAG, "MQTT not connected, cannot publish firmware status");
+    return;
+  }
+
+  char payload[256];
+  int len =
+      snprintf(payload, sizeof(payload),
+               "{\"fw_state\":\"%s\",\"fw_version\":\"%s\"}",
+               status, fw_version);
+
+  if (len >= sizeof(payload)) {
+    ESP_LOGW(TAG, "Firmware status payload truncated");
+    return;
+  }
+
+  int msg_id = esp_mqtt_client_publish(m_client, FIRMWARE_STATUS_TOPIC, payload,
+                                       len, 1, 0);
+  if (msg_id >= 0) {
+    ESP_LOGI(TAG, "✓ Firmware status published: %s", status);
+  } else {
+    ESP_LOGE(TAG, "✗ Failed to publish firmware status");
+  }
 }
 
 /**
@@ -216,38 +248,38 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
 /**
  * @brief Extract hex string from JSON params
  */
-static bool extract_params_from_json(const char *json, size_t json_len, 
+static bool extract_params_from_json(const char *json, size_t json_len,
                                      char *hex_out, size_t hex_out_size) {
-    // Find "params":"
-    const char *params_start = strstr(json, "\"params\":\"");
+  // Find "params":"
+  const char *params_start = strstr(json, "\"params\":\"");
+  if (params_start == NULL) {
+    // Try without space
+    params_start = strstr(json, "\"params\":\"");
     if (params_start == NULL) {
-        // Try without space
-        params_start = strstr(json, "\"params\":\"");
-        if (params_start == NULL) {
-            return false;
-        }
+      return false;
     }
-    
-    // Skip to hex string start
-    params_start += strlen("\"params\":\"");
-    
-    // Find closing quote
-    const char *params_end = strchr(params_start, '"');
-    if (params_end == NULL) {
-        return false;
-    }
-    
-    // Calculate length
-    size_t hex_len = params_end - params_start;
-    if (hex_len == 0 || hex_len >= hex_out_size) {
-        return false;
-    }
-    
-    // Copy hex string
-    memcpy(hex_out, params_start, hex_len);
-    hex_out[hex_len] = '\0';
-    
-    return true;
+  }
+
+  // Skip to hex string start
+  params_start += strlen("\"params\":\"");
+
+  // Find closing quote
+  const char *params_end = strchr(params_start, '"');
+  if (params_end == NULL) {
+    return false;
+  }
+
+  // Calculate length
+  size_t hex_len = params_end - params_start;
+  if (hex_len == 0 || hex_len >= hex_out_size) {
+    return false;
+  }
+
+  // Copy hex string
+  memcpy(hex_out, params_start, hex_len);
+  hex_out[hex_len] = '\0';
+
+  return true;
 }
 
 /**
@@ -263,7 +295,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.attribute_topic, 1);
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.subscribe_topic, 1);
     esp_mqtt_client_publish(event->client, g_mqtt_ctx.attribute_topic,
-                            "{\"chip_type\":\"esp32s3\", \"fw\":\"1.0.0\"}", 0,
+                            "{\"chip_type\":\"esp32s3\", \"fw\":\"1.0.1\"}", 0,
                             1, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
     m_mqtt_connected = true;
@@ -329,6 +361,20 @@ static void mqtt_publish_task(void *arg) {
   }
 
   ESP_LOGI(TAG, "MQTT publish task started");
+  // ===== PUBLISH FIRMWARE UPDATE SUCCESS STATUS =====
+  int retry_count = 0;
+  while (!m_mqtt_connected && retry_count < 500) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+    retry_count++;
+  }
+
+  if (m_mqtt_connected) {
+    // Publish firmware update success
+    mqtt_publish_firmware_status("success", "1.0.3");
+    ESP_LOGI(TAG, "Firmware update notification sent");
+  } else {
+    ESP_LOGW(TAG, "MQTT not connected, skipping firmware status");
+  }
 
   while (!mqtt_task_close) {
     if (g_mqtt_publish_queue) {

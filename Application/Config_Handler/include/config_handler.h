@@ -96,6 +96,8 @@ extern QueueHandle_t g_lte_config_queue;
 extern QueueHandle_t g_mqtt_config_queue;
 extern QueueHandle_t g_mcu_lan_config_queue;
 
+extern bool is_internet_connected;
+
 // Main config handler queue (receives raw commands)
 extern QueueHandle_t g_config_handler_queue;
 extern config_internet_type_t g_internet_type;

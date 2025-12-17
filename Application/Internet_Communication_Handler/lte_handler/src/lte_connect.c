@@ -5,6 +5,10 @@
 
 #include "lte_connect.h"
 #include "config_handler.h"
+#include "esp_sntp.h"
+#include "ds1307_rtc.h"
+#include <time.h>
+#include <sys/time.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -21,6 +25,8 @@
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 10000
 
 static const char *TAG = "LTE_CONNECT";
+static bool g_lte_sntp_synced = false;
+static bool g_lte_sntp_started = false;
 
 /* ==================== LTE Config Context ==================== */
 lte_config_context_t g_lte_ctx = {.comm_type = LTE_DEFAULT_COMM_TYPE,
@@ -75,6 +81,53 @@ static esp_err_t lte_init_with_config(void) {
   return ret;
 }
 
+static void lte_sntp_sync_notification_cb(struct timeval *tv)
+{
+    ESP_LOGI(TAG, "LTE SNTP time synchronized!");
+    g_lte_sntp_synced = true;
+
+    // Sync system time to DS1307
+    time_t now = tv->tv_sec;
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+
+    // esp_err_t ret = ds1307_write_time(&timeinfo);
+    // if (ret == ESP_OK) {
+    //     ESP_LOGI(TAG, "System time synced to DS1307 RTC");
+    // } else {
+    //     ESP_LOGW(TAG, "Failed to sync time to DS1307: %s", esp_err_to_name(ret));
+    // }
+}
+
+static void lte_init_sntp_once(void)
+{
+    if (g_lte_sntp_started) return;
+
+    ESP_LOGI(TAG, "Initializing SNTP (LTE)");
+
+    // TZ VN
+    setenv("TZ", "ICT-7", 1);
+    tzset();
+
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.google.com");
+    esp_sntp_setservername(2, "time.cloudflare.com");
+
+    esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
+    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+
+    esp_sntp_init();
+    g_lte_sntp_started = true;
+
+    ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
+}
+
+bool lte_is_sntp_synced(void)
+{
+    return g_lte_sntp_synced;
+}
+
 /**
  * @brief Combined task: monitor connection + handle config updates
  */
@@ -115,6 +168,8 @@ static void lte_task(void *arg) {
     if ((now - last_monitor) >= monitor_interval) {
       if (g_lte_ctx.initialized) {
         if (lte_handler_is_connected()) {
+          is_internet_connected = true;
+          lte_init_sntp_once();
           uint32_t rssi, ber;
           if (lte_handler_get_signal_strength(&rssi, &ber) == ESP_OK) {
             ESP_LOGI(TAG, "Connected - RSSI: %lu, BER: %lu", rssi, ber);
