@@ -2,7 +2,7 @@ file(GLOB MODEM_UART_SRCS "../BSP/esp_modem_uart/src/*.c")
 file(GLOB MODEM_USB_SRCS "../BSP/esp_modem_usb/src/*.c")
 file(GLOB I2C_DEVICES "../BSP/i2c_dev_support/src/*.c")
 
-idf_component_register(SRCS "DA2_esp.c" 
+idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
                                 "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
@@ -22,6 +22,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/sim7600_communication/src/sim7600_comm.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
                                 "../Middleware/LTE_Handler/src/lte_handler.c"
+                                "oled_monitor_task.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash

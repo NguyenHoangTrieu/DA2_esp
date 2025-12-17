@@ -121,24 +121,24 @@ void server_connect_stop(config_server_type_t server_type){
     }
 }
 
-// Helper functions to start/stop internet connections
-static void internet_connect_stop(config_internet_type_t internet_type){
-    mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
-    switch(internet_type){
-        case CONFIG_INTERNET_LTE:
-            lte_connect_task_stop();
-            break;
-        case CONFIG_INTERNET_WIFI:
-            wifi_connect_task_stop();
-            break;
-        case CONFIG_INTERNET_ETHERNET:
-            //ethernet_connect_task_stop(); // To be implemented
-            break; 
-        default:
-            ESP_LOGW(TAG, "Unknown internet type: %d", internet_type);
-            break;
-    }
-}
+// // Helper functions to start/stop internet connections
+// static void internet_connect_stop(config_internet_type_t internet_type){
+//     mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
+//     switch(internet_type){
+//         case CONFIG_INTERNET_LTE:
+//             lte_connect_task_stop();
+//             break;
+//         case CONFIG_INTERNET_WIFI:
+//             wifi_connect_task_stop();
+//             break;
+//         case CONFIG_INTERNET_ETHERNET:
+//             //ethernet_connect_task_stop(); // To be implemented
+//             break; 
+//         default:
+//             ESP_LOGW(TAG, "Unknown internet type: %d", internet_type);
+//             break;
+//     }
+// }
 
 // Helper functions to start/stop internet connections
 static void internet_connect_start(config_internet_type_t internet_type){
@@ -178,22 +178,24 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
     ppp_server_deinit();
     
     if (*current_internet_type != g_internet_type) {
-        ESP_LOGI(TAG, "Internet type changed: %d -> %d", *current_internet_type, g_internet_type);
-        config_internet_type_t old_type = *current_internet_type;
-        *current_internet_type = g_internet_type;
-        server_connect_stop(*current_server_type);
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        for (int i = 0; i < CONFIG_INTERNET_COUNT; i++) {
-            if (i == old_type) {
-                internet_connect_stop(i);
-            }
-        }
-        internet_connect_start(*current_internet_type);
-        ESP_LOGI(TAG, "Waiting for internet connection...");
-        while(is_internet_connected == false){
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-        server_connect_start(*current_server_type);
+        // ESP_LOGI(TAG, "Internet type changed: %d -> %d", *current_internet_type, g_internet_type);
+        // config_internet_type_t old_type = *current_internet_type;
+        // *current_internet_type = g_internet_type;
+        // server_connect_stop(*current_server_type);
+        // vTaskDelay(pdMS_TO_TICKS(5000));
+        // for (int i = 0; i < CONFIG_INTERNET_COUNT; i++) {
+        //     if (i == old_type) {
+        //         internet_connect_stop(i);
+        //     }
+        // }
+        // internet_connect_start(*current_internet_type);
+        // ESP_LOGI(TAG, "Waiting for internet connection...");
+        // while(is_internet_connected == false){
+        //     vTaskDelay(pdMS_TO_TICKS(100));
+        // }
+        // server_connect_start(*current_server_type);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
     }
     if (*current_server_type != g_server_type) {
         ESP_LOGI(TAG, "Server type changed: %d -> %d", *current_server_type, g_server_type);
@@ -224,7 +226,9 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
     ESP_ERROR_CHECK(config_init());
-    
+    ESP_ERROR_CHECK(i2c_dev_support_init());
+    oled_monitor_task_start();
+    oled_monitor_update_internet_type(g_internet_type);
     init_led_strip();
     led_on();
     

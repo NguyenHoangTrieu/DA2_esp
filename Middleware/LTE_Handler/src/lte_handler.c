@@ -304,24 +304,24 @@ static void lte_handler_bg_task(void *param) {
   while (ctx && ctx->initialized) {
     /* Poll signal quality when connected */
     if (ctx->state == LTE_STATE_CONNECTED) {
-      if (xSemaphoreTake(ctx->mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        uint32_t rssi, ber;
+      // if (xSemaphoreTake(ctx->mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+      //   uint32_t rssi, ber;
 
-        if (ctx->config.comm_type == LTE_HANDLER_UART && ctx->uart_dce) {
-          if (ctx->uart_dce->get_signal_quality(ctx->uart_dce, &rssi, &ber) ==
-              ESP_OK) {
-            ctx->modem_info.rssi = rssi;
-            ctx->modem_info.ber = ber;
-          }
-        } else if (ctx->config.comm_type == LTE_HANDLER_USB) {
-          int rssi_int, ber_int;
-          if (modem_board_get_signal_quality(&rssi_int, &ber_int) == ESP_OK) {
-            ctx->modem_info.rssi = rssi_int;
-            ctx->modem_info.ber = ber_int;
-          }
-        }
-        xSemaphoreGive(ctx->mutex);
-      }
+      //   if (ctx->config.comm_type == LTE_HANDLER_UART && ctx->uart_dce) {
+      //     if (ctx->uart_dce->get_signal_quality(ctx->uart_dce, &rssi, &ber) ==
+      //         ESP_OK) {
+      //       ctx->modem_info.rssi = rssi;
+      //       ctx->modem_info.ber = ber;
+      //     }
+      //   } else if (ctx->config.comm_type == LTE_HANDLER_USB) {
+      //     int rssi_int, ber_int;
+      //     if (modem_board_get_signal_quality(&rssi_int, &ber_int) == ESP_OK) {
+      //       ctx->modem_info.rssi = rssi_int;
+      //       ctx->modem_info.ber = ber_int;
+      //     }
+      //   }
+      //   xSemaphoreGive(ctx->mutex);
+      // }
     }
 
     /* Auto-reconnect logic */
@@ -441,7 +441,7 @@ esp_err_t lte_handler_init(const lte_handler_config_t *config) {
 
   ESP_LOGI(TAG, "LTE handler initialized (%s mode)",
            ctx->config.comm_type == LTE_HANDLER_UART ? "UART" : "USB");
-
+  set_state(LTE_STATE_CONNECTED);
   return ESP_OK;
 }
 

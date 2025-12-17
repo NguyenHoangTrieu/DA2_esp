@@ -5,6 +5,7 @@
  */
 
 #include "wifi_connect.h"
+#include "oled_monitor_task.h"
 #include "config_handler.h"
 #include "esp_sntp.h"
 #include "ds1307_rtc.h"
@@ -138,6 +139,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     is_internet_connected = true;
     wifi_init_sntp();
+    oled_monitor_update_wifi(true);
   }
 }
 

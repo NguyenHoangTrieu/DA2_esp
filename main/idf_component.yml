@@ -22,3 +22,4 @@ dependencies:
   # espressif/esp-extconn: '*'
   espressif/usb: '*'
   espressif/eppp_link: ^1.1.3
+  espressif/ssd1306: "^1.0.0"

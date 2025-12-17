@@ -11,6 +11,8 @@
 #include "lte_connect.h"
 #include "mcu_lan_handler.h"
 #include "ppp_server.h"
+#include "i2c_dev_support.h"
+#include "oled_monitor_task.h"
 extern TaskHandle_t main_task_handle;
 void server_connect_stop(config_server_type_t server_type);
 #endif // DA2_ESP_H

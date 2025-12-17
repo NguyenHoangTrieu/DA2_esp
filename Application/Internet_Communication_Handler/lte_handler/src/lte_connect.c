@@ -4,6 +4,7 @@
  */
 
 #include "lte_connect.h"
+#include "oled_monitor_task.h"
 #include "config_handler.h"
 #include "esp_sntp.h"
 #include "ds1307_rtc.h"
@@ -22,7 +23,7 @@
 #define LTE_AUTO_RECONNECT true
 #define LTE_RECONNECT_TIMEOUT_MS 30000
 #define LTE_MAX_RECONNECT 0 /* Infinite */
-#define LTE_CONNECTION_MONITOR_INTERVAL_MS 10000
+#define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
 static bool g_lte_sntp_synced = false;
@@ -170,10 +171,7 @@ static void lte_task(void *arg) {
         if (lte_handler_is_connected()) {
           is_internet_connected = true;
           lte_init_sntp_once();
-          uint32_t rssi, ber;
-          if (lte_handler_get_signal_strength(&rssi, &ber) == ESP_OK) {
-            ESP_LOGI(TAG, "Connected - RSSI: %lu, BER: %lu", rssi, ber);
-          }
+          oled_monitor_update_lte(true);
         } else {
           ESP_LOGW(TAG, "Not connected - State: %d", lte_handler_get_state());
         }
