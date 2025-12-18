@@ -4,18 +4,18 @@
  */
 
 #include "lte_connect.h"
-#include "oled_monitor_task.h"
 #include "config_handler.h"
-#include "esp_sntp.h"
-#include "ds1307_rtc.h"
-#include <time.h>
-#include <sys/time.h>
 #include "esp_log.h"
+#include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "lte_handler.h"
+#include "oled_monitor_task.h"
+#include "pcf8563_rtc.h"
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 /* ==================== Default Configuration ==================== */
 #define LTE_DEFAULT_COMM_TYPE LTE_HANDLER_USB
@@ -31,15 +31,16 @@ static bool g_lte_sntp_started = false;
 
 /* ==================== LTE Config Context ==================== */
 lte_config_context_t g_lte_ctx = {.comm_type = LTE_DEFAULT_COMM_TYPE,
-                              .apn = LTE_DEFAULT_APN,
-                              .username = "",
-                              .password = "",
-                              .max_reconnect_attempts = LTE_MAX_RECONNECT,
-                              .reconnect_timeout_ms = LTE_RECONNECT_TIMEOUT_MS,
-                              .auto_reconnect = LTE_AUTO_RECONNECT,
-                              .initialized = false,
-                              .task_running = false,
-                              .task_handle = NULL};
+                                  .apn = LTE_DEFAULT_APN,
+                                  .username = "",
+                                  .password = "",
+                                  .max_reconnect_attempts = LTE_MAX_RECONNECT,
+                                  .reconnect_timeout_ms =
+                                      LTE_RECONNECT_TIMEOUT_MS,
+                                  .auto_reconnect = LTE_AUTO_RECONNECT,
+                                  .initialized = false,
+                                  .task_running = false,
+                                  .task_handle = NULL};
 
 /**
  * @brief Initialize/Reinitialize LTE with current config
@@ -82,52 +83,48 @@ static esp_err_t lte_init_with_config(void) {
   return ret;
 }
 
-static void lte_sntp_sync_notification_cb(struct timeval *tv)
-{
-    ESP_LOGI(TAG, "LTE SNTP time synchronized!");
-    g_lte_sntp_synced = true;
+static void lte_sntp_sync_notification_cb(struct timeval *tv) {
+  ESP_LOGI(TAG, "LTE SNTP time synchronized!");
+  g_lte_sntp_synced = true;
 
-    // Sync system time to DS1307
-    time_t now = tv->tv_sec;
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+  // Sync system time to PCF8563
+  time_t now = tv->tv_sec;
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
 
-    // esp_err_t ret = ds1307_write_time(&timeinfo);
-    // if (ret == ESP_OK) {
-    //     ESP_LOGI(TAG, "System time synced to DS1307 RTC");
-    // } else {
-    //     ESP_LOGW(TAG, "Failed to sync time to DS1307: %s", esp_err_to_name(ret));
-    // }
+  esp_err_t ret = pcf8563_write_time(&timeinfo);
+  if (ret == ESP_OK) {
+    ESP_LOGI(TAG, "System time synced to PCF8563 RTC");
+  } else {
+    ESP_LOGW(TAG, "Failed to sync time to PCF8563: %s", esp_err_to_name(ret));
+  }
 }
 
-static void lte_init_sntp_once(void)
-{
-    if (g_lte_sntp_started) return;
+static void lte_init_sntp_once(void) {
+  if (g_lte_sntp_started)
+    return;
 
-    ESP_LOGI(TAG, "Initializing SNTP (LTE)");
+  ESP_LOGI(TAG, "Initializing SNTP (LTE)");
 
-    // TZ VN
-    setenv("TZ", "ICT-7", 1);
-    tzset();
+  // TZ VN
+  setenv("TZ", "ICT-7", 1);
+  tzset();
 
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "time.google.com");
-    esp_sntp_setservername(2, "time.cloudflare.com");
+  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, "pool.ntp.org");
+  esp_sntp_setservername(1, "time.google.com");
+  esp_sntp_setservername(2, "time.cloudflare.com");
 
-    esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
-    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+  esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
+  esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
 
-    esp_sntp_init();
-    g_lte_sntp_started = true;
+  esp_sntp_init();
+  g_lte_sntp_started = true;
 
-    ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
+  ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
 }
 
-bool lte_is_sntp_synced(void)
-{
-    return g_lte_sntp_synced;
-}
+bool lte_is_sntp_synced(void) { return g_lte_sntp_synced; }
 
 /**
  * @brief Combined task: monitor connection + handle config updates
@@ -136,7 +133,13 @@ static void lte_task(void *arg) {
   ESP_LOGI(TAG, "LTE task started");
 
   TickType_t last_monitor = 0;
-  const TickType_t monitor_interval = pdMS_TO_TICKS(LTE_CONNECTION_MONITOR_INTERVAL_MS);
+  TickType_t last_reconnect_attempt = 0;
+  const TickType_t monitor_interval =
+      pdMS_TO_TICKS(LTE_CONNECTION_MONITOR_INTERVAL_MS);
+  const TickType_t reconnect_interval =
+      pdMS_TO_TICKS(15000); // Retry every 15s
+
+  uint32_t reconnect_count = 0;
 
   /* Initial connection */
   lte_init_with_config();
@@ -152,15 +155,19 @@ static void lte_task(void *arg) {
 
       /* Update internal config */
       strncpy(g_lte_ctx.apn, new_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
-      strncpy(g_lte_ctx.username, new_cfg.username, sizeof(g_lte_ctx.username) - 1);
-      strncpy(g_lte_ctx.password, new_cfg.password, sizeof(g_lte_ctx.password) - 1);
+      strncpy(g_lte_ctx.username, new_cfg.username,
+              sizeof(g_lte_ctx.username) - 1);
+      strncpy(g_lte_ctx.password, new_cfg.password,
+              sizeof(g_lte_ctx.password) - 1);
       g_lte_ctx.comm_type = new_cfg.comm_type;
       g_lte_ctx.auto_reconnect = new_cfg.auto_reconnect;
       g_lte_ctx.reconnect_timeout_ms = new_cfg.reconnect_timeout_ms;
       g_lte_ctx.max_reconnect_attempts = new_cfg.max_reconnect_attempts;
+
       save_lte_config_to_nvs();
 
       /* Reinitialize with new config */
+      reconnect_count = 0; // Reset counter
       lte_init_with_config();
     }
 
@@ -172,8 +179,38 @@ static void lte_task(void *arg) {
           is_internet_connected = true;
           lte_init_sntp_once();
           oled_monitor_update_lte(true);
+          reconnect_count = 0; // Reset on successful connection
         } else {
+          // Active recovery
           ESP_LOGW(TAG, "Not connected - State: %d", lte_handler_get_state());
+          oled_monitor_update_lte(false);
+
+          // Check if auto-reconnect is enabled
+          if (g_lte_ctx.auto_reconnect) {
+            // Check if enough time has passed since last reconnect attempt
+            if ((now - last_reconnect_attempt) >= reconnect_interval) {
+              // Check max reconnect attempts (0 = infinite)
+              if (g_lte_ctx.max_reconnect_attempts == 0 ||
+                  reconnect_count < g_lte_ctx.max_reconnect_attempts) {
+
+                ESP_LOGI(TAG, "Attempting auto-recovery (attempt %lu)...",
+                         reconnect_count + 1);
+
+                esp_err_t ret = lte_handler_connect();
+                if (ret == ESP_OK) {
+                  ESP_LOGI(TAG, "Recovery reconnect initiated");
+                } else {
+                  ESP_LOGW(TAG, "Recovery failed: 0x%x - will retry", ret);
+                }
+
+                reconnect_count++;
+                last_reconnect_attempt = now;
+              } else {
+                ESP_LOGE(TAG, "Max reconnect attempts reached (%lu)",
+                         reconnect_count);
+              }
+            }
+          }
         }
       }
       last_monitor = now;

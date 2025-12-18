@@ -10,7 +10,9 @@ TaskHandle_t main_task_handle = NULL;
 
 /* Notification values */
 #define NOTIFY_BUTTON_PRESS   1
+#define NOTIFY_POWER_MODE     2
 #define NOTIFY_UART_MODE_SWITCH 2
+#define USB_SWITCH_PIN    GPIO_NUM_3
 
 /* App modes */
 typedef enum {
@@ -41,6 +43,23 @@ static void gpio45_isr_handler(void *arg) {
 }
 
 /**
+ * @brief GPIO38 ISR - Button press
+*/
+static void gpio38_isr_handler(void *arg) {
+    uint32_t now = xTaskGetTickCountFromISR();
+    if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
+        last_isr_tick = now;
+        BaseType_t xTaskWoken = pdFALSE;
+        if (main_task_handle) {
+            xTaskNotifyFromISR(main_task_handle, NOTIFY_POWER_MODE, eSetValueWithOverwrite, &xTaskWoken);
+        }
+        if (xTaskWoken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
+    }
+}
+
+/**
  * @brief UART mode switch callback
  * Called from uart_handler when CONFIG/NORMAL detected
  * @param mode 0=CONFIG, 1=NORMAL
@@ -63,10 +82,43 @@ void setup_gpio45_interrupt(void) {
     };
     
     ESP_ERROR_CHECK(gpio_config(&gpio45_cfg));
-    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
     ESP_ERROR_CHECK(gpio_isr_handler_add(45, gpio45_isr_handler, NULL));
     
     ESP_LOGI(TAG, "GPIO45 button interrupt configured");
+}
+
+void setup_gpio38_interrupt(void) {
+    gpio_config_t gpio38_cfg = {
+        .pin_bit_mask = BIT64(38),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE
+    };
+    
+    ESP_ERROR_CHECK(gpio_config(&gpio38_cfg));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(38, gpio38_isr_handler, NULL));
+    
+    ESP_LOGI(TAG, "GPIO38 button interrupt configured");
+}
+
+static void usb_switch_init(void) {
+    gpio_config_t usb_cfg = {
+        .pin_bit_mask = (1ULL << USB_SWITCH_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    
+    ESP_ERROR_CHECK(gpio_config(&usb_cfg));
+    gpio_set_level(USB_SWITCH_PIN, 0);  // Default LOW
+    
+    ESP_LOGI(TAG, "USB switch initialized (GPIO %d)", USB_SWITCH_PIN);
+}
+
+static void usb_switch_set(bool level) {
+    gpio_set_level(USB_SWITCH_PIN, level);
+    ESP_LOGI(TAG, "USB switch set to %d", level);
 }
 
 /**
@@ -145,6 +197,9 @@ static void internet_connect_start(config_internet_type_t internet_type){
     switch(internet_type){
         case CONFIG_INTERNET_LTE:
             ESP_LOGI(TAG, "Starting PPP server for LTE");
+            usb_switch_init();
+            usb_switch_set(false);  // Disable USB connection
+            vTaskDelay(pdMS_TO_TICKS(100));
             lte_connect_task_start();
             break;
         case CONFIG_INTERNET_WIFI:
@@ -225,16 +280,23 @@ void app_main(void) {
         ESP_ERROR_CHECK(nvs_flash_init());
     }
     ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
     ESP_ERROR_CHECK(config_init());
     ESP_ERROR_CHECK(i2c_dev_support_init());
+    tca_init();
+    gpio_set_level(TCA6424A_RESET_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    i2c_dev_support_scan(); // Scan I2C bus for devices
     oled_monitor_task_start();
     oled_monitor_update_internet_type(g_internet_type);
     init_led_strip();
+    pwr_source_init();
     led_on();
-    
-    // setup_gpio45_interrupt();
+    pcf8563_init();
+    pcf8563_clear_voltage_low_flag();
+    setup_gpio45_interrupt();
+    setup_gpio38_interrupt();
     main_task_handle = xTaskGetCurrentTaskHandle();
-    
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     
@@ -252,6 +314,7 @@ void app_main(void) {
     uart_handler_task_start();
     mqtt_handler_task_start();
     mcu_lan_handler_start();
+    volatile bool switch_mode = true;
 
     ESP_LOGI(TAG, "System started in NORMAL mode");
     ESP_LOGI(TAG, "Press GPIO45 or send UART 'CONFIG'/'NORMAL' to switch modes");
@@ -270,6 +333,26 @@ void app_main(void) {
                     switch_to_config_mode(&current_internet_type);
                 } else {
                     switch_to_normal_mode(&current_internet_type, &current_server_type);
+                }
+            }
+
+            if (notification_value == NOTIFY_POWER_MODE) {
+                // Power mode change handling can be implemented here
+                ESP_LOGI(TAG, "Power mode change notification received");
+                if (switch_mode) {
+                    ESP_LOGI(TAG, "Switching to POWER mode");
+                    // Implement low power mode actions
+                    pwr_source_set_1v8(true);
+                    pwr_source_set_3v3(true);
+                    pwr_source_set_5v0(true);
+                    switch_mode = false;
+                } else {
+                    ESP_LOGI(TAG, "Switching to OFF POWER mode");
+                    // Implement normal power mode actions
+                    pwr_source_set_1v8(false);
+                    pwr_source_set_3v3(false);
+                    pwr_source_set_5v0(false);
+                    switch_mode = true;
                 }
             }
             

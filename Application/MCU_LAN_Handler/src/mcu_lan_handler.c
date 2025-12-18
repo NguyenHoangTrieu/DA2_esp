@@ -11,7 +11,7 @@
 #include "mcu_lan_handler.h"
 #include "DA2_esp.h"
 #include "config_handler.h"
-#include "ds1307_rtc.h"
+#include "pcf8563_rtc.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "fota_handler.h"
@@ -238,9 +238,9 @@ esp_err_t mcu_lan_handler_start(void) {
     return ESP_FAIL;
   }
 
-  if (ds1307_init() != ESP_OK) {
-    ESP_LOGW(TAG, "DS1307 init failed, time fallback to system");
-    // Continue without DS1307
+  if (pcf8563_init() != ESP_OK) {
+    ESP_LOGW(TAG, "PCF8563 init failed, time fallback to system");
+    // Continue without PCF8563
   }
 
   ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
@@ -297,7 +297,7 @@ esp_err_t mcu_lan_handler_stop(void) {
     return ESP_OK;
 
   ESP_LOGI(TAG, "Stopping MCU LAN Handler");
-  ds1307_deinit();
+  pcf8563_deinit();
   g_handler_running = false;
 
   if (g_rtc_cache.mutex != NULL) {
@@ -734,15 +734,15 @@ static void get_rtc_string(char *buffer) {
     localtime_r(&now, &timeinfo);
     ESP_LOGI(TAG, "Using SNTP time");
   } else {
-    // OFFLINE or not synced: Read from DS1307
-    esp_err_t ret = ds1307_read_time(&timeinfo);
+    // OFFLINE or not synced: Read from PCF8563
+    esp_err_t ret = pcf8563_read_time(&timeinfo);
     if (ret != ESP_OK) {
-      // Fallback to system time if DS1307 fails
-      ESP_LOGW(TAG, "DS1307 read failed, using system time");
+      // Fallback to system time if PCF8563 fails
+      ESP_LOGW(TAG, "PCF8563 read failed, using system time");
       time_t now = time(NULL);
       localtime_r(&now, &timeinfo);
     } else {
-      ESP_LOGI(TAG, "Using DS1307 RTC time");
+      ESP_LOGI(TAG, "Using PCF8563 RTC time");
     }
   }
 

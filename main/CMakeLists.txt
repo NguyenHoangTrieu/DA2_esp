@@ -23,6 +23,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
                                 "../Middleware/LTE_Handler/src/lte_handler.c"
                                 "oled_monitor_task.c"
+                                "pwr_source_handler.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash

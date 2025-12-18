@@ -5,13 +5,13 @@
  */
 
 #include "wifi_connect.h"
-#include "oled_monitor_task.h"
 #include "config_handler.h"
 #include "esp_sntp.h"
-#include "ds1307_rtc.h"
+#include "oled_monitor_task.h"
+#include "pcf8563_rtc.h"
 
-#define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
+#define DEFAULT_ESP_WIFI_SSID "iphone"   // Initial hardcoded SSID
+#define DEFAULT_ESP_WIFI_PASS "12345678" // Initial hardcoded password
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define EXAMPLE_ESP_MAXIMUM_RETRY 3
@@ -20,6 +20,9 @@
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
 #define EXAMPLE_H2E_IDENTIFIER ""
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
+
+#define WIFI_RECOVERY_CHECK_INTERVAL_MS 5000
+#define WIFI_RECOVERY_RETRY_DELAY_MS 10000
 
 // Uncomment if WPA3 support needed
 // #define ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
@@ -45,60 +48,57 @@ static volatile uint8_t s_reconnect_request =
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
 static bool g_sntp_synced = false;
-
+static TaskHandle_t g_wifi_monitor_task = NULL;
+static bool g_wifi_monitor_running = false;
 // Network interface handle (global)
 esp_netif_t *g_wifi_netif = NULL;
 
 // SNTP sync notification callback
 static void sntp_sync_notification_cb(struct timeval *tv) {
-    ESP_LOGI(TAG, "SNTP time synchronized!");
-    g_sntp_synced = true;
-    
-    // Sync system time to DS1307
-    time_t now = tv->tv_sec;
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
-    
-    esp_err_t ret = ds1307_write_time(&timeinfo);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "System time synced to DS1307 RTC");
-    } else {
-        ESP_LOGW(TAG, "Failed to sync time to DS1307: %s", esp_err_to_name(ret));
-    }
+  ESP_LOGI(TAG, "SNTP time synchronized!");
+  g_sntp_synced = true;
+
+  // Sync system time to PCF8563
+  time_t now = tv->tv_sec;
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+
+  esp_err_t ret = pcf8563_write_time(&timeinfo);
+  if (ret == ESP_OK) {
+    ESP_LOGI(TAG, "System time synced to PCF8563 RTC");
+  } else {
+    ESP_LOGW(TAG, "Failed to sync time to PCF8563: %s", esp_err_to_name(ret));
+  }
 }
 
 // Function to initialize SNTP
 static void wifi_init_sntp(void) {
-    ESP_LOGI(TAG, "Initializing SNTP");
-    
-    // Set timezone to Vietnam (GMT+7)
-    setenv("TZ", "ICT-7", 1);
-    tzset();
-    
-    // Initialize SNTP
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_setservername(1, "time.google.com");
-    esp_sntp_setservername(2, "time.cloudflare.com");
-    
-    // Set notification callback
-    esp_sntp_set_time_sync_notification_cb(sntp_sync_notification_cb);
-    
-    // Set sync mode to smooth adjustment
-    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
-    
-    esp_sntp_init();
-    
-    ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
+  ESP_LOGI(TAG, "Initializing SNTP");
+
+  // Set timezone to Vietnam (GMT+7)
+  setenv("TZ", "ICT-7", 1);
+  tzset();
+
+  // Initialize SNTP
+  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, "pool.ntp.org");
+  esp_sntp_setservername(1, "time.google.com");
+  esp_sntp_setservername(2, "time.cloudflare.com");
+
+  // Set notification callback
+  esp_sntp_set_time_sync_notification_cb(sntp_sync_notification_cb);
+
+  // Set sync mode to smooth adjustment
+  esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+
+  esp_sntp_init();
+
+  ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
 }
 
-bool wifi_is_sntp_synced(void) {
-    return g_sntp_synced;
-}
+bool wifi_is_sntp_synced(void) { return g_sntp_synced; }
 
-uint8_t wifi_get_connection_status(void) {
-    return s_wifi_connected;
-}
+uint8_t wifi_get_connection_status(void) { return s_wifi_connected; }
 
 /*
  * WiFi event handler monitors connection events, initiates reconnect,
@@ -125,12 +125,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       s_retry_num++;
       ESP_LOGI(TAG, "Retrying to connect to the AP");
     } else {
-      xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-      ESP_LOGI(TAG, "Connect to the AP failed");
+      ESP_LOGW(TAG, "Initial connection attempts failed - recovery monitor "
+                    "will continue trying");
     }
 
     ESP_LOGI(TAG, "Disconnected from WiFi");
     s_wifi_connected = 0;
+    oled_monitor_update_wifi(false);
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -277,6 +278,53 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
   }
 }
 
+/**
+ * @brief WiFi recovery monitor task - Auto reconnect on disconnect
+ */
+static void wifi_recovery_monitor_task(void *arg) {
+  ESP_LOGI(TAG, "WiFi recovery monitor started");
+
+  TickType_t last_check = xTaskGetTickCount();
+  const TickType_t check_interval =
+      pdMS_TO_TICKS(WIFI_RECOVERY_CHECK_INTERVAL_MS);
+
+  while (g_wifi_monitor_running) {
+    TickType_t now = xTaskGetTickCount();
+
+    if ((now - last_check) >= check_interval) {
+      // Check if WiFi is disconnected
+      if (!s_wifi_connected) {
+        ESP_LOGW(TAG, "WiFi disconnected - Attempting recovery...");
+
+        // Reset retry counter for recovery
+        s_retry_num = 0;
+
+        // Attempt to reconnect
+        esp_err_t ret = esp_wifi_connect();
+        if (ret == ESP_OK) {
+          ESP_LOGI(TAG, "Recovery reconnect initiated");
+        } else if (ret == ESP_ERR_WIFI_NOT_STARTED) {
+          ESP_LOGE(TAG, "WiFi not started - restarting...");
+          esp_wifi_start();
+        } else {
+          ESP_LOGW(TAG, "Recovery failed: %s", esp_err_to_name(ret));
+        }
+
+        // Wait before next attempt
+        vTaskDelay(pdMS_TO_TICKS(WIFI_RECOVERY_RETRY_DELAY_MS));
+      }
+
+      last_check = now;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+
+  ESP_LOGI(TAG, "WiFi recovery monitor stopped");
+  g_wifi_monitor_task = NULL;
+  vTaskDelete(NULL);
+}
+
 /*
  * FreeRTOS WiFi config task:
  * Listens for WiFi credentials from config queue.
@@ -396,6 +444,10 @@ void wifi_connect_task_start(void) {
     wifi_init_sta(g_wifi_ctx.ssid, g_wifi_ctx.pass, "",
                   WIFI_AUTH_MODE_PERSONAL);
   }
+  g_wifi_monitor_running = true;
+  xTaskCreate(wifi_recovery_monitor_task, "wifi_recovery", 4096, NULL,
+              4, // Priority lower than config task
+              &g_wifi_monitor_task);
 
   // Start the config task to listen for WiFi credentials from queue
   xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
@@ -408,6 +460,7 @@ void wifi_connect_task_stop(void) {
   }
 
   wifi_connect_task_close = true;
+  g_wifi_monitor_running = false;
   ESP_LOGI(TAG, "Stopping WiFi connection task");
 
   // Disable enterprise mode if enabled
