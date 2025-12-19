@@ -10,8 +10,8 @@
 #include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
 
-#define DEFAULT_ESP_WIFI_SSID "iphone"   // Initial hardcoded SSID
-#define DEFAULT_ESP_WIFI_PASS "12345678" // Initial hardcoded password
+#define DEFAULT_ESP_WIFI_SSID "Devil"   // Initial hardcoded SSID
+#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define EXAMPLE_ESP_MAXIMUM_RETRY 3

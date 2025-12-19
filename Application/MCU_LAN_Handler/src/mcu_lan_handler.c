@@ -778,6 +778,8 @@ static const char *handler_id_to_string(handler_id_t id) {
     return "LOR";
   case HANDLER_ZIGBEE:
     return "ZIG";
+  case HANDLER_RS485:
+    return "RS4";
   default:
     return "UNK";
   }
