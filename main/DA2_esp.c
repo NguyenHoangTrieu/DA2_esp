@@ -249,8 +249,6 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
         //     vTaskDelay(pdMS_TO_TICKS(100));
         // }
         // server_connect_start(*current_server_type);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_restart();
     }
     if (*current_server_type != g_server_type) {
         ESP_LOGI(TAG, "Server type changed: %d -> %d", *current_server_type, g_server_type);
@@ -287,8 +285,6 @@ void app_main(void) {
     gpio_set_level(TCA6424A_RESET_PIN, 0);
     vTaskDelay(pdMS_TO_TICKS(100));
     i2c_dev_support_scan(); // Scan I2C bus for devices
-    oled_monitor_task_start();
-    oled_monitor_update_internet_type(g_internet_type);
     init_led_strip();
     pwr_source_init();
     led_on();
@@ -307,13 +303,16 @@ void app_main(void) {
     config_server_type_t current_server_type = g_server_type;
 
     config_handler_task_start();
-
+    mcu_lan_handler_start();
+    uart_handler_task_start();
+    
+    // Start OLED monitor
+    oled_monitor_task_start();
+    oled_monitor_update_internet_type(g_internet_type);
     // Start Internet tasks
     internet_connect_start(current_internet_type);
     vTaskDelay(pdMS_TO_TICKS(10000));
-    uart_handler_task_start();
     mqtt_handler_task_start();
-    mcu_lan_handler_start();
     volatile bool switch_mode = true;
 
     ESP_LOGI(TAG, "System started in NORMAL mode");

@@ -30,7 +30,7 @@ static const char *TAG = "MCU_LAN";
 
 // ===== Configuration =====
 #define MCU_LAN_TASK_STACK_SIZE 4096
-#define MCU_LAN_TASK_PRIORITY 5
+#define MCU_LAN_TASK_PRIORITY 6
 #define RX_TIMEOUT_MS 100
 #define RTC_UPDATE_INTERVAL_MS 1000
 #define DOWNLINK_QUEUE_SIZE 20
@@ -726,25 +726,10 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 static void get_rtc_string(char *buffer) {
   struct tm timeinfo;
   memset(&timeinfo, 0, sizeof(struct tm));
-
-  // Check internet status and SNTP sync
-  if (g_internet_status == INTERNET_STATUS_ONLINE && wifi_is_sntp_synced()) {
-    // ONLINE: Use system time from SNTP
-    time_t now = time(NULL);
-    localtime_r(&now, &timeinfo);
-    ESP_LOGI(TAG, "Using SNTP time");
-  } else {
-    // OFFLINE or not synced: Read from PCF8563
-    esp_err_t ret = pcf8563_read_time(&timeinfo);
-    if (ret != ESP_OK) {
-      // Fallback to system time if PCF8563 fails
-      ESP_LOGW(TAG, "PCF8563 read failed, using system time");
-      time_t now = time(NULL);
-      localtime_r(&now, &timeinfo);
-    } else {
-      ESP_LOGI(TAG, "Using PCF8563 RTC time");
-    }
-  }
+  
+  time_t now = time(NULL);
+  localtime_r(&now, &timeinfo);
+  ESP_LOGI(TAG, "Using SNTP time");
 
   int year = timeinfo.tm_year + 1900;
   if (year > 9999) {

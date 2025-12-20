@@ -502,9 +502,11 @@ static void config_handler_task(void *arg) {
                     config_internet_type_t internet_type;
                     if (config_parse_internet(cmd.raw_data, cmd.data_len, &internet_type) == ESP_OK) {
                         ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
-                        g_internet_type = internet_type;
+                        g_internet_type = internet_type;  
+                        save_internet_config_to_nvs();
+                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        esp_restart();
                     }
-                    save_internet_config_to_nvs();
                     break;
                 }
                 case CONFIG_TYPE_LTE: {
