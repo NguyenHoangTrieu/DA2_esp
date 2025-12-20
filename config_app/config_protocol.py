@@ -33,6 +33,7 @@ LAN_CONFIG_COMMANDS = {
     'lora_modem': 'CFML:CFLR:MODEM:',        # CFML:CFLR:MODEM:<6 bytes binary>
     'lora_handler': 'CFML:CFLR:HDLCF:',      # CFML:CFLR:HDLCF:<11 bytes binary>
     'lora_crypto': 'CFML:CFLR:CRYPT:',       # CFML:CFLR:CRYPT:<keylen><key bytes>
+    'stack_type': 'CFML:CFST:',
     # REMOVED: 'firmware_update': 'CFFW' - only for debug OTA
 }
 
@@ -139,6 +140,26 @@ class LoRaModemConfig:
             head=data[0], addh=data[1], addl=data[2],
             sped=data[3], chan=data[4], option=data[5]
         )
+
+@dataclass
+class StackTypeConfig:
+    """Stack Type Configuration - with CFML prefix"""
+    stack_id: int  # 0 for ST_1, 1 for ST_2
+    stack_type: str  # NONE, LORA, RS485, ZIGBEE, CAN
+    
+    def to_command(self) -> str:
+        """Generate stack type command with CFML prefix
+        
+        Format: CFML:CFST:ST_1:LORA or CFML:CFST:ST_2:RS485
+        """
+        stack_name = f"ST_{self.stack_id + 1}"
+        return f"CFML:CFST:{stack_name}:{self.stack_type.upper()}"
+    
+    @staticmethod
+    def validate_stack_type(stack_type: str) -> bool:
+        """Validate stack type value"""
+        valid_types = ['NONE', 'LORA', 'RS485', 'ZIGBEE', 'CAN']
+        return stack_type.upper() in valid_types
 
 @dataclass
 class LoRaTDMAConfig:
@@ -253,6 +274,27 @@ class ConfigCommandBuilder:
         prefix = b"CFML:CFLR:CRYPT:"
         return prefix + bytes([len(key)]) + key
     
+    @staticmethod
+    def build_stack_type(stack_id: int, stack_type: str) -> str:
+        """Build stack type command with CFML prefix
+        
+        Args:
+            stack_id: 0 for Stack 1, 1 for Stack 2
+            stack_type: NONE, LORA, RS485, ZIGBEE, CAN
+            
+        Returns:
+            Command string: CFML:CFST:ST_1:LORA
+        """
+        if stack_id not in [0, 1]:
+            raise ValueError(f"Invalid stack_id: {stack_id}. Must be 0 or 1")
+        
+        if not StackTypeConfig.validate_stack_type(stack_type):
+            raise ValueError(f"Invalid stack type: {stack_type}. "
+                           f"Valid: NONE, LORA, RS485, ZIGBEE, CAN")
+        
+        config = StackTypeConfig(stack_id=stack_id, stack_type=stack_type)
+        return config.to_command()
+
     # REMOVED: build_firmware_update_wan() and build_firmware_update_lan()
     # These are debug-only OTA commands, not for production use
 
@@ -337,7 +379,20 @@ class ProtocolValidator:
         if inet_type not in valid_types:
             return False, f"Invalid internet type. Valid: {valid_types}"
         return True, ""
-
+    @staticmethod
+    def validate_stack_type(stack_type: str) -> Tuple[bool, str]:
+        """Validate stack type"""
+        valid_types = ["NONE", "LORA", "RS485", "ZIGBEE", "CAN"]
+        if stack_type.upper() not in valid_types:
+            return False, f"Invalid stack type. Valid: {valid_types}"
+        return True, ""
+    
+    @staticmethod
+    def validate_stack_id(stack_id: int) -> Tuple[bool, str]:
+        """Validate stack ID"""
+        if stack_id not in [0, 1]:
+            return False, "Invalid stack ID. Must be 0 (ST_1) or 1 (ST_2)"
+        return True, ""
 # Command format documentation
 COMMAND_FORMAT_DOCS = {
     'CFIN': 'Internet Type: CFIN:WIFI|LTE|ETHERNET|NBIOT',
@@ -354,7 +409,7 @@ COMMAND_FORMAT_DOCS = {
     'CFML:CFLR:MODEM': 'LoRa Modem: CFML:CFLR:MODEM:<6 bytes binary>',
     'CFML:CFLR:HDLCF': 'LoRa TDMA: CFML:CFLR:HDLCF:<11 bytes binary>',
     'CFML:CFLR:CRYPT': 'LoRa Crypto: CFML:CFLR:CRYPT:<keylen><key bytes>',
-    # REMOVED: CFFW and FW commands (debug OTA only)
+    'CFML:CFST': 'Stack Type: CFML:CFST:ST_1:LORA or CFML:CFST:ST_2:RS485 (types: NONE, LORA, RS485, ZIGBEE, CAN)',
 }
 
 def get_command_help(command: str) -> str:
