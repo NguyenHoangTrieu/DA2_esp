@@ -1,0 +1,600 @@
+/*
+ * Config handler module for ESP32-S3 board.
+ * This module processes configuration commands received from the gateway
+ * All comments are in English for clarity.
+ */
+
+#include "config_handler.h"
+#include "esp_log.h"
+#include <ctype.h>
+
+static const char *TAG = "config_handler";
+
+// Queue handles
+QueueHandle_t g_wifi_config_queue = NULL;
+QueueHandle_t g_lte_config_queue = NULL;
+QueueHandle_t g_mqtt_config_queue = NULL;
+QueueHandle_t g_config_handler_queue = NULL;
+// global config contexts
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to LTE
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
+bool is_internet_connected = false;
+
+static bool config_handler_running = false;
+static TaskHandle_t config_handler_task_handle = NULL;
+
+//pre define functions
+static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg);
+static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
+static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
+static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
+
+/**
+ * @brief Parse command type from 2-character prefix
+ * @param cmd Command string
+ * @param len Command length
+ * @return config_type_t Command type enum
+ */
+config_type_t config_parse_type(const char *cmd, uint16_t len) {
+    if (len < 2) {
+        return CONFIG_TYPE_UNKNOWN;
+    }
+    
+    // Check first 2 characters
+    if (cmd[0] == 'W' && cmd[1] == 'F') {
+        return CONFIG_TYPE_WIFI;
+    } else if (cmd[0] == 'M' && cmd[1] == 'Q') {
+        return CONFIG_TYPE_MQTT;
+    } else if (cmd[0] == 'F' && cmd[1] == 'W') {
+        return CONFIG_UPDATE_FIRMWARE;
+    } else if (cmd[0] == 'L' && cmd[1] == 'T') {
+        return CONFIG_TYPE_LTE;
+    } else if (cmd[0] == 'I' && cmd[1] == 'N') {
+        return CONFIG_TYPE_INTERNET;
+    } else if (cmd[0] == 'M' && cmd[1] == 'L') {
+        return CONFIG_TYPE_MCU_LAN;
+    } else if (cmd[0] == 'S' && cmd[1] == 'V') {
+        return CONFIG_TYPE_SERVER;
+    }
+    
+    return CONFIG_TYPE_UNKNOWN;
+}
+
+/**
+ * @brief Parse WiFi configuration from command string
+ * Format: "WF:SSID:PASSWORD:AUTH_MODE"
+ * Example: "WF:MyWiFi:MyPassword123:PERSONAL"
+ * @param data Raw command data
+ * @param len Command length
+ * @param cfg Output WiFi config structure
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg) {
+    if (!data || !cfg || len < 5) {
+        return ESP_FAIL;
+    }
+    
+    memset(cfg, 0, sizeof(wifi_config_data_t));
+    
+    // Parse format: "WF:SSID:PASSWORD:AUTH_MODE" or "WF:SSID:PASSWORD:USERNAME:AUTH_MODE"
+    const char *ptr = data + 3; // Skip "WF:"
+    const char *end = data + len;
+    
+    // Find first colon (after SSID)
+    const char *first_colon = strchr(ptr, ':');
+    if (!first_colon || first_colon >= end) {
+        ESP_LOGE(TAG, "WiFi config format error: missing SSID separator");
+        return ESP_FAIL;
+    }
+    
+    // Extract SSID
+    int ssid_len = first_colon - ptr;
+    if (ssid_len <= 0 || ssid_len >= sizeof(cfg->ssid)) {
+        ESP_LOGE(TAG, "WiFi SSID length invalid: %d", ssid_len);
+        return ESP_FAIL;
+    }
+    memcpy(cfg->ssid, ptr, ssid_len);
+    cfg->ssid[ssid_len] = '\0';
+    
+    // Find second colon (after password)
+    const char *second_colon = strchr(first_colon + 1, ':');
+    if (!second_colon || second_colon >= end) {
+        ESP_LOGE(TAG, "WiFi config format error: missing password separator");
+        return ESP_FAIL;
+    }
+    
+    // Extract password
+    int pass_len = second_colon - first_colon - 1;
+    if (pass_len < 0 || pass_len >= sizeof(cfg->password)) {
+        ESP_LOGE(TAG, "WiFi password length invalid: %d", pass_len);
+        return ESP_FAIL;
+    }
+    if (pass_len > 0) {
+        memcpy(cfg->password, first_colon + 1, pass_len);
+        cfg->password[pass_len] = '\0';
+    }
+    
+    // Find third colon (might be username or auth_mode)
+    const char *third_colon = strchr(second_colon + 1, ':');
+    
+    if (third_colon && third_colon < end) {
+        // Format: "WF:SSID:PASSWORD:USERNAME:AUTH_MODE"
+        // Extract username
+        int username_len = third_colon - second_colon - 1;
+        if (username_len > 0 && username_len < sizeof(cfg->username)) {
+            memcpy(cfg->username, second_colon + 1, username_len);
+            cfg->username[username_len] = '\0';
+        }
+        
+        // Extract auth_mode
+        const char *auth_start = third_colon + 1;
+        int auth_len = end - auth_start;
+        if (auth_len > 0) {
+            if (strncmp(auth_start, "ENTERPRISE", 10) == 0) {
+                cfg->auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+            } else {
+                cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            }
+        } else {
+            cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+        }
+    } else {
+        // Format: "WF:SSID:PASSWORD:AUTH_MODE"
+        const char *auth_start = second_colon + 1;
+        int auth_len = end - auth_start;
+        if (auth_len > 0) {
+            if (strncmp(auth_start, "ENTERPRISE", 10) == 0) {
+                cfg->auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
+            } else {
+                cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+            }
+        } else {
+            cfg->auth_mode = WIFI_AUTH_MODE_PERSONAL;
+        }
+    }
+    
+    ESP_LOGI(TAG, "Parsed WiFi config - SSID: '%s', Pass: '%s', Username: '%s', Auth: %d", 
+             cfg->ssid, cfg->password, cfg->username, cfg->auth_mode);
+    return ESP_OK;
+}
+
+/**
+ * @brief Parse LTE configuration from command string
+ * Format: "LT:TYPE:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
+ * Example: "LT:v-internet:user:pass:USB:true:30000:0"
+ * Note: Username and password can be empty
+ * @param data Raw command data
+ * @param len Command length
+ * @param cfg Output LTE config structure
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
+    if (!data || !cfg || len < 5) {
+        return ESP_FAIL;
+    }
+    
+    memset(cfg, 0, sizeof(lte_config_data_t));
+    
+    // Parse format: "LT:COMM_TYPE:APN:USERNAME:PASSWORD:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
+    const char *ptr = data + 3; // Skip "LT:"
+    const char *end = data + len;
+    const char *separators[7] = {0}; // Array to store separator positions
+    int sep_count = 0;
+    
+    // Find all separators
+    const char *temp_ptr = ptr;
+    while (temp_ptr < end && sep_count < 7) {
+        const char *colon = strchr(temp_ptr, ':');
+        if (!colon || colon >= end) {
+            break;
+        }
+        separators[sep_count++] = colon;
+        temp_ptr = colon + 1;
+    }
+    
+    if (sep_count < 2) {
+        ESP_LOGE(TAG, "LTE config: insufficient parameters");
+        return ESP_FAIL;
+    }
+    
+    int field_index = 0;
+    const char *start = ptr;
+    const char *field_end = separators[field_index];
+    int field_len;
+    
+    // Parse COMM_TYPE (required)
+    field_len = field_end - start;
+    if (field_len <= 0) {
+        ESP_LOGE(TAG, "LTE comm type missing");
+        return ESP_FAIL;
+    }
+    
+    if (strncmp(start, "UART", 4) == 0) {
+        cfg->comm_type = LTE_HANDLER_UART;
+    } else if (strncmp(start, "USB", 3) == 0) {
+        cfg->comm_type = LTE_HANDLER_USB;
+    } else {
+        ESP_LOGE(TAG, "LTE comm type unknown");
+        return ESP_FAIL;
+    }
+    field_index++;
+    
+    // Parse APN (required)
+    start = separators[field_index - 1] + 1;
+    field_end = separators[field_index];
+    field_len = field_end - start;
+    if (field_len <= 0 || field_len >= sizeof(cfg->apn)) {
+        ESP_LOGE(TAG, "LTE APN length invalid: %d", field_len);
+        return ESP_FAIL;
+    }
+    memcpy(cfg->apn, start, field_len);
+    cfg->apn[field_len] = '\0';
+    field_index++;
+    
+    // Parse username (optional)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->username)) {
+            memcpy(cfg->username, start, field_len);
+            cfg->username[field_len] = '\0';
+        }
+        field_index++;
+    }
+    
+    // Parse password (optional)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->password)) {
+            memcpy(cfg->password, start, field_len);
+            cfg->password[field_len] = '\0';
+        }
+        field_index++;
+    } else if (field_index - 1 < sep_count) {
+        // Last field without separator
+        start = separators[field_index - 1] + 1;
+        field_len = end - start;
+        if (field_len > 0 && field_len < sizeof(cfg->password)) {
+            memcpy(cfg->password, start, field_len);
+            cfg->password[field_len] = '\0';
+        }
+    }
+    
+    // Parse auto_reconnect (optional, boolean)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            cfg->auto_reconnect = (strncmp(start, "true", 4) == 0);
+        }
+        field_index++;
+    }
+    
+    // Parse reconnect_timeout_ms (optional, integer in ms)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            char timeout_str[16] = {0};
+            memcpy(timeout_str, start, field_len < 15 ? field_len : 15);
+            cfg->reconnect_timeout_ms = atoi(timeout_str);
+        }
+        field_index++;
+    }
+    
+    // Parse max_reconnect_attempts (optional, integer)
+    if (field_index < sep_count) {
+        start = separators[field_index - 1] + 1;
+        field_end = separators[field_index];
+        field_len = field_end - start;
+        if (field_len > 0) {
+            char max_str[16] = {0};
+            memcpy(max_str, start, field_len < 15 ? field_len : 15);
+            cfg->max_reconnect_attempts = atoi(max_str);
+        }
+    } else if (field_index - 1 < sep_count && field_index > 0) {
+        // Last field without separator
+        start = separators[field_index - 1] + 1;
+        field_len = end - start;
+        if (field_len > 0) {
+            char max_str[16] = {0};
+            memcpy(max_str, start, field_len < 15 ? field_len : 15);
+            cfg->max_reconnect_attempts = atoi(max_str);
+        }
+    }
+    
+    ESP_LOGI(TAG, "Parsed LTE config - CommType: %d, APN: '%s', Username: '%s', Password: '%s', AutoReconnect: %d, Timeout: %d, MaxReconnect: %d",
+             cfg->comm_type, cfg->apn, cfg->username, cfg->password, cfg->auto_reconnect, cfg->reconnect_timeout_ms, cfg->max_reconnect_attempts);
+    return ESP_OK;
+}
+
+/**
+ * @brief Parse MQTT configuration from command string
+ * Format: "MQ:BROKER_URI|DEVICE_TOKEN|SUBSCRIBE_TOPIC|PUBLISH_TOPIC|ATTRIBUTE_TOPIC"
+ * Example: "MQ:mqtt://demo.thingsboard.io:1883|myDeviceToken123|subTopic|pubTopic|attrTopic"
+ * @param data Raw command data
+ * @param len Command length
+ * @param cfg Output MQTT config structure
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg) {
+    if (!data || !cfg || len < 5) {
+        return ESP_FAIL;
+    }
+    
+    memset(cfg, 0, sizeof(mqtt_config_data_t));
+    
+    // Parse format: "MQ:BROKER_URI|DEVICE_TOKEN|SUBSCRIBE_TOPIC|PUBLISH_TOPIC|ATTRIBUTE_TOPIC"
+    const char *ptr = data + 3; // Skip "MQ:"
+    const char *end = data + len;
+    
+    // Parse broker URI
+    const char *first_pipe = strchr(ptr, '|');
+    if (!first_pipe || first_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing broker URI separator");
+        return ESP_FAIL;
+    }
+    
+    int uri_len = first_pipe - ptr;
+    if (uri_len <= 0 || uri_len >= sizeof(cfg->broker_uri)) {
+        ESP_LOGE(TAG, "MQTT broker URI length invalid: %d", uri_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->broker_uri, ptr, uri_len);
+    cfg->broker_uri[uri_len] = '\0';
+    
+    // Parse device token
+    ptr = first_pipe + 1;
+    const char *second_pipe = strchr(ptr, '|');
+    if (!second_pipe || second_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing device token separator");
+        return ESP_FAIL;
+    }
+    
+    int token_len = second_pipe - ptr;
+    if (token_len <= 0 || token_len >= sizeof(cfg->device_token)) {
+        ESP_LOGE(TAG, "MQTT token length invalid: %d", token_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->device_token, ptr, token_len);
+    cfg->device_token[token_len] = '\0';
+    
+    // Parse subscribe topic
+    ptr = second_pipe + 1;
+    const char *third_pipe = strchr(ptr, '|');
+    if (!third_pipe || third_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing subscribe topic separator");
+        return ESP_FAIL;
+    }
+    
+    int sub_topic_len = third_pipe - ptr;
+    if (sub_topic_len <= 0 || sub_topic_len >= sizeof(cfg->subscribe_topic)) {
+        ESP_LOGE(TAG, "MQTT subscribe topic length invalid: %d", sub_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->subscribe_topic, ptr, sub_topic_len);
+    cfg->subscribe_topic[sub_topic_len] = '\0';
+    
+    // Parse publish topic
+    ptr = third_pipe + 1;
+    const char *fourth_pipe = strchr(ptr, '|');
+    if (!fourth_pipe || fourth_pipe >= end) {
+        ESP_LOGE(TAG, "MQTT config: missing publish topic separator");
+        return ESP_FAIL;
+    }
+    
+    int pub_topic_len = fourth_pipe - ptr;
+    if (pub_topic_len <= 0 || pub_topic_len >= sizeof(cfg->publish_topic)) {
+        ESP_LOGE(TAG, "MQTT publish topic length invalid: %d", pub_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->publish_topic, ptr, pub_topic_len);
+    cfg->publish_topic[pub_topic_len] = '\0';
+    
+    // Parse attribute topic
+    ptr = fourth_pipe + 1;
+    int attr_topic_len = end - ptr;
+    if (attr_topic_len <= 0 || attr_topic_len >= sizeof(cfg->attribute_topic)) {
+        ESP_LOGE(TAG, "MQTT attribute topic length invalid: %d", attr_topic_len);
+        return ESP_FAIL;
+    }
+    
+    memcpy(cfg->attribute_topic, ptr, attr_topic_len);
+    cfg->attribute_topic[attr_topic_len] = '\0';
+    
+    ESP_LOGI(TAG, "Parsed MQTT config - URI: '%s', Token: '%s', Sub: '%s', Pub: '%s', Attr: '%s'", 
+             cfg->broker_uri, cfg->device_token, cfg->subscribe_topic, cfg->publish_topic, cfg->attribute_topic);
+    return ESP_OK;
+}
+
+/**
+ * @brief Parse Internet configuration from command string
+ * Format: "IN:TYPE"
+ * Example: "IN:WIFI"
+ * @param data Raw command data
+ * @param len Command length
+ * @param type Output Internet type enum
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
+    if (!data || !type || len < 5) {
+        return ESP_FAIL;
+    }
+    
+    // Simple parsing: "IN:TYPE"
+    const char *ptr = data + 3; // Skip "IN:"
+    if (strncmp(ptr, "WIFI", 4) == 0) {
+        *type = CONFIG_INTERNET_WIFI;
+    } else if (strncmp(ptr, "LTE", 3) == 0) {
+        *type = CONFIG_INTERNET_LTE;
+    } else if (strncmp(ptr, "ETHERNET", 8) == 0) {
+        *type = CONFIG_INTERNET_ETHERNET;
+    } else if (strncmp(ptr, "NBIOT", 5) == 0) {
+        *type = CONFIG_INTERNET_NBIOT;
+    } else {
+        *type = CONFIG_INTERNET_TYPE_UNKNOWN;
+        ESP_LOGE(TAG, "Internet config type unknown");
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "Parsed Internet config type: %d", *type);
+    return ESP_OK;
+}
+
+/**
+ * @brief Config handler task - receives raw commands and routes to specific queues
+ * @param arg Task argument (unused)
+ */
+static void config_handler_task(void *arg) {
+    config_command_t cmd;
+    
+    ESP_LOGI(TAG, "Config handler task started");
+    
+    while (config_handler_running) {
+        // Wait for command from gateway
+        if (xQueueReceive(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+            ESP_LOGI(TAG, "Received config command, type: %d, len: %d", cmd.type, cmd.data_len);
+            
+            // Route to appropriate handler based on type
+            switch (cmd.type) {
+                case CONFIG_TYPE_WIFI: {
+                    wifi_config_data_t wifi_cfg;
+                    if (config_parse_wifi(cmd.raw_data, cmd.data_len, &wifi_cfg) == ESP_OK) {
+                        if (g_wifi_config_queue) {
+                            xQueueSend(g_wifi_config_queue, &wifi_cfg, pdMS_TO_TICKS(100));
+                            ESP_LOGI(TAG, "WiFi config sent to WiFi task");
+                        } else {
+                            ESP_LOGW(TAG, "WiFi queue not initialized");
+                        }
+                    }
+                    break;
+                }
+                
+                case CONFIG_TYPE_MQTT: {
+                    mqtt_config_data_t mqtt_cfg;
+                    if (config_parse_mqtt(cmd.raw_data, cmd.data_len, &mqtt_cfg) == ESP_OK) {
+                        if (g_mqtt_config_queue) {
+                            xQueueSend(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(100));
+                            ESP_LOGI(TAG, "MQTT config sent to MQTT task");
+                        } else {
+                            ESP_LOGW(TAG, "MQTT queue not initialized");
+                        }
+                    }
+                    break;
+                }
+                case CONFIG_UPDATE_FIRMWARE: {
+                    ESP_LOGI(TAG, "Firmware update command received");
+                    mqtt_handler_task_stop(); // Stop MQTT task if running
+                    vTaskDelay(pdMS_TO_TICKS(5000));
+                    fota_handler_task_start();
+                    break;
+                }
+                case CONFIG_TYPE_INTERNET: {
+                    config_internet_type_t internet_type;
+                    if (config_parse_internet(cmd.raw_data, cmd.data_len, &internet_type) == ESP_OK) {
+                        ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
+                        g_internet_type = internet_type;  
+                        save_internet_config_to_nvs();
+                        vTaskDelay(pdMS_TO_TICKS(1000));
+                        esp_restart();
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_LTE: {
+                    lte_config_data_t lte_cfg;
+                    if (config_parse_lte(cmd.raw_data, cmd.data_len, &lte_cfg) == ESP_OK) {
+                        if (g_lte_config_queue) {
+                            xQueueSend(g_lte_config_queue, &lte_cfg, pdMS_TO_TICKS(100));
+                            ESP_LOGI(TAG, "LTE config sent to LTE task");
+                        } else {
+                            ESP_LOGW(TAG, "LTE queue not initialized");
+                        }
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_MCU_LAN: {
+                    bool is_fota = false;
+                    ESP_LOGI(TAG, "MCU LAN command received, forwarding to MCU LAN handler");
+                    if (cmd.data_len > 5) {
+                        mcu_lan_config_data_t lan_cmd;
+                        lan_cmd.length = cmd.data_len - 3;  // Skip "ML:" prefix
+                        memcpy(lan_cmd.command, &cmd.raw_data[3], lan_cmd.length);
+
+                        // Check if this is a firmware update command
+                        if (lan_cmd.length >= 4 && strncmp(lan_cmd.command, "CFFW", 4) == 0) {
+                            g_not_ppp_to_lan = true;
+                            ppp_server_init();
+                            vTaskDelay(pdMS_TO_TICKS(200));
+                            is_fota = true;
+                        }
+                        
+                        // Send to MCU LAN queue
+                        mcu_lan_handler_update_config((const uint8_t *)lan_cmd.command, lan_cmd.length, is_fota);
+                    } else {
+                        ESP_LOGW(TAG, "MCU LAN command too short");
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_SERVER: {
+                    ESP_LOGI(TAG, "Server config command received");
+                    // Future implementation for server config parsing
+                    break;
+                }
+                default:
+                    ESP_LOGW(TAG, "Unknown config type: %d", cmd.type);
+                    break;
+            }
+        }
+    }
+    
+    ESP_LOGI(TAG, "Config handler task exiting");
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief Start config handler task and initialize queues
+ */
+void config_handler_task_start(void) {
+    if (config_handler_running) {
+        ESP_LOGW(TAG, "Config handler already running");
+        return;
+    }
+    
+    // Create queues if not exists
+    if (!g_config_handler_queue) {
+        g_config_handler_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(config_command_t));
+    }
+    
+    if (!g_wifi_config_queue) {
+        g_wifi_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(wifi_config_data_t));
+    }
+    
+    if (!g_mqtt_config_queue) {
+        g_mqtt_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(mqtt_config_data_t));
+    }
+
+    if (!g_lte_config_queue) {
+        g_lte_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(lte_config_data_t));
+    }
+    
+    config_handler_running = true;
+    xTaskCreate(config_handler_task, "config_handler", 4096, NULL, 5, &config_handler_task_handle);
+    ESP_LOGI(TAG, "Config handler task created");
+}
+
+/**
+ * @brief Stop config handler task
+ */
+void config_handler_task_stop(void) {
+    config_handler_running = false;
+    ESP_LOGI(TAG, "Config handler task stopping");
+}

@@ -1,8 +1,0 @@
-dependencies:
-  idf: '>=5.3.0'
-description: EXT CONN driver
-repository: git://github.com/espressif/esp-extconn.git
-repository_info:
-  commit_sha: f9ff4c893fb788ddb34fb8353766941200a7fa9c
-  path: .
-version: 0.3.2
