@@ -23,7 +23,8 @@ try:
     from config_protocol import (
         ConfigCommandBuilder, WiFiConfig, LTEConfig, MQTTConfig,
         CANConfig, CANWhitelist, LoRaModemConfig, LoRaTDMAConfig,
-        ProtocolValidator, ConfigResponseParser
+        StackTypeConfig,
+        ProtocolValidator, ConfigResponseParser,
     )
     PROTOCOL_AVAILABLE = True
 except ImportError:
@@ -976,7 +977,31 @@ class GatewayConfigTool:
                     self.log(f"LoRa Crypto: key_len={key_len}", 'INFO')
             except Exception as e:
                 self.log(f"Failed to build LoRa crypto command: {e}", 'ERROR')
-
+        # 10. Stack Type Configuration
+        if lan_cfg.get('stack_1_type') != orig_lan.get('stack_1_type'):
+            try:
+                stack_type = lan_cfg.get('stack_1_type', 'NONE').upper()
+                if StackTypeConfig.validate_stack_type(stack_type):
+                    cmd = ConfigCommandBuilder.build_stack_type(0, stack_type)
+                    commands.append(cmd)
+                    self.log(f"Stack 1 type: {stack_type}", 'INFO')
+                else:
+                    self.log(f"Invalid Stack 1 type: {stack_type}", 'WARN')
+            except Exception as e:
+                self.log(f"Failed to build Stack 1 type command: {e}", 'ERROR')
+        
+        # Stack 2 type changed?
+        if lan_cfg.get('stack_2_type') != orig_lan.get('stack_2_type'):
+            try:
+                stack_type = lan_cfg.get('stack_2_type', 'NONE').upper()
+                if StackTypeConfig.validate_stack_type(stack_type):
+                    cmd = ConfigCommandBuilder.build_stack_type(1, stack_type)
+                    commands.append(cmd)
+                    self.log(f"Stack 2 type: {stack_type}", 'INFO')
+                else:
+                    self.log(f"Invalid Stack 2 type: {stack_type}", 'WARN')
+            except Exception as e:
+                self.log(f"Failed to build Stack 2 type command: {e}", 'ERROR')
         return commands
 
     def save_to_file(self):
