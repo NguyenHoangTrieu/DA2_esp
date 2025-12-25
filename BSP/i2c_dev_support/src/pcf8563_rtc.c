@@ -6,6 +6,8 @@
 #include "pcf8563_rtc.h"
 #include "esp_log.h"
 #include "i2c_dev_support.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <time.h>
 
 static const char *TAG = "PCF8563_RTC";
@@ -117,13 +119,17 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
     ESP_LOGE(TAG, "Failed to read time from PCF8563: %s", esp_err_to_name(ret));
     return ret;
   }
-
+  ESP_LOGD(TAG,
+           "Raw PCF8563 registers: [0]=0x%02X [1]=0x%02X [2]=0x%02X [3]=0x%02X "
+           "[4]=0x%02X [5]=0x%02X [6]=0x%02X",
+           data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
+    
   // Parse BCD data
   timeinfo->tm_sec = bcd_to_dec(data[0] & 0x7F); // Mask VL bit
   timeinfo->tm_min = bcd_to_dec(data[1] & 0x7F);
   timeinfo->tm_hour = bcd_to_dec(data[2] & 0x3F);
   timeinfo->tm_mday = bcd_to_dec(data[3] & 0x3F);
-  timeinfo->tm_wday = bcd_to_dec(data[4] & 0x07); // 0-6
+  timeinfo->tm_wday = data[4] & 0x07;
 
   // Handle century bit and month
   uint8_t month = bcd_to_dec(data[5] & 0x1F);
@@ -146,39 +152,60 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
 }
 
 esp_err_t pcf8563_write_time(const struct tm *timeinfo) {
-    if (!pcf8563_handle || !timeinfo) {
-        return ESP_ERR_INVALID_ARG;
-    }
+  if (!pcf8563_handle || !timeinfo) {
+    return ESP_ERR_INVALID_ARG;
+  }
 
-    uint8_t data[8];
-    data[0] = PCF8563_REG_VL_SECONDS;
-    data[1] = dec_to_bcd(timeinfo->tm_sec) & 0x7F;
-    data[2] = dec_to_bcd(timeinfo->tm_min) & 0x7F;
-    data[3] = dec_to_bcd(timeinfo->tm_hour) & 0x3F;
-    data[4] = dec_to_bcd(timeinfo->tm_mday) & 0x3F;
-    data[5] = timeinfo->tm_wday & 0x07;
-    
-    // Set century bit if year >= 2000
-    uint8_t month = dec_to_bcd(timeinfo->tm_mon + 1);
-    if (timeinfo->tm_year >= 100) {  // Year 2000 or later
-        data[6] = month | PCF8563_MONTH_CENTURY;
-        data[7] = dec_to_bcd(timeinfo->tm_year - 100);
-    } else {
-        data[6] = month & 0x1F;
-        data[7] = dec_to_bcd(timeinfo->tm_year);
-    }
+  uint8_t data[8];
+  data[0] = PCF8563_REG_VL_SECONDS;               // Start address 0x02
+  data[1] = dec_to_bcd(timeinfo->tm_sec) & 0x7F;  // Seconds
+  data[2] = dec_to_bcd(timeinfo->tm_min) & 0x7F;  // Minutes
+  data[3] = dec_to_bcd(timeinfo->tm_hour) & 0x3F; // Hours
+  data[4] = dec_to_bcd(timeinfo->tm_mday) & 0x3F; // Days
+  data[5] = timeinfo->tm_wday & 0x07;             // Weekdays
 
-    esp_err_t ret = i2c_dev_support_write(pcf8563_handle, data, 8, 1000);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write time to PCF8563: %s", esp_err_to_name(ret));
-        return ret;
-    }
+  // Set century bit if year >= 2000
+  uint8_t month = dec_to_bcd(timeinfo->tm_mon + 1);
+  if (timeinfo->tm_year >= 100) {
+    data[6] = month | PCF8563_MONTH_CENTURY;
+    data[7] = dec_to_bcd(timeinfo->tm_year - 100);
+  } else {
+    data[6] = month & 0x1F;
+    data[7] = dec_to_bcd(timeinfo->tm_year);
+  }
 
-    ESP_LOGI(TAG, "Time written to PCF8563: %04d-%02d-%02d %02d:%02d:%02d",
-             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-             timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-    
-    return ESP_OK;
+  // DEBUG: Log exactly what we're writing
+  ESP_LOGD(TAG,
+           "Writing to PCF8563: [0]=0x%02X [1]=0x%02X [2]=0x%02X [3]=0x%02X "
+           "[4]=0x%02X [5]=0x%02X [6]=0x%02X [7]=0x%02X",
+           data[0], data[1], data[2], data[3], data[4], data[5], data[6],
+           data[7]);
+
+  esp_err_t ret = i2c_dev_support_write(pcf8563_handle, data, 8, 1000);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to write time: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Verify by reading back
+  vTaskDelay(pdMS_TO_TICKS(10)); // Small delay
+  uint8_t verify_addr = PCF8563_REG_VL_SECONDS;
+  uint8_t verify_data[7];
+  ret = i2c_dev_support_write_read(pcf8563_handle, &verify_addr, 1, verify_data,
+                                   7, 1000);
+  if (ret == ESP_OK) {
+    ESP_LOGD(TAG,
+             "Verify read: [0]=0x%02X [1]=0x%02X [2]=0x%02X [3]=0x%02X "
+             "[4]=0x%02X [5]=0x%02X [6]=0x%02X",
+             verify_data[0], verify_data[1], verify_data[2], verify_data[3],
+             verify_data[4], verify_data[5], verify_data[6]);
+  }
+
+  ESP_LOGI(TAG, "Time written to PCF8563: %04d-%02d-%02d %02d:%02d:%02d",
+           timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
+           timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+
+  return ESP_OK;
 }
 
 esp_err_t pcf8563_is_running(bool *is_running) {
@@ -271,24 +298,24 @@ esp_err_t pcf8563_clear_voltage_low(void) {
   if (!pcf8563_handle) {
     return ESP_ERR_INVALID_STATE;
   }
-
   uint8_t reg_addr = PCF8563_REG_VL_SECONDS;
   uint8_t seconds;
-
   esp_err_t ret = i2c_dev_support_write_read(pcf8563_handle, &reg_addr, 1,
                                              &seconds, 1, 1000);
   if (ret != ESP_OK) {
     return ret;
   }
-
-  seconds &= ~PCF8563_SECONDS_VL; // Clear VL bit
+  ESP_LOGI(TAG, "Current seconds register: 0x%02X", seconds);
+  // Clear VL bit (bit 7) while preserving seconds value
+  seconds &= ~PCF8563_SECONDS_VL; // This should be: seconds &= 0x7F
+  ESP_LOGI(TAG, "Writing seconds register: 0x%02X", seconds);
   uint8_t data[2] = {PCF8563_REG_VL_SECONDS, seconds};
-
   ret = i2c_dev_support_write(pcf8563_handle, data, 2, 1000);
   if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "PCF8563 voltage low flag cleared");
+    ESP_LOGI(TAG, "Voltage low flag cleared successfully");
+  } else {
+    ESP_LOGE(TAG, "Failed to clear voltage low flag: %s", esp_err_to_name(ret));
   }
-
   return ret;
 }
 
