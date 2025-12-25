@@ -14,7 +14,7 @@
 #define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
-#define EXAMPLE_ESP_MAXIMUM_RETRY 3
+#define WIFI_ESP_MAXIMUM_RETRY 3
 
 // Adjust for the security/auth your AP uses
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
@@ -116,7 +116,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &s_pending_config));
       esp_wifi_connect();
       ESP_LOGI(TAG, "Connecting to new AP: %s", s_pending_config.sta.ssid);
-    } else if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+    } else if (s_retry_num < WIFI_ESP_MAXIMUM_RETRY) {
       esp_wifi_connect();
       s_retry_num++;
       ESP_LOGI(TAG, "Retrying to connect to the AP");

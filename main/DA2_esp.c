@@ -131,7 +131,9 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     }
     
     ESP_LOGI(TAG, "==> Switching to Straight CONFIG mode");
-    // if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
+    usb_switch_set(true);  // Enable USB connection
+    vTaskDelay(pdMS_TO_TICKS(100));
+    if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
     led_show_yellow();
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
@@ -226,7 +228,11 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
     
     ESP_LOGI(TAG, "==> Switching to NORMAL mode");
     
-    // if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_stop();
+    if (*current_internet_type != CONFIG_INTERNET_LTE){ 
+        jtag_task_stop();
+        usb_switch_set(false);  // Disable USB connection
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
