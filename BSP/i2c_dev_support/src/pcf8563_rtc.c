@@ -89,6 +89,7 @@ esp_err_t pcf8563_init(void) {
   }
 
   ESP_LOGI(TAG, "PCF8563 RTC initialized successfully");
+  pcf8563_start();
   return ESP_OK;
 }
 
@@ -145,39 +146,39 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
 }
 
 esp_err_t pcf8563_write_time(const struct tm *timeinfo) {
-  if (!pcf8563_handle || !timeinfo) {
-    return ESP_ERR_INVALID_ARG;
-  }
+    if (!pcf8563_handle || !timeinfo) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
-  uint8_t data[8];
-  data[0] = PCF8563_REG_VL_SECONDS;
-  data[1] = dec_to_bcd(timeinfo->tm_sec) & 0x7F; // Clear VL bit
-  data[2] = dec_to_bcd(timeinfo->tm_min) & 0x7F;
-  data[3] = dec_to_bcd(timeinfo->tm_hour) & 0x3F;
-  data[4] = dec_to_bcd(timeinfo->tm_mday) & 0x3F;
-  data[5] = dec_to_bcd(timeinfo->tm_wday) & 0x07;
+    uint8_t data[8];
+    data[0] = PCF8563_REG_VL_SECONDS;
+    data[1] = dec_to_bcd(timeinfo->tm_sec) & 0x7F;
+    data[2] = dec_to_bcd(timeinfo->tm_min) & 0x7F;
+    data[3] = dec_to_bcd(timeinfo->tm_hour) & 0x3F;
+    data[4] = dec_to_bcd(timeinfo->tm_mday) & 0x3F;
+    data[5] = timeinfo->tm_wday & 0x07;
+    
+    // Set century bit if year >= 2000
+    uint8_t month = dec_to_bcd(timeinfo->tm_mon + 1);
+    if (timeinfo->tm_year >= 100) {  // Year 2000 or later
+        data[6] = month | PCF8563_MONTH_CENTURY;
+        data[7] = dec_to_bcd(timeinfo->tm_year - 100);
+    } else {
+        data[6] = month & 0x1F;
+        data[7] = dec_to_bcd(timeinfo->tm_year);
+    }
 
-  // Set century bit if year >= 2000
-  uint8_t month = dec_to_bcd(timeinfo->tm_mon + 1);
-  if (timeinfo->tm_year >= 100) { // Year 2000 or later
-    data[6] = month | PCF8563_MONTH_CENTURY;
-    data[7] = dec_to_bcd(timeinfo->tm_year - 100);
-  } else {
-    data[6] = month & 0x1F;
-    data[7] = dec_to_bcd(timeinfo->tm_year);
-  }
+    esp_err_t ret = i2c_dev_support_write(pcf8563_handle, data, 8, 1000);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write time to PCF8563: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
-  esp_err_t ret = i2c_dev_support_write(pcf8563_handle, data, 8, 1000);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to write time to PCF8563: %s", esp_err_to_name(ret));
-    return ret;
-  }
-
-  ESP_LOGI(TAG, "Time written to PCF8563: %04d-%02d-%02d %02d:%02d:%02d",
-           timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-           timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-
-  return ESP_OK;
+    ESP_LOGI(TAG, "Time written to PCF8563: %04d-%02d-%02d %02d:%02d:%02d",
+             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
+             timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+    
+    return ESP_OK;
 }
 
 esp_err_t pcf8563_is_running(bool *is_running) {

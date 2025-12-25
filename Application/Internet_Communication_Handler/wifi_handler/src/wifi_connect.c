@@ -62,6 +62,10 @@ static void sntp_sync_notification_cb(struct timeval *tv) {
   esp_err_t ret = pcf8563_write_time(&timeinfo);
   if (ret == ESP_OK) {
     ESP_LOGI(TAG, "System time synced to PCF8563 RTC");
+    // Clear voltage low flag after successful write
+    pcf8563_clear_voltage_low_flag();
+    // Ensure clock is running
+    pcf8563_start();
   } else {
     ESP_LOGW(TAG, "Failed to sync time to PCF8563: %s", esp_err_to_name(ret));
   }

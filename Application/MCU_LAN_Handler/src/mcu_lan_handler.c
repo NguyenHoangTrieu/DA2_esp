@@ -727,9 +727,24 @@ static void get_rtc_string(char *buffer) {
   struct tm timeinfo;
   memset(&timeinfo, 0, sizeof(struct tm));
   
-  time_t now = time(NULL);
-  localtime_r(&now, &timeinfo);
-  ESP_LOGI(TAG, "Using SNTP time");
+  // Check internet status and choose time source
+  if (g_internet_status == INTERNET_STATUS_ONLINE) {
+    // Use SNTP (system time) when online
+    time_t now = time(NULL);
+    localtime_r(&now, &timeinfo);
+    ESP_LOGI(TAG, "Using SNTP time");
+  } else {
+    // Use PCF8563 RTC when offline
+    esp_err_t ret = pcf8563_read_time(&timeinfo);
+    if (ret == ESP_OK) {
+      ESP_LOGI(TAG, "Using PCF8563 RTC time (offline mode)");
+    } else {
+      // Fallback to system time if RTC read fails
+      time_t now = time(NULL);
+      localtime_r(&now, &timeinfo);
+      ESP_LOGW(TAG, "RTC read failed, using system time as fallback");
+    }
+  }
 
   int year = timeinfo.tm_year + 1900;
   if (year > 9999) {
@@ -740,13 +755,14 @@ static void get_rtc_string(char *buffer) {
 
   // Format: "dd/mm/yyyy-hh:mm:ss"
   char tmp[64];
-  snprintf(tmp, sizeof(tmp), "%02d/%02d/%04d-%02d:%02d:%02d", timeinfo.tm_mday,
-           timeinfo.tm_mon + 1, year, timeinfo.tm_hour, timeinfo.tm_min,
-           timeinfo.tm_sec);
+  snprintf(tmp, sizeof(tmp), "%02d/%02d/%04d-%02d:%02d:%02d", 
+           timeinfo.tm_mday, timeinfo.tm_mon + 1, year, 
+           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
   memcpy(buffer, tmp, 19);
   buffer[19] = '\0';
 
+  // Update RTC cache
   if (g_rtc_cache.mutex && xSemaphoreTake(g_rtc_cache.mutex, 0) == pdTRUE) {
     memcpy(g_rtc_cache.rtc_string, buffer, 20);
     g_rtc_cache.valid = true;
