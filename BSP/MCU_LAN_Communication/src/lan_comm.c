@@ -310,11 +310,16 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
                           "load_tx_data mutex timeout");
     return LAN_COMM_ERR_TIMEOUT;
   }
+  // **FLUSH HARDWARE: Disable then re-enable SPI slave**
+  spi_slave_disable(handle->config.host_id);
 
   // Copy data to TX buffer
   memset(handle->tx_buffer, 0, handle->config.tx_buffer_size);
   memcpy(handle->tx_buffer, data_to_send, length);
   handle->tx_buffer_len = length;
+
+    // Re-enable SPI slave
+  spi_slave_enable(handle->config.host_id);  
 
   xSemaphoreGive(handle->buffer_mutex);
 

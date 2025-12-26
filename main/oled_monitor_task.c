@@ -409,7 +409,7 @@ void oled_monitor_update_wifi(bool connected) {
       xSemaphoreTake(g_oled_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     g_oled_wifi_connected = connected;
     xSemaphoreGive(g_oled_mutex);
-    ESP_LOGI(TAG, "WiFi: %s", connected ? "Connected" : "Disconnected");
+    ESP_LOGD(TAG, "WiFi: %s", connected ? "Connected" : "Disconnected");
   }
 }
 
@@ -418,7 +418,7 @@ void oled_monitor_update_lte(bool connected) {
       xSemaphoreTake(g_oled_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     g_oled_lte_connected = connected;
     xSemaphoreGive(g_oled_mutex);
-    ESP_LOGI(TAG, "LTE: %s", connected ? "Connected" : "Disconnected");
+    ESP_LOGD(TAG, "LTE: %s", connected ? "Connected" : "Disconnected");
   }
 }
 

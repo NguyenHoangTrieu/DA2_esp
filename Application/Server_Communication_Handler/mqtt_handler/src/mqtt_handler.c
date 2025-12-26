@@ -218,7 +218,10 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       target_id = HANDLER_LORA;
     } else if (memcmp(handler_type, "CAN", 3) == 0) {
       target_id = HANDLER_CAN;
-    } else {
+    } else if (memcmp(handler_type, "RS4", 3) == 0) {
+      target_id = HANDLER_RS485;
+    } 
+    else {
       ESP_LOGW(TAG, "Unknown handler: %s", handler_type);
       return;
     }
@@ -370,7 +373,7 @@ static void mqtt_publish_task(void *arg) {
 
   if (m_mqtt_connected) {
     // Publish firmware update success
-    mqtt_publish_firmware_status("success", "1.0.3");
+    mqtt_publish_firmware_status("success", "1.0.6");
     ESP_LOGI(TAG, "Firmware update notification sent");
   } else {
     ESP_LOGW(TAG, "MQTT not connected, skipping firmware status");

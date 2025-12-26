@@ -24,6 +24,7 @@
 #define SLAVE_RESET_PIN 40
 #define SLAVE_RX_PIN 41
 #define SLAVE_TX_PIN 42
+#define SKIP_FLASH_BRIDGE_PIN 45
 
 // UART configuration
 #define UART_NUM_SLAVE 2

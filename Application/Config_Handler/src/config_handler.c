@@ -5,6 +5,7 @@
  */
 
 #include "config_handler.h"
+#include "rbg_handler.h"
 #include "esp_log.h"
 #include <ctype.h>
 
@@ -495,6 +496,7 @@ static void config_handler_task(void *arg) {
                     ESP_LOGI(TAG, "Firmware update command received");
                     mqtt_handler_task_stop(); // Stop MQTT task if running
                     vTaskDelay(pdMS_TO_TICKS(5000));
+                    led_show_blue();
                     fota_handler_task_start();
                     break;
                 }
