@@ -294,9 +294,19 @@ class ConfigCommandBuilder:
         
         config = StackTypeConfig(stack_id=stack_id, stack_type=stack_type)
         return config.to_command()
-
-    # REMOVED: build_firmware_update_wan() and build_firmware_update_lan()
-    # These are debug-only OTA commands, not for production use
+    @staticmethod
+    def build_rs485_baud(baud_rate: int) -> str:
+        """
+        Build RS485 baud rate configuration command.
+        Format: CFRS:BR:115200
+        
+        Valid baud rates: 9600, 19200, 38400, 57600, 115200
+        """
+        valid_bauds = [9600, 19200, 38400, 57600, 115200]
+        if baud_rate not in valid_bauds:
+            raise ValueError(f"Invalid RS485 baud rate: {baud_rate}. Valid: {valid_bauds}")
+        
+        return f"CFML:CFRS:BR:{baud_rate}"
 
 class ConfigResponseParser:
     """Parses configuration responses from gateway"""

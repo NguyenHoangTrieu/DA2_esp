@@ -977,6 +977,7 @@ class GatewayConfigTool:
                     self.log(f"LoRa Crypto: key_len={key_len}", 'INFO')
             except Exception as e:
                 self.log(f"Failed to build LoRa crypto command: {e}", 'ERROR')
+                
         # 10. Stack Type Configuration
         if lan_cfg.get('stack_1_type') != orig_lan.get('stack_1_type'):
             try:
@@ -1002,6 +1003,22 @@ class GatewayConfigTool:
                     self.log(f"Invalid Stack 2 type: {stack_type}", 'WARN')
             except Exception as e:
                 self.log(f"Failed to build Stack 2 type command: {e}", 'ERROR')
+                
+         # 11. RS485 Baud Rate Configuration
+        if lan_cfg.get('rs485_baud_rate') != orig_lan.get('rs485_baud_rate'):
+            try:
+                baud_rate = int(lan_cfg.get('rs485_baud_rate', 115200))
+                # Validate baud rate (RS485 max 115200)
+                valid_bauds = [9600, 19200, 38400, 57600, 115200]
+                if baud_rate not in valid_bauds:
+                    self.log(f"Invalid RS485 baud rate: {baud_rate} (valid: 9600-115200)", 'WARN')
+                else:
+                    cmd = f"CFML:CFRS:BR:{baud_rate}"
+                    commands.append(cmd)
+                    self.log(f"RS485 baud rate: {baud_rate}", 'INFO')
+            except Exception as e:
+                self.log(f"Failed to build RS485 baud command: {e}", 'ERROR')
+
         return commands
 
     def save_to_file(self):
