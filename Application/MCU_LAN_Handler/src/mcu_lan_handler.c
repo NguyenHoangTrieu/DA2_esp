@@ -712,16 +712,16 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
     if (status == LAN_COMM_OK && ack_packet.payload[0] == FRAME_TYPE_ACK &&
         ack_packet.payload[1] == ACK_TYPE_RECEIVED_OK) {
-      ESP_LOGI(TAG, "Downlink ACK received");
+      ESP_LOGD(TAG, "Downlink ACK received");
       return;
     }
 
-    ESP_LOGW(TAG, "Downlink ACK timeout, retry %d/%d", retry + 1,
+    ESP_LOGD(TAG, "Downlink ACK timeout, retry %d/%d", retry + 1,
              MAX_RETRY_COUNT);
   }
 
   clear_data_ready(); // Clear even on failure
-  ESP_LOGE(TAG, "Downlink send failed after max retries");
+  ESP_LOGD(TAG, "Downlink send failed after max retries");
 }
 
 // ===== Get RTC String =====

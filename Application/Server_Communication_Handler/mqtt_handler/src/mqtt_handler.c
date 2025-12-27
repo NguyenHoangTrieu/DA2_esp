@@ -373,7 +373,7 @@ static void mqtt_publish_task(void *arg) {
 
   if (m_mqtt_connected) {
     // Publish firmware update success
-    mqtt_publish_firmware_status("success", "1.0.6");
+    mqtt_publish_firmware_status("success", "1.1.0");
     ESP_LOGI(TAG, "Firmware update notification sent");
   } else {
     ESP_LOGW(TAG, "MQTT not connected, skipping firmware status");

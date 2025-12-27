@@ -241,7 +241,7 @@ void uart_bridge_passthrough(void) {
         // Read GPIO 45 with simple debounce
         int button_pressed_count = 0;
         for (int i = 0; i < 3; i++) {
-          if (gpio_get_level_safe(SKIP_FLASH_BRIDGE_PIN) == 1) {
+          if (gpio_get_level_safe(SKIP_FLASH_BRIDGE_PIN) == 0) {
             esp_rom_printf(
                 "[%s] GPIO%d read LOW (%d/3)\n", TAG, SKIP_FLASH_BRIDGE_PIN,
                 i + 1);
