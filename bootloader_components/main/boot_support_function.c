@@ -25,6 +25,24 @@ static uart_dev_t *uart_ll_get_hw(uint8_t uart_num) {
   }
 }
 
+// Helper: GPIO read for pins > 31
+static int gpio_get_level_safe(int gpio_num) {
+  if (gpio_num < 32) {
+    return (REG_READ(GPIO_IN_REG) >> gpio_num) & 0x1;
+  } else {
+    return (REG_READ(GPIO_IN1_REG) >> (gpio_num - 32)) & 0x1;
+  }
+}
+
+// Helper: Configure GPIO as input with pullup
+static void gpio_input_enable_safe(int gpio_num) {
+  if (gpio_num < 32) {
+    REG_WRITE(GPIO_ENABLE_W1TC_REG, (1UL << gpio_num)); // Disable output
+  } else {
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, (1UL << (gpio_num - 32)));
+  }
+}
+
 // Helper: UART0 RX/TX using LL (PC communication)
 int uart0_rx_one_char(uint8_t *c) {
   if (uart_ll_get_rxfifo_len(&UART0) == 0) {
@@ -71,6 +89,9 @@ void init_slave_control_gpios(void) {
   esp_rom_gpio_pad_set_drv(SLAVE_RESET_PIN, 2);
   gpio_output_enable_safe(SLAVE_RESET_PIN);
   gpio_set_level_safe(SLAVE_RESET_PIN, 1);
+
+  esp_rom_gpio_pad_select_gpio(SKIP_FLASH_BRIDGE_PIN);
+  gpio_input_enable_safe(SKIP_FLASH_BRIDGE_PIN);
 
   // Configure SLAVE_RX_PIN and SLAVE_TX_PIN for UART
   esp_rom_gpio_pad_select_gpio(SLAVE_RX_PIN);
@@ -181,10 +202,11 @@ void uart_bridge_passthrough(void) {
   bool flash_in_progress = false;
   uint32_t idle_counter = 0;
   uint32_t wdt_feed_counter = 0;
-  uint32_t max_idle = 5000;
+   uint32_t gpio_check_counter = 0; 
+  uint32_t max_idle = 60000; // 60 seconds
 
   configure_uart2_for_slave();
-  esp_rom_printf("[%s] UART bridge active\n", TAG);
+  esp_rom_printf("[%s] UART bridge active v1.1\n", TAG);
 
   while (1) {
     bool data_activity = false;
@@ -210,7 +232,35 @@ void uart_bridge_passthrough(void) {
     } else {
       idle_counter++;
       wdt_feed_counter++;
+      gpio_check_counter++;
       esp_rom_delay_us(1000);
+
+      if (gpio_check_counter >= 100) {
+        gpio_check_counter = 0;
+
+        // Read GPIO 45 with simple debounce
+        int button_pressed_count = 0;
+        for (int i = 0; i < 3; i++) {
+          if (gpio_get_level_safe(SKIP_FLASH_BRIDGE_PIN) == 1) {
+            esp_rom_printf(
+                "[%s] GPIO%d read LOW (%d/3)\n", TAG, SKIP_FLASH_BRIDGE_PIN,
+                i + 1);
+            button_pressed_count++;
+          }
+          esp_rom_delay_us(1000);
+        }
+
+        // If button pressed (at least 2/3 reads = LOW)
+        if (button_pressed_count >= 2) {
+          esp_rom_printf(
+              "\n[%s] GPIO%d pressed - exiting flash bridge mode\n", TAG,
+              SKIP_FLASH_BRIDGE_PIN);
+          esp_rom_printf("[%s] Stats: PC->Slave=%d, Slave->PC=%d bytes\n", TAG,
+                         pc_to_slave, slave_to_pc);
+          reset_slave_normal_mode();
+          return;
+        }
+      }
 
       if (flash_in_progress && idle_counter > max_idle) {
         esp_rom_printf("[%s] Flash done: %d/%d bytes\n", TAG, pc_to_slave,
@@ -224,7 +274,7 @@ void uart_bridge_passthrough(void) {
         wdt_feed_counter = 0;
       }
 
-      if (idle_counter > 30000) {
+      if (idle_counter > 60000) {
         esp_rom_printf("[%s] Timeout\n", TAG);
         reset_slave_normal_mode();
         return;

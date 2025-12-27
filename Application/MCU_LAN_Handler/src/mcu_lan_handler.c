@@ -698,6 +698,8 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
   // Load data and signal GPIO
   lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+  ESP_LOGI(TAG, "Downlink data loaded for handler %s (%u bytes)",
+           type_str, packet_size);
 
   // Wait for ACK from LAN MCU
   for (int retry = 0; retry < MAX_RETRY_COUNT; retry++) {
