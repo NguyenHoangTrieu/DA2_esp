@@ -1,0 +1,6 @@
+# ESP32 Gateway Configuration Tool v4.0
+# Dependencies
+
+pyserial>=3.5       # Serial communication
+ttkthemes>=3.2      # Modern themes for tkinter
+pillow>=9.0         # Image handling for icons
