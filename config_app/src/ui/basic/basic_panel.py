@@ -84,12 +84,28 @@ class BasicPanel(ttk.Frame):
         auth_combo = ttk.Combobox(row3, textvariable=self.wifi_auth_var, state="readonly",
                                   values=["PERSONAL", "ENTERPRISE"])
         auth_combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        auth_combo.bind("<<ComboboxSelected>>", self._on_wifi_auth_change)
+        
+        # Username (Enterprise only) - Initially hidden
+        self.wifi_username_frame = ttk.Frame(wifi_frame)
+        # Don't pack initially - hidden when PERSONAL
+        ttk.Label(self.wifi_username_frame, text="Username:", width=15).pack(side=tk.LEFT)
+        self.wifi_username_var = tk.StringVar()
+        ttk.Entry(self.wifi_username_frame, textvariable=self.wifi_username_var).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
         # Set Button
         btn_frame = ttk.Frame(tab)
         btn_frame.pack(fill=tk.X, pady=10)
         ttk.Button(btn_frame, text="Set WiFi Config", style='Set.TButton',
                   command=self._set_wifi_config).pack(anchor="e", padx=5)
+    
+    def _on_wifi_auth_change(self, event=None):
+        """Handle WiFi auth mode change - show/hide username field"""
+        if self.wifi_auth_var.get() == "ENTERPRISE":
+            self.wifi_username_frame.pack(fill=tk.X, pady=3)
+        else:
+            self.wifi_username_frame.pack_forget()
+            self.wifi_username_var.set("")
     
     def _create_lte_tab(self):
         """Create LTE configuration tab"""
@@ -231,17 +247,22 @@ class BasicPanel(ttk.Frame):
         ssid = self.wifi_ssid_var.get().strip()
         password = self.wifi_pwd_var.get()
         auth = self.wifi_auth_var.get()
+        username = self.wifi_username_var.get().strip()
         
         if not ssid:
             messagebox.showwarning("Warning", "Please enter WiFi SSID")
             return
         
-        # Auth mode mapping: PERSONAL=0, ENTERPRISE=1
-        auth_map = {"PERSONAL": 0, "ENTERPRISE": 1}
-        auth_mode = auth_map.get(auth, 0)
+        # Validate username for Enterprise mode
+        if auth == "ENTERPRISE" and not username:
+            messagebox.showwarning("Warning", "Please enter Username for Enterprise mode")
+            return
         
-        # Build CFWF command: CFWF:SSID:PASSWORD:AUTH_MODE
-        cmd = f"CFWF:{ssid}:{password}:{auth_mode}"
+        # Build CFWF command: CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]
+        if auth == "ENTERPRISE":
+            cmd = f"CFWF:{ssid}:{password}:ENTERPRISE:{username}"
+        else:
+            cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
         # Send CFWF first, then CFIN:WIFI after 500ms delay (no response waiting)
         def send_wifi_sequence():

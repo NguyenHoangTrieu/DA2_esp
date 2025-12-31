@@ -47,7 +47,7 @@ class ConnectionBar(ttk.Frame):
         self.baud_combo.pack(side=tk.LEFT, padx=5)
         
         # Connect button
-        self.connect_btn = ttk.Button(self, text="🔌 Connect", width=12,
+        self.connect_btn = ttk.Button(self, text="🔌 Connect", width=18,
                                        command=self._on_connect_click)
         self.connect_btn.pack(side=tk.LEFT, padx=(20, 10))
         

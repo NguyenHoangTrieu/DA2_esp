@@ -119,8 +119,14 @@ class FirmwareTab(ttk.Frame):
     
     def _run_flash(self, port: str):
         """Run flash process"""
-        # Find flash script
-        app_path = Path(__file__).parent.parent.parent.parent.parent
+        # Find flash script - works with both source and PyInstaller executable
+        import sys
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            app_path = Path(sys.executable).parent
+        else:
+            # Running as Python script
+            app_path = Path(__file__).resolve().parent.parent.parent.parent
         flash_script = app_path / "flash_WAN.bat"
         
         if not flash_script.exists():

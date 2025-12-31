@@ -68,21 +68,13 @@ class WiFiTab(ttk.Frame):
         self.auth_combo.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         self.auth_combo.bind("<<ComboboxSelected>>", self._on_auth_change)
         
-        # Username (Enterprise only)
-        row4 = ttk.Frame(auth_frame)
-        row4.pack(fill=tk.X, pady=2)
-        ttk.Label(row4, text="Username:", width=15).pack(side=tk.LEFT)
+        # Username (Enterprise only) - Initially hidden
+        self.username_frame = ttk.Frame(auth_frame)
+        # Don't pack initially - hidden when PERSONAL
+        ttk.Label(self.username_frame, text="Username:", width=15).pack(side=tk.LEFT)
         self.username_var = tk.StringVar()
-        self.username_entry = ttk.Entry(row4, textvariable=self.username_var)
+        self.username_entry = ttk.Entry(self.username_frame, textvariable=self.username_var)
         self.username_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        self.username_entry.config(state="disabled")
-        
-        # Info label
-        row5 = ttk.Frame(auth_frame)
-        row5.pack(fill=tk.X, pady=2)
-        ttk.Label(row5, text="", width=15).pack(side=tk.LEFT)
-        ttk.Label(row5, text="ℹ️ Username chỉ dùng cho Enterprise (WPA2-EAP)", 
-                  foreground="#757575").pack(side=tk.LEFT)
         
         # ═══════════════════════════════════════════════════════════════════
         # Set Button
@@ -104,11 +96,11 @@ class WiFiTab(ttk.Frame):
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
     
     def _on_auth_change(self, event=None):
-        """Handle auth mode change"""
+        """Handle auth mode change - show/hide username field"""
         if self.auth_var.get() == "ENTERPRISE":
-            self.username_entry.config(state="normal")
+            self.username_frame.pack(fill=tk.X, pady=2)
         else:
-            self.username_entry.config(state="disabled")
+            self.username_frame.pack_forget()
             self.username_var.set("")
     
     def _check_connection(self) -> bool:
@@ -138,14 +130,18 @@ class WiFiTab(ttk.Frame):
         
         password = self.password_var.get()
         auth_mode = self.auth_var.get()
+        username = self.username_var.get().strip()
         
-        # Build WiFi command first
-        # CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]
+        # Validate username for Enterprise mode
+        if auth_mode == "ENTERPRISE" and not username:
+            messagebox.showwarning("Warning", "Please enter Username for Enterprise mode")
+            return
+        
+        # Build WiFi command: CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]
         if auth_mode == "ENTERPRISE":
-            username = self.username_var.get().strip()
-            cmd = f"CFWF:{ssid}:{password}:1:{username}"
+            cmd = f"CFWF:{ssid}:{password}:ENTERPRISE:{username}"
         else:
-            cmd = f"CFWF:{ssid}:{password}:0"
+            cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
         # Send CFWF first, then CFIN:WIFI after 500ms delay (no response waiting)
         def send_wifi_sequence():
