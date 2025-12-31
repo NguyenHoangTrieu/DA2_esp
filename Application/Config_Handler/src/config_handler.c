@@ -494,9 +494,9 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
+                    led_show_blue();
                     mqtt_handler_task_stop(); // Stop MQTT task if running
                     vTaskDelay(pdMS_TO_TICKS(5000));
-                    led_show_blue();
                     fota_handler_task_start();
                     break;
                 }
