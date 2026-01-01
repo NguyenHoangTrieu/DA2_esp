@@ -470,6 +470,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
           // Load CFCQ into TX only here (after DQ)
           lan_comm_load_tx_data(g_lan_handle, config_request,
                                 sizeof(config_request));
+          lan_comm_queue_receive(g_lan_handle);
           g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
           served = true;
           ESP_LOGI(TAG, "CFCQ command loaded to TX after DQ");
@@ -625,15 +626,16 @@ static void send_rtc_response(void) {
 
   // Load into TX buffer
   lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
-
   ESP_LOGI(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
            response.network_status);
+  lan_comm_queue_receive(g_lan_handle);
 }
 
 // ===== Send ACK to LAN =====
 static void send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
   uint8_t ack[3] = {FRAME_TYPE_ACK, ack_type, internet_flag};
   lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
+  lan_comm_queue_receive(g_lan_handle);
   ESP_LOGI(TAG, "ACK sent: type=0x%02X, inet=0x%02X", ack_type, internet_flag);
 }
 
@@ -644,22 +646,40 @@ static void handle_data_from_lan(const uint8_t *payload, uint16_t length) {
     return;
   }
 
+  // Parse data_packet_t: [DT][handler_type(3)][length(2)][data]
+  uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
+  uint16_t data_length = (payload[5] << 8) | payload[6];
+  const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
+
+  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
+  
+  // Debug: Log original data from LAN
+  ESP_LOGI(TAG, "Original data from LAN:");
+  ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_length > 64 ? 64 : data_length, ESP_LOG_INFO);
+
   // Send ACK with internet status
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
+    // Build uplink buffer: [handler_type(3)] + [RTC+payload from LAN]
+    uint16_t uplink_len = data_length + 3;
+    uint8_t *uplink_buffer = (uint8_t *)malloc(uplink_len);
+    if (uplink_buffer != NULL) {
+      memcpy(uplink_buffer, handler_type, 3);           // Handler type first (CAN/LOR/ZIG/RS4)
+      memcpy(&uplink_buffer[3], data, data_length);     // Then RTC + payload
+      
+      // Debug: Log uplink buffer before sending
+      ESP_LOGI(TAG, "Uplink buffer (%u bytes):", uplink_len);
+      ESP_LOG_BUFFER_HEXDUMP(TAG, uplink_buffer, uplink_len > 64 ? 64 : uplink_len, ESP_LOG_INFO);
+      
+      server_handler_enqueue_uplink(uplink_buffer, uplink_len);
+      free(uplink_buffer);
+    } else {
+      ESP_LOGE(TAG, "Failed to allocate uplink buffer");
+    }
     send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_INTERNET_OK);
   } else {
     send_ack_to_lan(ACK_TYPE_RECEIVED_OK, ACK_TYPE_NO_INTERNET);
     // LAN MCU will save to SD card
   }
-
-  // Parse data_packet_t: [DT][handler_type(3)][length(2)][data]
-  uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
-  uint16_t data_length = (payload[5] << 8) | payload[6];
-  const uint8_t *data = &payload[DATA_PACKET_HEADER_SIZE];
-  if (g_internet_status == INTERNET_STATUS_ONLINE) {
-    server_handler_enqueue_uplink((uint8_t *)data, data_length);
-  }
-  ESP_LOGI(TAG, "Data from handler %s (%u bytes)", handler_type, data_length);
 }
 
 // ===== Handle Config Request =====
@@ -677,6 +697,7 @@ static void handle_config_request(void) {
     // Only load TX, do not touch GPIO here
     lan_comm_load_tx_data(g_lan_handle, config_packet,
                           4 + g_config_cache.config_length);
+    lan_comm_queue_receive(g_lan_handle);
     // Mark config consumed; handshake state will be cleared in DQ handler
     g_config_cache.has_config = false;
   }
@@ -698,6 +719,7 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
   // Load data and signal GPIO
   lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+  lan_comm_queue_receive(g_lan_handle);
   ESP_LOGI(TAG, "Downlink data loaded for handler %s (%u bytes)",
            type_str, packet_size);
 
