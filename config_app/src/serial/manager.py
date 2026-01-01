@@ -108,6 +108,29 @@ class SerialManager:
             self.log(f"Send failed: {e}", "ERROR")
             return False
     
+    def send_raw(self, data: bytes) -> bool:
+        """Send raw binary data to serial port (no encoding, no CRLF)"""
+        if not self.is_connected():
+            self.log("Not connected", "ERROR")
+            return False
+        
+        try:
+            self.serial_port.write(data)
+            # Add CRLF terminator
+            self.serial_port.write(b'\r\n')
+            
+            self.log(f"→ Sent raw: {data.hex().upper()}", "DEBUG")
+            
+            # Call TX callback for UART log (show hex representation)
+            if self.on_tx_callback:
+                self.on_tx_callback(f"[RAW] {data.hex().upper()}")
+            
+            return True
+            
+        except serial.SerialException as e:
+            self.log(f"Send raw failed: {e}", "ERROR")
+            return False
+    
     def send_command(self, command: str, timeout: float = 5.0) -> Optional[str]:
         """Send command and wait for response"""
         if not self.is_connected():

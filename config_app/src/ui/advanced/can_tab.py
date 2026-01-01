@@ -1,11 +1,16 @@
 """
 CAN Bus Configuration Tab
+
+Commands are sent with CFML prefix (MCU LAN):
+- CFML:CFCB:<baud>      - Set CAN baud rate
+- CFML:CFCM:<mode>      - Set CAN mode
+- CFML:CFCW:SET:<ids>   - Set CAN whitelist
+- CFML:CFCW:CLR         - Clear CAN whitelist
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-import threading
-
+import time
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
@@ -20,71 +25,160 @@ class CanTab(ttk.Frame):
         super().__init__(parent, **kwargs)
         self.serial_manager = serial_manager
         self.log = log_callback or (lambda msg, lvl: None)
+        self.whitelist_ids = []  # Store whitelist IDs
         self._create_widgets()
     
     def _create_widgets(self):
-        """Create CAN tab widgets"""
-        # Container - no expand to avoid whitespace
-        container = ttk.Frame(self, padding=10)
+        """Create CAN tab widgets - compact layout"""
+        # Container - minimal padding
+        container = ttk.Frame(self, padding=5)
         container.pack(fill=tk.X, anchor="nw")
         
-        # CAN Settings - compact LabelFrame
-        settings_section = ttk.LabelFrame(container, text="CAN Settings", padding=8)
-        settings_section.pack(fill=tk.X, pady=5)
+        # ═══════════════════════════════════════════════════════════════════
+        # CAN Settings Section
+        # ═══════════════════════════════════════════════════════════════════
+        settings_section = ttk.LabelFrame(container, text="CAN Settings", padding=5)
+        settings_section.pack(fill=tk.X, pady=3)
         
-        # Baud Rate
-        baud_frame = ttk.Frame(settings_section)
-        baud_frame.pack(pady=2, anchor="w")
+        # Row 1: Baud Rate and Mode on same row
+        row1 = ttk.Frame(settings_section)
+        row1.pack(fill=tk.X, pady=2)
         
-        ttk.Label(baud_frame, text="Baud Rate:", width=12).pack(side=tk.LEFT)
+        ttk.Label(row1, text="Baud Rate:", width=10).pack(side=tk.LEFT)
         self.baud_var = tk.StringVar(value="500000")
-        baud_combo = ttk.Combobox(baud_frame, textvariable=self.baud_var,
+        baud_combo = ttk.Combobox(row1, textvariable=self.baud_var,
                                   values=["125000", "250000", "500000", "800000", "1000000"],
-                                  state="readonly", width=15)
-        baud_combo.pack(side=tk.LEFT, padx=5)
+                                  state="readonly", width=12)
+        baud_combo.pack(side=tk.LEFT, padx=3)
         
-        # Mode
-        mode_frame = ttk.Frame(settings_section)
-        mode_frame.pack(pady=2, anchor="w")
-        
-        ttk.Label(mode_frame, text="Mode:", width=12).pack(side=tk.LEFT)
+        ttk.Label(row1, text="Mode:", width=6).pack(side=tk.LEFT, padx=(15, 0))
         self.mode_var = tk.StringVar(value="NORMAL")
-        mode_combo = ttk.Combobox(mode_frame, textvariable=self.mode_var,
+        mode_combo = ttk.Combobox(row1, textvariable=self.mode_var,
                                   values=["NORMAL", "LOOPBACK", "SILENT"],
-                                  state="readonly", width=15)
-        mode_combo.pack(side=tk.LEFT, padx=5)
+                                  state="readonly", width=12)
+        mode_combo.pack(side=tk.LEFT, padx=3)
         
-        # Whitelist section - compact
-        whitelist_section = ttk.LabelFrame(container, text="CAN ID Whitelist", padding=8)
-        whitelist_section.pack(fill=tk.X, pady=5)
+        # CAN Settings Set Button
+        ttk.Button(settings_section, text="✅ Set CAN Settings", style='Set.TButton',
+                  command=self._set_can_settings).pack(anchor="e", pady=3)
         
-        # Count
-        count_frame = ttk.Frame(whitelist_section)
-        count_frame.pack(pady=2, anchor="w")
+        # ═══════════════════════════════════════════════════════════════════
+        # CAN ID Whitelist Section
+        # ═══════════════════════════════════════════════════════════════════
+        whitelist_section = ttk.LabelFrame(container, text="CAN ID Whitelist", padding=5)
+        whitelist_section.pack(fill=tk.X, pady=3)
         
-        ttk.Label(count_frame, text="Total IDs:", width=12).pack(side=tk.LEFT)
-        self.count_label = ttk.Label(count_frame, text="0", foreground="#757575")
-        self.count_label.pack(side=tk.LEFT)
+        # Whitelist content - 2 columns
+        whitelist_content = ttk.Frame(whitelist_section)
+        whitelist_content.pack(fill=tk.X, pady=2)
         
-        # Whitelist display - smaller
-        list_frame = ttk.Frame(whitelist_section)
+        # Left column - List display
+        list_col = ttk.Frame(whitelist_content)
+        list_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        ttk.Label(list_col, text="Allowed CAN IDs:", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        
+        list_frame = ttk.Frame(list_col)
         list_frame.pack(fill=tk.X, pady=2)
         
         scrollbar = ttk.Scrollbar(list_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.whitelist_text = tk.Text(list_frame, height=4, width=30,
-                                       yscrollcommand=scrollbar.set,
-                                       state=tk.DISABLED,
-                                       font=("Consolas", 9))
-        self.whitelist_text.pack(fill=tk.X)
-        scrollbar.config(command=self.whitelist_text.yview)
+        self.whitelist_listbox = tk.Listbox(list_frame, height=4, width=12,
+                                             yscrollcommand=scrollbar.set,
+                                             font=("Consolas", 9),
+                                             selectmode=tk.EXTENDED)
+        self.whitelist_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.whitelist_listbox.yview)
         
-        # Set Button
-        btn_frame = ttk.Frame(container)
-        btn_frame.pack(fill=tk.X, pady=10)
-        ttk.Button(btn_frame, text="Set CAN Config", style='Set.TButton',
-                  command=self._set_can_config).pack(anchor="e", padx=5)
+        # Count label
+        self.count_label = ttk.Label(list_col, text="Total: 0 IDs", foreground="#757575")
+        self.count_label.pack(anchor="w")
+        
+        # Right column - Controls
+        ctrl_col = ttk.Frame(whitelist_content)
+        ctrl_col.pack(side=tk.LEFT, padx=(10, 0))
+        
+        ttk.Label(ctrl_col, text="Add ID (hex):", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        
+        # Add ID input
+        add_frame = ttk.Frame(ctrl_col)
+        add_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(add_frame, text="0x").pack(side=tk.LEFT)
+        self.new_id_var = tk.StringVar()
+        self.new_id_entry = ttk.Entry(add_frame, textvariable=self.new_id_var, width=6, font=("Consolas", 9))
+        self.new_id_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Button(add_frame, text="➕", width=3, command=self._add_id).pack(side=tk.LEFT, padx=2)
+        
+        # Quick actions
+        ttk.Button(ctrl_col, text="🗑️ Remove", width=12,
+                  command=self._remove_selected).pack(fill=tk.X, pady=1)
+        ttk.Button(ctrl_col, text="🧹 Clear All", width=12,
+                  command=self._clear_all).pack(fill=tk.X, pady=1)
+        
+        # Whitelist Set Button
+        ttk.Button(whitelist_section, text="✅ Set CAN Whitelist", style='Set.TButton',
+                  command=self._set_can_whitelist).pack(anchor="e", pady=3)
+    
+    def _add_id(self):
+        """Add new CAN ID to whitelist"""
+        try:
+            id_str = self.new_id_var.get().strip()
+            if not id_str:
+                return
+            
+            # Parse hex value
+            can_id = int(id_str, 16)
+            
+            # Validate range (standard CAN ID: 0x000-0x7FF)
+            if can_id < 0 or can_id > 0x7FF:
+                messagebox.showwarning("Warning", "CAN ID must be between 0x000 and 0x7FF")
+                return
+            
+            # Check duplicate
+            id_hex = f"0x{can_id:03X}"
+            if id_hex in self.whitelist_ids:
+                messagebox.showinfo("Info", f"{id_hex} already in whitelist")
+                return
+            
+            # Add to list
+            self.whitelist_ids.append(id_hex)
+            self.whitelist_listbox.insert(tk.END, id_hex)
+            self._update_count()
+            
+            # Clear input
+            self.new_id_var.set("")
+            
+        except ValueError:
+            messagebox.showerror("Error", "Invalid hex value")
+    
+    def _remove_selected(self):
+        """Remove selected IDs from whitelist"""
+        selected = self.whitelist_listbox.curselection()
+        if not selected:
+            return
+        
+        # Remove in reverse order to maintain indices
+        for idx in reversed(selected):
+            del self.whitelist_ids[idx]
+            self.whitelist_listbox.delete(idx)
+        
+        self._update_count()
+    
+    def _clear_all(self):
+        """Clear all IDs from whitelist"""
+        if not self.whitelist_ids:
+            return
+        
+        if messagebox.askyesno("Confirm", "Clear all CAN IDs from whitelist?"):
+            self.whitelist_ids.clear()
+            self.whitelist_listbox.delete(0, tk.END)
+            self._update_count()
+    
+    def _update_count(self):
+        """Update count label"""
+        self.count_label.config(text=f"Total: {len(self.whitelist_ids)} IDs")
     
     def _check_connection(self) -> bool:
         """Check if serial is connected"""
@@ -94,26 +188,47 @@ class CanTab(ttk.Frame):
         return True
     
     def _send_command(self, cmd: str, description: str):
-        """Send command without waiting for response"""
+        """Send command with CFML prefix"""
         self.log(f"Sending: {description}", "INFO")
-        if self.serial_manager.send(cmd):
-            self.log(f"{description} - Sent", "SUCCESS")
+        
+        # Add CFML prefix for LAN commands
+        full_cmd = f"CFML:{cmd}"
+        self.log(f"→ {full_cmd}", "DEBUG")
+        
+        if self.serial_manager.send(full_cmd):
+            self.log(f"✓ {description} - Sent", "SUCCESS")
         else:
-            self.log(f"{description} - Send failed", "ERROR")
+            self.log(f"✗ {description} - Send failed", "ERROR")
     
-    def _set_can_config(self):
-        """Set CAN configuration"""
+    def _set_can_settings(self):
+        """Set CAN Settings only (Baud + Mode)"""
         if not self._check_connection():
             return
         
         baud = self.baud_var.get()
         mode = self.mode_var.get()
         
-        # CFCB:baudrate - CAN Baud rate
+        # CFML:CFCB:baudrate - CAN Baud rate
         self._send_command(f"CFCB:{baud}", f"CAN Baud = {baud}")
         
-        # CFCM:mode - CAN Mode
+        # 500ms delay between commands
+        time.sleep(0.5)
+        
+        # CFML:CFCM:mode - CAN Mode
         self._send_command(f"CFCM:{mode}", f"CAN Mode = {mode}")
+    
+    def _set_can_whitelist(self):
+        """Set CAN Whitelist only"""
+        if not self._check_connection():
+            return
+        
+        if not self.whitelist_ids:
+            # Clear whitelist
+            self._send_command("CFCW:CLR", "CAN Whitelist Clear")
+        else:
+            # Set whitelist with comma-separated IDs
+            ids_str = ",".join(self.whitelist_ids)
+            self._send_command(f"CFCW:SET:{ids_str}", f"CAN Whitelist ({len(self.whitelist_ids)} IDs)")
     
     def get_config(self) -> CanConfig:
         """Get CAN config from UI"""
@@ -123,19 +238,23 @@ class CanTab(ttk.Frame):
         except:
             config.baud_rate = 500000
         config.mode = self.mode_var.get()
+        config.whitelist_count = len(self.whitelist_ids)
+        config.whitelist = ",".join(self.whitelist_ids)
         return config
     
     def set_config(self, config: CanConfig):
         """Set CAN config to UI"""
         self.baud_var.set(str(config.baud_rate))
         self.mode_var.set(config.mode)
-        self.count_label.config(text=str(config.whitelist_count))
         
-        # Update whitelist display
-        self.whitelist_text.config(state=tk.NORMAL)
-        self.whitelist_text.delete(1.0, tk.END)
+        # Update whitelist
+        self.whitelist_ids.clear()
+        self.whitelist_listbox.delete(0, tk.END)
+        
         if config.whitelist:
-            ids = config.whitelist.split(',')
+            ids = [id.strip() for id in config.whitelist.split(',') if id.strip()]
             for can_id in ids:
-                self.whitelist_text.insert(tk.END, f"• {can_id.strip()}\n")
-        self.whitelist_text.config(state=tk.DISABLED)
+                self.whitelist_ids.append(can_id)
+                self.whitelist_listbox.insert(tk.END, can_id)
+        
+        self._update_count()

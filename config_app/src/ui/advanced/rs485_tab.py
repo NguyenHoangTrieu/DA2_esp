@@ -61,12 +61,14 @@ class Rs485Tab(ttk.Frame):
         return True
     
     def _send_command(self, cmd: str, description: str):
-        """Send command without waiting for response"""
+        """Send command with CFML prefix for LAN commands"""
         self.log(f"Sending: {description}", "INFO")
-        if self.serial_manager.send(cmd):
-            self.log(f"{description} - Sent", "SUCCESS")
+        full_cmd = f"CFML:{cmd}"
+        self.log(f"→ {full_cmd}", "DEBUG")
+        if self.serial_manager.send(full_cmd):
+            self.log(f"✓ {description} - Sent", "SUCCESS")
         else:
-            self.log(f"{description} - Send failed", "ERROR")
+            self.log(f"✗ {description} - Send failed", "ERROR")
     
     def _set_rs485_config(self):
         """Set RS485 configuration"""

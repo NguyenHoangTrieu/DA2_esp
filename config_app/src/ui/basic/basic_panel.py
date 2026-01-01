@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Callable, Optional
 import threading
+import time
 
 import sys
 import os
@@ -258,9 +259,9 @@ class BasicPanel(ttk.Frame):
             messagebox.showwarning("Warning", "Please enter Username for Enterprise mode")
             return
         
-        # Build CFWF command: CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]
+        # Build CFWF command: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE
         if auth == "ENTERPRISE":
-            cmd = f"CFWF:{ssid}:{password}:ENTERPRISE:{username}"
+            cmd = f"CFWF:{ssid}:{password}:{username}:ENTERPRISE"
         else:
             cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
@@ -349,6 +350,10 @@ class BasicPanel(ttk.Frame):
         # Send CFST commands for each stack
         # CFST:ST_1:TYPE or CFST:ST_2:TYPE
         self._send_command(f"CFST:ST_1:{stack1}", f"Stack 1 = {stack1}")
+        
+        # 500ms delay between commands
+        time.sleep(0.5)
+        
         self._send_command(f"CFST:ST_2:{stack2}", f"Stack 2 = {stack2}")
     
     def set_config(self, config: GatewayConfig):

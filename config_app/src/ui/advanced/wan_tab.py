@@ -265,8 +265,7 @@ class WanTab(ttk.Frame):
         self._send_command(f"CFIN:{inet_type}", f"Internet Type = {inet_type}")
         
         # ─────────────────────────────────────────────────────────────────
-        # 2. WiFi Config: CFWF:SSID:PASSWORD:AUTH_MODE
-        #    AUTH_MODE: PERSONAL=0, ENTERPRISE=1 (if enterprise, add username)
+        # 2. WiFi Config: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE
         # ─────────────────────────────────────────────────────────────────
         if inet_type == "WIFI":
             ssid = self.wifi_ssid_var.get().strip()
@@ -276,11 +275,11 @@ class WanTab(ttk.Frame):
             if ssid:
                 if auth_mode == "ENTERPRISE":
                     username = self.wifi_user_var.get().strip()
-                    # For enterprise, format: CFWF:SSID:PASSWORD:1:USERNAME
-                    cmd = f"CFWF:{ssid}:{pwd}:1:{username}"
+                    # For enterprise: CFWF:SSID:PASSWORD:USERNAME:ENTERPRISE
+                    cmd = f"CFWF:{ssid}:{pwd}:{username}:ENTERPRISE"
                 else:
-                    # For personal: CFWF:SSID:PASSWORD:0
-                    cmd = f"CFWF:{ssid}:{pwd}:0"
+                    # For personal: CFWF:SSID:PASSWORD:PERSONAL
+                    cmd = f"CFWF:{ssid}:{pwd}:PERSONAL"
                 self._send_command(cmd, "WiFi Config")
         
         # ─────────────────────────────────────────────────────────────────

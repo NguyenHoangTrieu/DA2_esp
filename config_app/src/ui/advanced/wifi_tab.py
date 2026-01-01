@@ -90,9 +90,9 @@ class WiFiTab(ttk.Frame):
         info_frame = ttk.Frame(container)
         info_frame.pack(fill=tk.X, anchor="nw")
         ttk.Separator(info_frame, orient='horizontal').pack(fill=tk.X, pady=5)
-        ttk.Label(info_frame, text="Commands: CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]",
+        ttk.Label(info_frame, text="Commands: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
-        ttk.Label(info_frame, text="Then CFIN:WIFI (after 500ms delay) | AUTH_MODE: 0=PERSONAL, 1=ENTERPRISE",
+        ttk.Label(info_frame, text="Then CFIN:WIFI (after 500ms delay) | AUTH_MODE: PERSONAL or ENTERPRISE",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
     
     def _on_auth_change(self, event=None):
@@ -137,9 +137,9 @@ class WiFiTab(ttk.Frame):
             messagebox.showwarning("Warning", "Please enter Username for Enterprise mode")
             return
         
-        # Build WiFi command: CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]
+        # Build WiFi command: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE
         if auth_mode == "ENTERPRISE":
-            cmd = f"CFWF:{ssid}:{password}:ENTERPRISE:{username}"
+            cmd = f"CFWF:{ssid}:{password}:{username}:ENTERPRISE"
         else:
             cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
