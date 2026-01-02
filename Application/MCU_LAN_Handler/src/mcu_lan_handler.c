@@ -25,6 +25,7 @@
 #include "usb_handler.h"
 #include <string.h>
 #include <time.h>
+#include "rbg_handler.h"
 
 static const char *TAG = "MCU_LAN";
 
@@ -490,6 +491,7 @@ static void mcu_lan_handler_task(void *pvParameters) {
               ESP_LOGI(TAG,
                        "FOTA pre-handshake completed, ready for FW update");
               server_connect_stop(g_server_type);
+              led_show_blue();
               vTaskDelay(pdMS_TO_TICKS(5000));
               fota_handler_task_start();
               vTaskDelay(pdMS_TO_TICKS(
