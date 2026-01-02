@@ -73,9 +73,17 @@ typedef enum {
   CONFIG_REQ_STATE_WAIT_CONFIG_RESP  // waiting CQ response from LAN
 } config_req_state_t;
 
+// ===== Config Request Storage (Heap-allocated, not stack) =====
+typedef struct {
+  config_request_t request;           // Full request struct
+  SemaphoreHandle_t completion_sem;  // Separate semaphore
+  esp_err_t result;                  // Result status
+} config_request_async_t;
+
 static config_req_state_t g_config_req_state = CONFIG_REQ_STATE_IDLE;
 static config_request_t *g_active_config_request_ptr = NULL;
 static bool g_active_config_request_valid = false;
+static config_request_async_t *g_config_req_async = NULL;
 
 // ===== RTC Cache (Thread-safe) =====
 typedef struct {
@@ -155,48 +163,65 @@ esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
     return ESP_ERR_INVALID_STATE;
   }
 
-  // Create completion semaphore
-  SemaphoreHandle_t completion_sem = xSemaphoreCreateBinary();
-  if (completion_sem == NULL) {
-    ESP_LOGE(TAG, "Failed to create completion semaphore");
+  // Allocate request on HEAP (not stack!) - prevents use-after-free bug
+  g_config_req_async = (config_request_async_t *)malloc(sizeof(config_request_async_t));
+  if (g_config_req_async == NULL) {
+    ESP_LOGE(TAG, "Failed to allocate config request");
     return ESP_ERR_NO_MEM;
   }
 
-  // Build request (local variable on stack)
-  config_request_t request = {
-      .type = CONFIG_REQ_LAN_CONFIG,
-      .response_buffer = buffer,
-      .response_len = out_len,
-      .buffer_size = max_len,
-      .completion_sem = completion_sem,
-      .result = ESP_FAIL // Default to fail
-  };
+  // Create completion semaphore
+  g_config_req_async->completion_sem = xSemaphoreCreateBinary();
+  if (g_config_req_async->completion_sem == NULL) {
+    ESP_LOGE(TAG, "Failed to create completion semaphore");
+    free(g_config_req_async);
+    g_config_req_async = NULL;
+    return ESP_ERR_NO_MEM;
+  }
 
-  // Cache request POINTER for later processing on DQ
-  g_active_config_request_ptr = &request;
+  // Initialize request on heap
+  g_config_req_async->request.type = CONFIG_REQ_LAN_CONFIG;
+  g_config_req_async->request.response_buffer = buffer;
+  g_config_req_async->request.response_len = out_len;
+  g_config_req_async->request.buffer_size = max_len;
+  g_config_req_async->request.completion_sem = g_config_req_async->completion_sem;
+  g_config_req_async->request.result = ESP_FAIL;
+  g_config_req_async->result = ESP_FAIL;
+
+  // Update globals SAFELY
+  g_active_config_request_ptr = &g_config_req_async->request;
   g_active_config_request_valid = true;
   g_config_req_state = CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ;
 
-  ESP_LOGI(TAG, "New config request from UART handler");
+  ESP_LOGI(TAG, "New config request from UART handler (heap-allocated at %p)", g_config_req_async);
   signal_data_ready();
 
-  // Wait for completion (handler will update request.result via pointer)
-  if (xSemaphoreTake(completion_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+  // Wait for completion
+  if (xSemaphoreTake(g_config_req_async->completion_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     ESP_LOGE(TAG, "Config request timeout");
-    clear_data_ready(); // Clear handshake GPIO
+    clear_data_ready();
+    vSemaphoreDelete(g_config_req_async->completion_sem);
+    free(g_config_req_async);
+    g_config_req_async = NULL;
     g_active_config_request_valid = false;
     g_active_config_request_ptr = NULL;
     g_config_req_state = CONFIG_REQ_STATE_IDLE;
-    vSemaphoreDelete(completion_sem);
     return ESP_ERR_TIMEOUT;
   }
 
-  // Now request.result is updated via pointer!
-  esp_err_t result = request.result;
+  // Get result from heap-allocated struct (safe now!)
+  esp_err_t result = g_config_req_async->request.result;
   ESP_LOGI(TAG, "Config request completed with result: %s",
            esp_err_to_name(result));
 
-  vSemaphoreDelete(completion_sem);
+  // Clean up
+  vSemaphoreDelete(g_config_req_async->completion_sem);
+  free(g_config_req_async);
+  g_config_req_async = NULL;
+  g_active_config_request_valid = false;
+  g_active_config_request_ptr = NULL;
+  g_config_req_state = CONFIG_REQ_STATE_IDLE;
+
   return result;
 }
 
@@ -437,16 +462,22 @@ static void mcu_lan_handler_task(void *pvParameters) {
   downlink_item_t downlink_item;
 
   while (g_handler_running) {
-    // Queue receive transaction
+    // Always queue receive transaction to get Master's data
     lan_comm_queue_receive(g_lan_handle);
 
     // ===== Check Received Data =====
     lan_comm_packet_t packet;
     lan_comm_status_t status =
         lan_comm_get_received_packet(g_lan_handle, &packet, RX_TIMEOUT_MS);
+    
+    // Skip processing if no valid data (polling garbage, timeout, etc.)
+    if (status != LAN_COMM_OK || packet.payload_length < 2) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
 
-    if (status == LAN_COMM_OK && packet.payload_length >= 2) {
-      uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
+    // Process valid packet
+    uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
       // ===== Branch: RTC Request from LAN =====
       if (prefix[0] == 'R' && prefix[1] == 'T') {
         ESP_LOGI(TAG, "RTC request received");
@@ -561,10 +592,11 @@ static void mcu_lan_handler_task(void *pvParameters) {
                    (unsigned)packet.payload_length);
         }
       }
-      // ===== Branch: Handshake ACK =====
+      // ===== Branch: Handshake ACK (legacy, log only) =====
       else if (packet.payload[0] == FRAME_TYPE_ACK &&
                packet.payload[1] == ACK_TYPE_HANDSHAKE) {
-        // Already in data mode, respond with ACK
+        // In data mode, respond with ACK but log at debug level
+        ESP_LOGD(TAG, "Handshake ACK received in data mode, responding");
         send_ack_to_lan(ACK_TYPE_HANDSHAKE, 0);
       }
       // ===== Branch: Config Request =====
@@ -573,7 +605,19 @@ static void mcu_lan_handler_task(void *pvParameters) {
         ESP_LOGI(TAG, "Config request received");
         handle_config_request();
       }
-    }
+      // ===== Branch: Polling packet (CF + zeros or all zeros) - ignore =====
+      else if ((prefix[0] == 'C' && prefix[1] == 'F' && 
+                packet.payload_length >= 4 && 
+                packet.payload[2] == 0x00 && packet.payload[3] == 0x00) ||
+               (prefix[0] == 0x00 && prefix[1] == 0x00)) {
+        // This is a polling request from Master - already served via TX buffer
+        ESP_LOGD(TAG, "Polling packet received (ignored)");
+      }
+      // ===== Branch: Unknown packet =====
+      else {
+        ESP_LOGW(TAG, "Unknown packet: [0]=0x%02X [1]=0x%02X (len=%u)",
+                 prefix[0], prefix[1], packet.payload_length);
+      }
 
     // ===== Branch: From Server Handler Task - Downlink to LAN =====
     if (xQueueReceive(g_downlink_queue, &downlink_item, 0) == pdTRUE) {
@@ -584,6 +628,8 @@ static void mcu_lan_handler_task(void *pvParameters) {
       g_pending_downlink = downlink_item;
       g_pending_downlink_valid = true;
       signal_data_ready(); // WAN only notifies data-ready here
+      // Queue receive immediately to be ready for DQ from Master
+      lan_comm_queue_receive(g_lan_handle);
     }
     vTaskDelay(pdMS_TO_TICKS(1));
   }
@@ -626,18 +672,19 @@ static void send_rtc_response(void) {
   response.network_status =
       (g_internet_status == INTERNET_STATUS_ONLINE) ? 1 : 0;
 
-  // Load into TX buffer
+  // Load into TX buffer and queue transaction immediately
   lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
-  ESP_LOGI(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
+  lan_comm_queue_receive(g_lan_handle);  // Queue next transaction with response
+  ESP_LOGD(TAG, "RTC response loaded: %s, Net: %d", response.rtc_string,
            response.network_status);
-  lan_comm_queue_receive(g_lan_handle);
 }
 
 // ===== Send ACK to LAN =====
 static void send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
   uint8_t ack[3] = {FRAME_TYPE_ACK, ack_type, internet_flag};
   lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
-  lan_comm_queue_receive(g_lan_handle);
+  lan_comm_queue_receive(g_lan_handle);  // Queue next transaction with ACK
+  vTaskDelay(pdMS_TO_TICKS(50));  // Prevent ACK loop - allow time between ACKs
   ESP_LOGI(TAG, "ACK sent: type=0x%02X, inet=0x%02X", ack_type, internet_flag);
 }
 
@@ -696,10 +743,10 @@ static void handle_config_request(void) {
     memcpy(&config_packet[4], g_config_cache.config_data,
            g_config_cache.config_length);
 
-    // Only load TX, do not touch GPIO here
+    // Load TX and queue transaction immediately
     lan_comm_load_tx_data(g_lan_handle, config_packet,
                           4 + g_config_cache.config_length);
-    lan_comm_queue_receive(g_lan_handle);
+    lan_comm_queue_receive(g_lan_handle);  // Queue next transaction with config
     // Mark config consumed; handshake state will be cleared in DQ handler
     g_config_cache.has_config = false;
   }
@@ -719,9 +766,9 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
   packet[6] = item->length & 0xFF;
   memcpy(&packet[DATA_PACKET_HEADER_SIZE], item->data, item->length);
 
-  // Load data and signal GPIO
+  // Load data and queue transaction immediately
   lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
-  lan_comm_queue_receive(g_lan_handle);
+  lan_comm_queue_receive(g_lan_handle);  // Queue next transaction with downlink
   ESP_LOGI(TAG, "Downlink data loaded for handler %s (%u bytes)",
            type_str, packet_size);
 

@@ -273,7 +273,10 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
       lan_comm_parse_packet(handle->rx_buffer, received_bytes, packet);
 
   if (status != LAN_COMM_OK) {
-    lan_comm_report_error(handle, status, "packet parse error");
+    // Don't report error for NO_DATA - it's just polling garbage (expected in full-duplex SPI)
+    if (status != LAN_COMM_ERR_NO_DATA) {
+      lan_comm_report_error(handle, status, "packet parse error");
+    }
     return status;
   }
 
@@ -386,6 +389,25 @@ static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
     // Silent ignore - empty transaction
     return LAN_COMM_ERR_NO_DATA;
   }
+  
+  // Check for Master polling request (CF + zeros) - this is garbage from full-duplex SPI
+  // When Master calls wan_comm_request_data(), it sends CF header + zeros
+  // We should silently ignore this polling garbage
+  if (packet->header_type == LAN_COMM_HEADER_CF) {
+    // Check if payload is all zeros (polling garbage)
+    bool is_polling_garbage = true;
+    for (size_t i = LAN_COMM_HEADER_SIZE; i < length && i < 10; i++) {
+      if (buffer[i] != 0x00) {
+        is_polling_garbage = false;
+        break;
+      }
+    }
+    if (is_polling_garbage) {
+      ESP_LOGD(TAG, "Ignoring Master polling request (CF + zeros)");
+      return LAN_COMM_ERR_NO_DATA;  // Silent ignore
+    }
+  }
+  
   // Validate header
   if (packet->header_type != LAN_COMM_HEADER_CF &&
       packet->header_type != LAN_COMM_HEADER_DT && packet->header_type != LAN_COMM_HEADER_DQ) {
