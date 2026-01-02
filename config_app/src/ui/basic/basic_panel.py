@@ -347,14 +347,14 @@ class BasicPanel(ttk.Frame):
         stack1 = self.stack1_var.get()
         stack2 = self.stack2_var.get()
         
-        # Send CFST commands for each stack
-        # CFST:ST_1:TYPE or CFST:ST_2:TYPE
-        self._send_command(f"CFST:ST_1:{stack1}", f"Stack 1 = {stack1}")
+        # Send CFML:CFST commands for each stack (CFML prefix for LAN MCU)
+        # CFML:CFST:ST_1:TYPE or CFML:CFST:ST_2:TYPE
+        self._send_command(f"CFML:CFST:ST_1:{stack1}", f"Stack 1 = {stack1}")
         
         # 500ms delay between commands
         time.sleep(0.5)
         
-        self._send_command(f"CFST:ST_2:{stack2}", f"Stack 2 = {stack2}")
+        self._send_command(f"CFML:CFST:ST_2:{stack2}", f"Stack 2 = {stack2}")
     
     def set_config(self, config: GatewayConfig):
         """Set config values from loaded config"""

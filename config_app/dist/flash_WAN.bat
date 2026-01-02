@@ -54,7 +54,7 @@ if %FLASH_WAN%==1 (
     echo.
     
     echo [WAN 1/4] Erasing NVS...
-    esptool --port %PORT% erase-flash
+    esptool --port %PORT% erase_flash
     if errorlevel 1 goto error_wan
     
     echo [WAN 2/4] Bootloader...
@@ -88,7 +88,7 @@ if %FLASH_LAN%==1 (
     )
     
     echo [LAN 1/4] Erasing NVS...
-    esptool --port %PORT% --before no_reset --after no_reset erase-flash
+    esptool --port %PORT% --before no_reset --after no_reset erase_flash
     if errorlevel 1 goto error_lan
     
     echo [LAN 2/4] Bootloader...

@@ -242,12 +242,20 @@ Dành cho người dùng phổ thông, chỉ cần cấu hình các thông số 
 │   Password:              [********_________________________] [👁]          │
 │                          (default: "", min 8 chars for WPA2)               │
 │                                                                             │
+│   Auth Mode:             [▼ PERSONAL________]                               │
+│                          Options: PERSONAL | ENTERPRISE                     │
+│                                                                             │
+│   Username:              [_______________________________]                  │
+│                          ⚠️ Chỉ hiển thị khi Auth Mode = ENTERPRISE        │
+│                          (Ẩn khi PERSONAL, Hiện khi ENTERPRISE)            │
+│                                                                             │
 │   💡 Enter your WiFi credentials                                           │
 │                                                                             │
 │                              [ ✅ Set WiFi Config ]                         │
 │                                                                             │
 │   ────────────────────────────────────────────────────────────────────────   │
-│   Commands: CFIN:WIFI + CFWF:SSID:PASSWORD:PERSONAL                        │
+│   Commands: CFIN:WIFI + CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]            │
+│   AUTH_MODE: PERSONAL (không gửi username) | ENTERPRISE (gửi username)    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -388,15 +396,22 @@ Dành cho kỹ thuật viên cần cấu hình chi tiết tất cả các thông
 │  ┌─ Authentication ──────────────────────────────────────────────────────┐ │
 │  │  Auth Mode:      [▼ PERSONAL________]                                 │ │
 │  │                  Options: PERSONAL | ENTERPRISE                       │ │
-│  │  Username:       [_______________________________] (Enterprise only)  │ │
-│  │                  ℹ️ Username chỉ dùng cho Enterprise (WPA2-EAP)       │ │
+│  │                                                                       │ │
+│  │  ┌─ Dynamic Username Field ─────────────────────────────────────────┐ │ │
+│  │  │  • Auth Mode = PERSONAL   → Username field ẨN (hidden)           │ │ │
+│  │  │  • Auth Mode = ENTERPRISE → Username field HIỆN (visible)        │ │ │
+│  │  └──────────────────────────────────────────────────────────────────┘ │ │
+│  │                                                                       │ │
+│  │  Username:       [_______________________________]                    │ │
+│  │                  ⚠️ Field này chỉ hiển thị khi ENTERPRISE             │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
 │                              [ ✅ Set WiFi Config ]                         │
 │                                                                             │
 │   ────────────────────────────────────────────────────────────────────────  │
 │   Commands: CFIN:WIFI + CFWF:SSID:PASSWORD:AUTH_MODE[:USERNAME]            │
-│   AUTH_MODE: 0=PERSONAL, 1=ENTERPRISE                                      │
+│   • PERSONAL: CFWF:SSID:PASSWORD:PERSONAL (không có username)              │
+│   • ENTERPRISE: CFWF:SSID:PASSWORD:ENTERPRISE:USERNAME                     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -465,86 +480,88 @@ Dành cho kỹ thuật viên cần cấu hình chi tiết tất cả các thông
 
 ### Tab 4: LoRa Configuration
 
+**Layout Note:** Raw byte input fields (không dùng dropdown), compact layout, CFML prefix
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  📡 LORA CONFIGURATION                                                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─ LoRa E32 Modem Settings ─────────────────────────────────────────────┐ │
-│  │  Address High (ADDH): [0x] [00__]     Address Low (ADDL): [0x] [00__] │ │
-│  │  Speed Config (SPED): [▼ 0x1A - 9600bps, 8N1______]                  │ │
-│  │    Presets:                                                           │ │
-│  │    • 0x1A - 9600bps, 8N1                                             │ │
-│  │    • 0x3A - 9600bps, 8N1, Air 2.4kbps                               │ │
-│  │    • 0x5A - 9600bps, 8N1, Air 19.2kbps                              │ │
-│  │  Channel (0-31):      [▼ 23___]                                      │ │
-│  │  Option Config:       [▼ 0x44 - Fixed, Push-Pull______]              │ │
-│  │    Presets:                                                           │ │
-│  │    • 0x44 - Fixed transmission, Push-Pull, 250ms wakeup             │ │
-│  │    • 0x04 - Transparent, Push-Pull, 250ms wakeup                    │ │
+│  ┌─ E32 Modem Settings (6 bytes) ────────────────────────────────────────┐ │
+│  │  HEAD: [C0]    ADDH: [00]    ADDL: [00]                               │ │
+│  │  SPED: [1A]    CHAN: [17]    OPTION: [44]                             │ │
+│  │  (All values in hex, 1 byte each)                                     │ │
+│  │                                                                       │ │
+│  │                          [ ✅ Set E32 Modem ]  ← Nút Set riêng       │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
-│  ┌─ LoRa TDMA Network Settings ──────────────────────────────────────────┐ │
-│  │  Role:            ◉ Gateway    ○ Node                                │ │
-│  │  Node ID:         [0x] [0001]       Gateway ID:    [0x] [0001]       │ │
-│  │  TDMA Slots:      Total: [8___]     My Slot: [0___]                  │ │
-│  │  Slot Duration:   [200__] ms                                          │ │
+│  ┌─ TDMA Network (11 bytes) ─────────────────────────────────────────────┐ │
+│  │  ROLE: [00] (00=GW,01=Node)    NODE_ID: [00][01]                      │ │
+│  │  GW_ID: [00][01]    SLOTS: [08]    MY_SLOT: [00]                      │ │
+│  │  DURATION (4 bytes, ms): [00][00][00][C8] (=200ms)                    │ │
+│  │                                                                       │ │
+│  │                          [ ✅ Set TDMA Network ]  ← Nút Set riêng    │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
-│  ┌─ LoRa Encryption ─────────────────────────────────────────────────────┐ │
-│  │  Encryption:      [✓] Enable                                         │ │
-│  │  Key Length:      [▼ 16 bytes (AES-128)___]                          │ │
-│  │  Key:             [________________________________] [🔄 Generate]   │ │
+│  ┌─ Encryption (1+N bytes) ──────────────────────────────────────────────┐ │
+│  │  KEY_LEN: [00] (00=Off, 10=AES128, 20=AES256)                         │ │
+│  │  KEY: [________________________________] [🔄 Gen]                     │ │
+│  │                                                                       │ │
+│  │                          [ ✅ Set Encryption ]  ← Nút Set riêng      │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
-│                              [ ✅ Set LoRa Config ]                         │
+│  ℹ️ Commands (với CFML prefix cho LAN):                                    │
+│  • E32 Modem → CFML:CFLR:MODEM:<6 raw bytes>                               │
+│  • TDMA Network → CFML:CFLR:HDLCF:<11 raw bytes>                           │
+│  • Encryption → CFML:CFLR:CRYPT:<1+N raw bytes>                            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Tab 5: CAN Bus Configuration
 
-**Layout Note:** LabelFrames packed từ trên xuống, KHÔNG expand, KHÔNG fill Y
+**Layout Note:** Mỗi section có nút Set riêng, CFML prefix cho LAN commands
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  🔌 CAN BUS CONFIGURATION                                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─ CAN Settings (packed at TOP, no expand) ─────────────────────────────┐ │
-│  │  Baud Rate:       [▼ 500000_______________]                          │ │
-│  │                   Options: 125000 | 250000 | 500000 | 800000 | 1000000│
-│  │  Operating Mode:  [▼ NORMAL_______________]                          │ │
-│  │                   Options: NORMAL | LOOPBACK | SILENT                │ │
+│  ┌─ CAN Settings ────────────────────────────────────────────────────────┐ │
+│  │  Baud Rate: [▼ 500000]    Mode: [▼ NORMAL]                           │ │
+│  │  (125000 | 250000 | 500000 | 800000 | 1000000)                        │ │
+│  │                                                                       │ │
+│  │                          [ ✅ Set CAN Settings ]  ← Nút Set riêng    │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
-│  ┌─ CAN ID Whitelist (packed below, no expand) ──────────────────────────┐ │
-│  │  ┌────────────────────────┐     ┌──────────────────────────────────┐ │ │
-│  │  │ Allowed CAN IDs:       │     │  Add New ID:                     │ │ │
-│  │  │ ────────────────────── │     │  [0x] [___] [➕ Add]              │ │ │
-│  │  │ • 0x100               │     │  Quick Add:                      │ │ │
-│  │  │ • 0x101               │     │  [Add Range] [Import CSV]        │ │ │
-│  │  │ • 0x200               │     └──────────────────────────────────┘ │ │
-│  │  └────────────────────────┘     [🗑️ Remove] [🧹 Clear All]          │ │
-│  │  Total: 5 IDs                                                        │ │
+│  ┌─ CAN ID Whitelist ────────────────────────────────────────────────────┐ │
+│  │  ┌─────────────┐     Add ID (hex):                                   │ │
+│  │  │ 0x100       │     0x [___] [➕]                                    │ │
+│  │  │ 0x101       │     [🗑️ Remove]                                     │ │
+│  │  │ 0x200       │     [🧹 Clear All]                                  │ │
+│  │  └─────────────┘                                                      │ │
+│  │  Total: 3 IDs                                                         │ │
+│  │                                                                       │ │
+│  │                          [ ✅ Set CAN Whitelist ]  ← Nút Set riêng   │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
-│                              [ ✅ Set CAN Config ]                          │
+│  ℹ️ Commands (với CFML prefix cho LAN):                                    │
+│  • CAN Settings → CFML:CFCB:baudrate + CFML:CFCM:mode                      │
+│  • CAN Whitelist → CFML:CFCW:SET:0xXXX,0xYYY,... hoặc CFML:CFCW:CLR        │
 │                                                                             │
-│  ← Không có khoảng trống thừa bên dưới                                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Tab 6: RS485 Configuration
 
-**Layout Note:** LabelFrame packed từ trên xuống, KHÔNG expand, KHÔNG fill Y
+**Layout Note:** LabelFrame packed từ trên xuống, KHÔNG expand, CFML prefix
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  📟 RS485 CONFIGURATION                                                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─ RS485 Serial Settings (packed at TOP, no expand) ────────────────────┐ │
+│  ┌─ RS485 Serial Settings ───────────────────────────────────────────────┐ │
 │  │  Baud Rate:       [▼ 115200______________]                           │ │
 │  │                   Options: 9600 | 19200 | 38400 | 57600 | 115200     │ │
 │  │  ℹ️ Data format is fixed at 8N1 (8 data bits, No parity, 1 stop bit) │ │
@@ -552,7 +569,8 @@ Dành cho kỹ thuật viên cần cấu hình chi tiết tất cả các thông
 │                                                                             │
 │                              [ ✅ Set RS485 Config ]                        │
 │                                                                             │
-│  ← Không có khoảng trống thừa bên dưới, content fit theo nội dung          │
+│  ℹ️ Command: CFML:CFRS:BR:baudrate                                         │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
