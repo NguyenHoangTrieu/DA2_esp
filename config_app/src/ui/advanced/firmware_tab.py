@@ -130,7 +130,7 @@ class FirmwareTab(ttk.Frame):
         else:
             # Running as Python script
             app_path = Path(__file__).resolve().parent.parent.parent.parent
-        flash_script = app_path / "flash_WAN.bat"
+        flash_script = app_path / "bin/flash_WAN.bat"
         
         if not flash_script.exists():
             self._log(f"flash_WAN.bat not found at {flash_script}", "ERROR")

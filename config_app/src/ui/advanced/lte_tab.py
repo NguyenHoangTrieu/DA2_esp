@@ -115,7 +115,7 @@ class LTETab(ttk.Frame):
         ttk.Separator(info_frame, orient='horizontal').pack(fill=tk.X, pady=5)
         ttk.Label(info_frame, text="Commands: CFLT:APN:USER:PASS:COMM_TYPE:AUTO_RECONNECT:TIMEOUT:MAX_RETRY",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
-        ttk.Label(info_frame, text="Then CFIN:LTE (after 500ms delay) | COMM_TYPE: UART/USB | AUTO_RECONNECT: true/false",
+        ttk.Label(info_frame, text="Then CFIN:LTE (after 1s delay) | COMM_TYPE: UART/USB | AUTO_RECONNECT: true/false",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
     
     def _check_connection(self) -> bool:
@@ -150,15 +150,15 @@ class LTETab(ttk.Frame):
         
         cmd = f"CFLT:{apn}:{username}:{password}:{comm_type}:{reconnect}:{timeout}:{retry}"
         
-        # Send CFLT command first, then CFIN:LTE after 500ms delay (no response waiting)
+        # Send CFLT command first, then CFIN:LTE after 1s delay (no response waiting)
         def send_lte_sequence():
             self.log(f"→ {cmd}", "DEBUG")
             self.serial_manager.send(cmd)
             self.log(f"✓ LTE Config - Sent", "SUCCESS")
             
-            # Wait 500ms before sending CFIN:LTE
+            # Wait 1s before sending CFIN:LTE
             import time
-            time.sleep(0.5)
+            time.sleep(1.0)
             
             self.log("→ CFIN:LTE", "DEBUG")
             self.serial_manager.send("CFIN:LTE")

@@ -265,15 +265,15 @@ class BasicPanel(ttk.Frame):
         else:
             cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
-        # Send CFWF first, then CFIN:WIFI after 500ms delay (no response waiting)
+        # Send CFWF first, then CFIN:WIFI after 1s delay (no response waiting)
         def send_wifi_sequence():
             import time
             self.log(f"Sending: WiFi Config", "INFO")
             self.serial_manager.send(cmd)
             self.log(f"WiFi Config - Sent", "SUCCESS")
             
-            # Wait 500ms before sending CFIN:WIFI
-            time.sleep(0.5)
+            # Wait 1s before sending CFIN:WIFI
+            time.sleep(1.0)
             
             self.log(f"Sending: Set Internet Type = WIFI", "INFO")
             self.serial_manager.send("CFIN:WIFI")
@@ -300,15 +300,15 @@ class BasicPanel(ttk.Frame):
         # Basic mode defaults: UART, false, 30000, 0
         cmd = f"CFLT:{apn}:{user}:{pwd}:UART:false:30000:0"
         
-        # Send CFLT first, then CFIN:LTE after 500ms delay (no response waiting)
+        # Send CFLT first, then CFIN:LTE after 1s delay (no response waiting)
         def send_lte_sequence():
             import time
             self.log(f"Sending: LTE Config", "INFO")
             self.serial_manager.send(cmd)
             self.log(f"LTE Config - Sent", "SUCCESS")
             
-            # Wait 500ms before sending CFIN:LTE
-            time.sleep(0.5)
+            # Wait 1s before sending CFIN:LTE
+            time.sleep(1.0)
             
             self.log(f"Sending: Set Internet Type = LTE", "INFO")
             self.serial_manager.send("CFIN:LTE")
@@ -351,8 +351,8 @@ class BasicPanel(ttk.Frame):
         # CFML:CFST:ST_1:TYPE or CFML:CFST:ST_2:TYPE
         self._send_command(f"CFML:CFST:ST_1:{stack1}", f"Stack 1 = {stack1}")
         
-        # 500ms delay between commands
-        time.sleep(0.5)
+        # 1s delay between commands
+        time.sleep(1.0)
         
         self._send_command(f"CFML:CFST:ST_2:{stack2}", f"Stack 2 = {stack2}")
     

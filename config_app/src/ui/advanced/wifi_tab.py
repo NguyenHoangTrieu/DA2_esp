@@ -92,7 +92,7 @@ class WiFiTab(ttk.Frame):
         ttk.Separator(info_frame, orient='horizontal').pack(fill=tk.X, pady=5)
         ttk.Label(info_frame, text="Commands: CFWF:SSID:PASSWORD:AUTH_MODE or CFWF:SSID:PASSWORD:USERNAME:AUTH_MODE",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
-        ttk.Label(info_frame, text="Then CFIN:WIFI (after 500ms delay) | AUTH_MODE: PERSONAL or ENTERPRISE",
+        ttk.Label(info_frame, text="Then CFIN:WIFI (after 1s delay) | AUTH_MODE: PERSONAL or ENTERPRISE",
                   foreground="#757575", font=('Consolas', 9)).pack(anchor="w")
     
     def _on_auth_change(self, event=None):
@@ -143,15 +143,15 @@ class WiFiTab(ttk.Frame):
         else:
             cmd = f"CFWF:{ssid}:{password}:PERSONAL"
         
-        # Send CFWF first, then CFIN:WIFI after 500ms delay (no response waiting)
+        # Send CFWF first, then CFIN:WIFI after 1s delay (no response waiting)
         def send_wifi_sequence():
             self.log(f"→ {cmd}", "DEBUG")
             self.serial_manager.send(cmd)
             self.log(f"✓ WiFi Config - Sent", "SUCCESS")
             
-            # Wait 500ms before sending CFIN:WIFI
+            # Wait 1s before sending CFIN:WIFI
             import time
-            time.sleep(0.5)
+            time.sleep(1.0)
             
             self.log("→ CFIN:WIFI", "DEBUG")
             self.serial_manager.send("CFIN:WIFI")

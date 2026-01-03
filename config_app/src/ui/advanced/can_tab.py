@@ -211,8 +211,8 @@ class CanTab(ttk.Frame):
         # CFML:CFCB:baudrate - CAN Baud rate
         self._send_command(f"CFCB:{baud}", f"CAN Baud = {baud}")
         
-        # 500ms delay between commands
-        time.sleep(0.5)
+        # 1s delay between commands
+        time.sleep(1.0)
         
         # CFML:CFCM:mode - CAN Mode
         self._send_command(f"CFCM:{mode}", f"CAN Mode = {mode}")
