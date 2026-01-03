@@ -14,7 +14,7 @@
 #define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
-#define WIFI_ESP_MAXIMUM_RETRY 3
+#define WIFI_ESP_MAXIMUM_RETRY 10000
 
 // Adjust for the security/auth your AP uses
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
@@ -45,6 +45,7 @@ static volatile uint8_t s_reconnect_request =
 static wifi_config_t s_pending_config = {0}; // Pending WiFi config
 static bool wifi_connect_task_close = false;
 static bool g_sntp_synced = false;
+static bool g_wifi_sntp_started = false;  // Flag to prevent re-init SNTP
 
 // Network interface handle (global)
 esp_netif_t *g_wifi_netif = NULL;
@@ -71,8 +72,14 @@ static void sntp_sync_notification_cb(struct timeval *tv) {
   }
 }
 
-// Function to initialize SNTP
+// Function to initialize SNTP (only once)
 static void wifi_init_sntp(void) {
+  // CRITICAL: Only initialize SNTP once to avoid assert failure
+  if (g_wifi_sntp_started) {
+    ESP_LOGI(TAG, "SNTP already initialized, skipping");
+    return;
+  }
+
   ESP_LOGI(TAG, "Initializing SNTP");
 
   // Set timezone to Vietnam (GMT+7)
@@ -92,6 +99,7 @@ static void wifi_init_sntp(void) {
   esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
 
   esp_sntp_init();
+  g_wifi_sntp_started = true;
 
   ESP_LOGI(TAG, "SNTP initialized, waiting for sync...");
 }
@@ -372,7 +380,6 @@ static void wifi_config_task(void *arg) {
         } else {
           ESP_LOGW(TAG, "Invalid SSID/Password/Username length from queue");
         }
-        save_wifi_config_to_nvs();
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(100));

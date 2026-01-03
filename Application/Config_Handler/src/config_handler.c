@@ -11,6 +11,11 @@
 
 static const char *TAG = "config_handler";
 
+// External global config contexts (defined in wifi_connect.c, lte_connect.c, mqtt_handler.c)
+extern wifi_config_context_t g_wifi_ctx;
+extern lte_config_context_t g_lte_ctx;
+extern mqtt_config_context_t g_mqtt_ctx;
+
 // Queue handles
 QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
@@ -470,11 +475,25 @@ static void config_handler_task(void *arg) {
                 case CONFIG_TYPE_WIFI: {
                     wifi_config_data_t wifi_cfg;
                     if (config_parse_wifi(cmd.raw_data, cmd.data_len, &wifi_cfg) == ESP_OK) {
+                        // CRITICAL: Save to NVS FIRST before sending to queue
+                        // This ensures config is persisted even if device restarts immediately
+                        strncpy(g_wifi_ctx.ssid, wifi_cfg.ssid, sizeof(g_wifi_ctx.ssid) - 1);
+                        g_wifi_ctx.ssid[sizeof(g_wifi_ctx.ssid) - 1] = '\0';
+                        strncpy(g_wifi_ctx.pass, wifi_cfg.password, sizeof(g_wifi_ctx.pass) - 1);
+                        g_wifi_ctx.pass[sizeof(g_wifi_ctx.pass) - 1] = '\0';
+                        strncpy(g_wifi_ctx.username, wifi_cfg.username, sizeof(g_wifi_ctx.username) - 1);
+                        g_wifi_ctx.username[sizeof(g_wifi_ctx.username) - 1] = '\0';
+                        g_wifi_ctx.auth_mode = wifi_cfg.auth_mode;
+                        
+                        save_wifi_config_to_nvs();
+                        ESP_LOGI(TAG, "WiFi config saved to NVS");
+                        
+                        // Then send to WiFi task for runtime update
                         if (g_wifi_config_queue) {
                             xQueueSend(g_wifi_config_queue, &wifi_cfg, pdMS_TO_TICKS(100));
                             ESP_LOGI(TAG, "WiFi config sent to WiFi task");
                         } else {
-                            ESP_LOGW(TAG, "WiFi queue not initialized");
+                            ESP_LOGW(TAG, "WiFi queue not initialized, config saved to NVS only");
                         }
                     }
                     break;
@@ -483,11 +502,27 @@ static void config_handler_task(void *arg) {
                 case CONFIG_TYPE_MQTT: {
                     mqtt_config_data_t mqtt_cfg;
                     if (config_parse_mqtt(cmd.raw_data, cmd.data_len, &mqtt_cfg) == ESP_OK) {
+                        // CRITICAL: Save to NVS FIRST before sending to queue
+                        strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri, sizeof(g_mqtt_ctx.broker_uri) - 1);
+                        g_mqtt_ctx.broker_uri[sizeof(g_mqtt_ctx.broker_uri) - 1] = '\0';
+                        strncpy(g_mqtt_ctx.device_token, mqtt_cfg.device_token, sizeof(g_mqtt_ctx.device_token) - 1);
+                        g_mqtt_ctx.device_token[sizeof(g_mqtt_ctx.device_token) - 1] = '\0';
+                        strncpy(g_mqtt_ctx.subscribe_topic, mqtt_cfg.subscribe_topic, sizeof(g_mqtt_ctx.subscribe_topic) - 1);
+                        g_mqtt_ctx.subscribe_topic[sizeof(g_mqtt_ctx.subscribe_topic) - 1] = '\0';
+                        strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic, sizeof(g_mqtt_ctx.publish_topic) - 1);
+                        g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
+                        strncpy(g_mqtt_ctx.attribute_topic, mqtt_cfg.attribute_topic, sizeof(g_mqtt_ctx.attribute_topic) - 1);
+                        g_mqtt_ctx.attribute_topic[sizeof(g_mqtt_ctx.attribute_topic) - 1] = '\0';
+                        
+                        save_mqtt_config_to_nvs();
+                        ESP_LOGI(TAG, "MQTT config saved to NVS");
+                        
+                        // Then send to MQTT task for runtime update
                         if (g_mqtt_config_queue) {
                             xQueueSend(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(100));
                             ESP_LOGI(TAG, "MQTT config sent to MQTT task");
                         } else {
-                            ESP_LOGW(TAG, "MQTT queue not initialized");
+                            ESP_LOGW(TAG, "MQTT queue not initialized, config saved to NVS only");
                         }
                     }
                     break;
@@ -514,6 +549,22 @@ static void config_handler_task(void *arg) {
                 case CONFIG_TYPE_LTE: {
                     lte_config_data_t lte_cfg;
                     if (config_parse_lte(cmd.raw_data, cmd.data_len, &lte_cfg) == ESP_OK) {
+                        // CRITICAL: Save to NVS FIRST before sending to queue
+                        strncpy(g_lte_ctx.apn, lte_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
+                        g_lte_ctx.apn[sizeof(g_lte_ctx.apn) - 1] = '\0';
+                        strncpy(g_lte_ctx.username, lte_cfg.username, sizeof(g_lte_ctx.username) - 1);
+                        g_lte_ctx.username[sizeof(g_lte_ctx.username) - 1] = '\0';
+                        strncpy(g_lte_ctx.password, lte_cfg.password, sizeof(g_lte_ctx.password) - 1);
+                        g_lte_ctx.password[sizeof(g_lte_ctx.password) - 1] = '\0';
+                        g_lte_ctx.comm_type = lte_cfg.comm_type;
+                        g_lte_ctx.auto_reconnect = lte_cfg.auto_reconnect;
+                        g_lte_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
+                        g_lte_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
+                        
+                        save_lte_config_to_nvs();
+                        ESP_LOGI(TAG, "LTE config saved to NVS");
+                        
+                        // Then send to LTE task for runtime update
                         if (g_lte_config_queue) {
                             xQueueSend(g_lte_config_queue, &lte_cfg, pdMS_TO_TICKS(100));
                             ESP_LOGI(TAG, "LTE config sent to LTE task");

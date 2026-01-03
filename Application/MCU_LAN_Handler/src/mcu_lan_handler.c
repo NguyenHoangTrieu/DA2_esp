@@ -110,9 +110,10 @@ static const char *handler_id_to_string(handler_id_t id);
 static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms);
 
 // ===== GPIO Handshake Configuration =====
-#define GPIO_DATA_READY_PIN 14
+// NOTE: Must match GPIO pin on LAN MCU (GPIO8)
+#define GPIO_DATA_READY_PIN 8
 
-// Setup GPIO 14 as output
+// Setup GPIO 8 as output
 static esp_err_t setup_data_ready_gpio(void) {
   gpio_config_t io_conf = {.pin_bit_mask = BIT64(GPIO_DATA_READY_PIN),
                            .mode = GPIO_MODE_OUTPUT,
@@ -136,6 +137,7 @@ static esp_err_t setup_data_ready_gpio(void) {
 
 // Signal that data is ready
 static void signal_data_ready(void) {
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
   vTaskDelay(pdMS_TO_TICKS(10)); // Short delay to ensure readiness
   gpio_set_level(GPIO_DATA_READY_PIN, 1);
   ESP_LOGI(TAG, "Data-ready signal HIGH");
@@ -267,6 +269,22 @@ esp_err_t mcu_lan_handler_start(void) {
   if (pcf8563_init() != ESP_OK) {
     ESP_LOGW(TAG, "PCF8563 init failed, time fallback to system");
     // Continue without PCF8563
+  } else {
+    // INITIAL SYNC: Read RTC time and set system time
+    // After this, system time is synced with RTC
+    // When WiFi connects, SNTP will update both system time and PCF8563
+    struct tm rtc_timeinfo;
+    if (pcf8563_read_time(&rtc_timeinfo) == ESP_OK) {
+      time_t rtc_time = mktime(&rtc_timeinfo);
+      struct timeval tv = {.tv_sec = rtc_time, .tv_usec = 0};
+      settimeofday(&tv, NULL);
+      ESP_LOGI(TAG, "System time synced from RTC: %02d/%02d/%04d-%02d:%02d:%02d",
+               rtc_timeinfo.tm_mday, rtc_timeinfo.tm_mon + 1,
+               rtc_timeinfo.tm_year + 1900, rtc_timeinfo.tm_hour,
+               rtc_timeinfo.tm_min, rtc_timeinfo.tm_sec);
+    } else {
+      ESP_LOGW(TAG, "Failed to read RTC, using default system time");
+    }
   }
 
   ESP_LOGI(TAG, "Starting MCU LAN Handler (SPI Slave - WAN Side)");
@@ -476,11 +494,15 @@ static void mcu_lan_handler_task(void *pvParameters) {
       continue;
     }
 
+    // Debug: Log all received packets to diagnose SPI communication issues
+    ESP_LOGD(TAG, "SPI RX: [0]=0x%02X [1]=0x%02X len=%u", 
+             packet.payload[0], packet.payload[1], packet.payload_length);
+
     // Process valid packet
     uint8_t prefix[2] = {packet.payload[0], packet.payload[1]};
       // ===== Branch: RTC Request from LAN =====
       if (prefix[0] == 'R' && prefix[1] == 'T') {
-        ESP_LOGI(TAG, "RTC request received");
+        ESP_LOGI(TAG, "RTC request received from LAN MCU");
         send_rtc_response();
       }
       // ===== Branch: Generic data/config request from LAN (after GPIO
@@ -800,24 +822,9 @@ static void get_rtc_string(char *buffer) {
   struct tm timeinfo;
   memset(&timeinfo, 0, sizeof(struct tm));
   
-  // Check internet status and choose time source
-  if (g_internet_status == INTERNET_STATUS_ONLINE) {
-    // Use SNTP (system time) when online
-    time_t now = time(NULL);
-    localtime_r(&now, &timeinfo);
-    ESP_LOGI(TAG, "Using SNTP time");
-  } else {
-    // Use PCF8563 RTC when offline
-    esp_err_t ret = pcf8563_read_time(&timeinfo);
-    if (ret == ESP_OK) {
-      ESP_LOGI(TAG, "Using PCF8563 RTC time (offline mode)");
-    } else {
-      // Fallback to system time if RTC read fails
-      time_t now = time(NULL);
-      localtime_r(&now, &timeinfo);
-      ESP_LOGW(TAG, "RTC read failed, using system time as fallback");
-    }
-  }
+  // Always use system time (already synced with RTC at boot, SNTP when online)
+  time_t now = time(NULL);
+  localtime_r(&now, &timeinfo);
 
   int year = timeinfo.tm_year + 1900;
   if (year > 9999) {

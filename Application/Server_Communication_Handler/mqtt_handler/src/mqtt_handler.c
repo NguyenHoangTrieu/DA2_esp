@@ -373,7 +373,7 @@ static void mqtt_publish_task(void *arg) {
 
   if (m_mqtt_connected) {
     // Publish firmware update success
-    mqtt_publish_firmware_status("success", "1.1.4");
+    mqtt_publish_firmware_status("success", "1.1.1");
     ESP_LOGI(TAG, "Firmware update notification sent");
   } else {
     ESP_LOGW(TAG, "MQTT not connected, skipping firmware status");
@@ -544,7 +544,6 @@ static void mqtt_config_task(void *arg) {
         strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
                 sizeof(g_mqtt_ctx.publish_topic) - 1);
         g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
-        save_mqtt_config_to_nvs();
         mqtt_reinit();
       }
     } else {

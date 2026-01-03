@@ -22,7 +22,7 @@
 #define LTE_DEFAULT_APN "v-internet"
 #define LTE_AUTO_RECONNECT true
 #define LTE_RECONNECT_TIMEOUT_MS 30000
-#define LTE_MAX_RECONNECT 0 /* Infinite */
+#define LTE_MAX_RECONNECT 10000 /* Infinite */
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
@@ -137,7 +137,7 @@ static void lte_task(void *arg) {
   const TickType_t monitor_interval =
       pdMS_TO_TICKS(LTE_CONNECTION_MONITOR_INTERVAL_MS);
   const TickType_t reconnect_interval =
-      pdMS_TO_TICKS(15000); // Retry every 15s
+      pdMS_TO_TICKS(10000); // Retry every 10s
 
   uint32_t reconnect_count = 0;
 
@@ -164,8 +164,6 @@ static void lte_task(void *arg) {
       g_lte_ctx.reconnect_timeout_ms = new_cfg.reconnect_timeout_ms;
       g_lte_ctx.max_reconnect_attempts = new_cfg.max_reconnect_attempts;
 
-      save_lte_config_to_nvs();
-
       /* Reinitialize with new config */
       reconnect_count = 0; // Reset counter
       lte_init_with_config();
@@ -187,28 +185,32 @@ static void lte_task(void *arg) {
 
           // Check if auto-reconnect is enabled
           if (g_lte_ctx.auto_reconnect) {
-            // Check if enough time has passed since last reconnect attempt
-            if ((now - last_reconnect_attempt) >= reconnect_interval) {
-              // Check max reconnect attempts (0 = infinite)
-              if (g_lte_ctx.max_reconnect_attempts == 0 ||
-                  reconnect_count < g_lte_ctx.max_reconnect_attempts) {
+            // Check max reconnect attempts (0 = infinite)
+            if (g_lte_ctx.max_reconnect_attempts == 0 ||
+                reconnect_count < g_lte_ctx.max_reconnect_attempts) {
 
-                ESP_LOGI(TAG, "Attempting auto-recovery (attempt %lu)...",
-                         reconnect_count + 1);
+              // Try immediate reconnect first
+              ESP_LOGI(TAG, "Immediate reconnect attempt (attempt %lu)...",
+                       reconnect_count + 1);
 
-                esp_err_t ret = lte_handler_connect();
-                if (ret == ESP_OK) {
-                  ESP_LOGI(TAG, "Recovery reconnect initiated");
-                } else {
-                  ESP_LOGW(TAG, "Recovery failed: 0x%x - will retry", ret);
-                }
-
+              esp_err_t ret = lte_handler_connect();
+              if (ret == ESP_OK) {
+                ESP_LOGI(TAG, "Reconnect initiated");
                 reconnect_count++;
                 last_reconnect_attempt = now;
               } else {
-                ESP_LOGE(TAG, "Max reconnect attempts reached (%lu)",
-                         reconnect_count);
+                ESP_LOGW(TAG, "Reconnect failed: 0x%x", ret);
+                
+                // If immediate attempt fails, check throttle before next retry
+                if ((now - last_reconnect_attempt) >= reconnect_interval) {
+                  ESP_LOGI(TAG, "Throttle passed, will retry later");
+                  reconnect_count++;
+                  last_reconnect_attempt = now;
+                }
               }
+            } else {
+              ESP_LOGE(TAG, "Max reconnect attempts reached (%lu)",
+                       reconnect_count);
             }
           }
         }
