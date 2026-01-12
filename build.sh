@@ -10,9 +10,9 @@ source ~/esp-idf/export.sh
 idf.py build
 
 #4. copy firmware to flash directory
-cp -r build/DA2_esp.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
-cp -r build/bootloader/bootloader.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
-cp -r build/partition_table/partition-table.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
+# cp -r build/DA2_esp.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
+# cp -r build/bootloader/bootloader.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
+# cp -r build/partition_table/partition-table.bin /mnt/c/embedded/DATN_Workspace/DA2_esp/config_app/dist/bin
 
 cp -r build/DA2_esp.bin flash_file
 cp -r build/bootloader/bootloader.bin flash_file

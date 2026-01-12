@@ -1,3 +1,8 @@
+## 2.0.1~1
+
+- esp_tinyusb: Claim forward compatibility with TinyUSB 0.19
+- CDC: Added support for new VFS API (for esp-idf v5.4 and higher)
+
 ## 2.0.1
 
 - esp_tinyusb: Added ESP32H4 support

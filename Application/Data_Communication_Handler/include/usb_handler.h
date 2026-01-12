@@ -14,7 +14,6 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/gpio.h"
 #include "usb/usb_host.h"
-#include "mbedtls/md5.h"
 #include "rbg_handler.h"
 #include "sdkconfig.h"
 #include "esp_check.h"

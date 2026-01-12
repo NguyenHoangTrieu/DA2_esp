@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
+#include "esp_netif_defaults.h"
 #include "esp_modem_usb.h"
 #include "esp_modem_usb_recov_helper.h"
 #include "esp_modem_usb_dce.h"

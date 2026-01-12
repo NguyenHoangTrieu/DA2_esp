@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
+#include "esp_netif_defaults.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"

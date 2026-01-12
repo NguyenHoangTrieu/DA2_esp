@@ -7,7 +7,8 @@
 #include "esp_log.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_rom_gpio.h"
-#include "esp_rom_uart.h"
+#include "esp_rom_serial_output.h"
+#include "soc/gpio_sig_map.h"
 #include "hal/clk_gate_ll.h"
 #include "hal/gpio_ll.h"
 #include "hal/uart_ll.h" // HAL UART
