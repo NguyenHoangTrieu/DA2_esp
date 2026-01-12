@@ -6034,6 +6034,9 @@
 									"$ref": "AAAAAAGaD/nKl2TxbZc="
 								},
 								{
+									"$ref": "AAAAAAGaD+hHZ2RjwXE="
+								},
+								{
 									"$ref": "AAAAAAGaD++x3WTDEG0="
 								},
 								{
@@ -6169,6 +6172,9 @@
 								},
 								{
 									"$ref": "AAAAAAGaD7Kz92E30mo="
+								},
+								{
+									"$ref": "AAAAAAGaD83+U2GveEo="
 								},
 								{
 									"$ref": "AAAAAAGaEB7rM2dV1xU="
@@ -8434,6 +8440,117 @@
 						},
 						{
 							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaD+hHZ2RjwXE=",
+							"_parent": {
+								"$ref": "AAAAAAGZwwtwyuZF95w="
+							},
+							"model": {
+								"$ref": "AAAAAAGaD9BlPGHV1SU="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaD+hHZ2Rkxjo=",
+									"_parent": {
+										"$ref": "AAAAAAGaD+hHZ2RjwXE="
+									},
+									"model": {
+										"$ref": "AAAAAAGaD9BlPGHV1SU="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD+hHaGRlCNQ=",
+											"_parent": {
+												"$ref": "AAAAAAGaD+hHZ2Rkxjo="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -674,
+											"top": 176,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD+hHaGRmAG8=",
+											"_parent": {
+												"$ref": "AAAAAAGaD+hHZ2Rkxjo="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 621,
+											"top": 702,
+											"width": 105.74267578125,
+											"height": 13,
+											"text": "Z-Wave Handler"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD+hHaGRn/rU=",
+											"_parent": {
+												"$ref": "AAAAAAGaD+hHZ2Rkxjo="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 621,
+											"top": 717,
+											"width": 105.74267578125,
+											"height": 13,
+											"text": "(from Middleware)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaD+hHaGRolR0=",
+											"_parent": {
+												"$ref": "AAAAAAGaD+hHZ2Rkxjo="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -674,
+											"top": 176,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 616,
+									"top": 695,
+									"width": 115.74267578125,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaD+hHaGRlCNQ="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaD+hHaGRmAG8="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaD+hHaGRn/rU="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaD+hHaGRolR0="
+									}
+								}
+							],
+							"containerView": {
+								"$ref": "AAAAAAGZwyHTJASbHfg="
+							},
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 616,
+							"top": 680,
+							"width": 114.74267578125,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaD+hHZ2Rkxjo="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
 							"_id": "AAAAAAGaD7Kz92E30mo=",
 							"_parent": {
 								"$ref": "AAAAAAGZwwtwyuZF95w="
@@ -8545,7 +8662,6 @@
 						},
 						{
 							"_type": "UMLPackageView",
-<<<<<<< Updated upstream
 							"_id": "AAAAAAGaD83+U2GveEo=",
 							"_parent": {
 								"$ref": "AAAAAAGZwwtwyuZF95w="
@@ -8657,8 +8773,6 @@
 						},
 						{
 							"_type": "UMLPackageView",
-=======
->>>>>>> Stashed changes
 							"_id": "AAAAAAGaD++x3WTDEG0=",
 							"_parent": {
 								"$ref": "AAAAAAGZwwtwyuZF95w="
@@ -8686,8 +8800,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -794,
-											"top": 30,
+											"left": -1098,
+											"top": 158,
 											"height": 13
 										},
 										{
@@ -8698,8 +8812,8 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 621,
-											"top": 710,
+											"left": 469,
+											"top": 774,
 											"width": 113.66455078125,
 											"height": 13,
 											"text": "Bluetooth Handler"
@@ -8712,8 +8826,8 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 621,
-											"top": 725,
+											"left": 469,
+											"top": 789,
 											"width": 113.66455078125,
 											"height": 13,
 											"text": "(from Middleware)"
@@ -8727,16 +8841,16 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -794,
-											"top": 30,
+											"left": -1098,
+											"top": 158,
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 616,
-									"top": 703,
+									"left": 464,
+									"top": 767,
 									"width": 123.66455078125,
 									"height": 40,
 									"stereotypeLabel": {
@@ -8759,8 +8873,8 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 616,
-							"top": 688,
+							"left": 464,
+							"top": 752,
 							"width": 122.66455078125,
 							"height": 55,
 							"showNamespace": true,
@@ -8979,12 +9093,6 @@
 							"containedViews": [
 								{
 									"$ref": "AAAAAAGaECs4v2grDqc="
-								},
-								{
-									"$ref": "AAAAAAGaECwdAGhK7TQ="
-								},
-								{
-									"$ref": "AAAAAAGaEC1bSmhqEUY="
 								}
 							],
 							"font": "Arial;13;0",
@@ -9325,6 +9433,114 @@
 						},
 						{
 							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaECsqHmgTs2E=",
+							"_parent": {
+								"$ref": "AAAAAAGZwwtwyuZF95w="
+							},
+							"model": {
+								"$ref": "AAAAAAGaECe8pmfBZ7k="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaECsqHmgUL5E=",
+									"_parent": {
+										"$ref": "AAAAAAGaECsqHmgTs2E="
+									},
+									"model": {
+										"$ref": "AAAAAAGaECe8pmfBZ7k="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECsqHmgVIR4=",
+											"_parent": {
+												"$ref": "AAAAAAGaECsqHmgUL5E="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -160,
+											"top": -60,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECsqHmgWkCU=",
+											"_parent": {
+												"$ref": "AAAAAAGaECsqHmgUL5E="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 501,
+											"top": 382,
+											"width": 164.9853515625,
+											"height": 13,
+											"text": "Z Wave Handler Task"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECsqHmgXOBQ=",
+											"_parent": {
+												"$ref": "AAAAAAGaECsqHmgUL5E="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 501,
+											"top": 397,
+											"width": 164.9853515625,
+											"height": 13,
+											"text": "(from LAN Network Handler)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECsqH2gY3ro=",
+											"_parent": {
+												"$ref": "AAAAAAGaECsqHmgUL5E="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -160,
+											"top": -60,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 496,
+									"top": 375,
+									"width": 174.9853515625,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaECsqHmgVIR4="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaECsqHmgWkCU="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaECsqHmgXOBQ="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaECsqH2gY3ro="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 496,
+							"top": 360,
+							"width": 173.9853515625,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaECsqHmgUL5E="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
 							"_id": "AAAAAAGaECs4v2grDqc=",
 							"_parent": {
 								"$ref": "AAAAAAGZwwtwyuZF95w="
@@ -9352,7 +9568,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -364,
+											"left": 36,
 											"top": -101,
 											"height": 13
 										},
@@ -9364,7 +9580,7 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-											"left": 501,
+											"left": 701,
 											"top": 382,
 											"width": 164.9853515625,
 											"height": 13,
@@ -9378,7 +9594,7 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": 501,
+											"left": 701,
 											"top": 397,
 											"width": 164.9853515625,
 											"height": 13,
@@ -9393,7 +9609,7 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-											"left": -364,
+											"left": 36,
 											"top": -101,
 											"height": 13,
 											"horizontalAlignment": 1
@@ -9401,7 +9617,7 @@
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-									"left": 496,
+									"left": 696,
 									"top": 375,
 									"width": 174.9853515625,
 									"height": 40,
@@ -9425,13 +9641,229 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-							"left": 496,
+							"left": 696,
 							"top": 360,
 							"width": 173.9853515625,
 							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaECs4wGgsHLM="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaECwdAGhK7TQ=",
+							"_parent": {
+								"$ref": "AAAAAAGZwwtwyuZF95w="
+							},
+							"model": {
+								"$ref": "AAAAAAGaECuv1GhFcHk="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaECwdAGhLQHw=",
+									"_parent": {
+										"$ref": "AAAAAAGaECwdAGhK7TQ="
+									},
+									"model": {
+										"$ref": "AAAAAAGaECuv1GhFcHk="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECwdAGhMHCM=",
+											"_parent": {
+												"$ref": "AAAAAAGaECwdAGhLQHw="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -46,
+											"top": 4,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECwdAGhNLGY=",
+											"_parent": {
+												"$ref": "AAAAAAGaECwdAGhLQHw="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 477,
+											"top": 470,
+											"width": 143.05419921875,
+											"height": 13,
+											"text": "Modbus Handler Task?"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECwdAGhOcn4=",
+											"_parent": {
+												"$ref": "AAAAAAGaECwdAGhLQHw="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 477,
+											"top": 485,
+											"width": 143.05419921875,
+											"height": 13,
+											"text": "(from Application)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaECwdAGhPIGs=",
+											"_parent": {
+												"$ref": "AAAAAAGaECwdAGhLQHw="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": -46,
+											"top": 4,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 472,
+									"top": 463,
+									"width": 153.05419921875,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaECwdAGhMHCM="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaECwdAGhNLGY="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaECwdAGhOcn4="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaECwdAGhPIGs="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 472,
+							"top": 448,
+							"width": 152.05419921875,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaECwdAGhLQHw="
+							}
+						},
+						{
+							"_type": "UMLPackageView",
+							"_id": "AAAAAAGaEC1bSmhqEUY=",
+							"_parent": {
+								"$ref": "AAAAAAGZwwtwyuZF95w="
+							},
+							"model": {
+								"$ref": "AAAAAAGaEC0nsWhllmw="
+							},
+							"subViews": [
+								{
+									"_type": "UMLNameCompartmentView",
+									"_id": "AAAAAAGaEC1bSmhrLE4=",
+									"_parent": {
+										"$ref": "AAAAAAGaEC1bSmhqEUY="
+									},
+									"model": {
+										"$ref": "AAAAAAGaEC0nsWhllmw="
+									},
+									"subViews": [
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaEC1bSmhskcU=",
+											"_parent": {
+												"$ref": "AAAAAAGaEC1bSmhrLE4="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 2,
+											"top": -82,
+											"height": 13
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaEC1bSmhtxW0=",
+											"_parent": {
+												"$ref": "AAAAAAGaEC1bSmhrLE4="
+											},
+											"font": "Arial;13;1",
+											"parentStyle": true,
+											"left": 661,
+											"top": 470,
+											"width": 135.138671875,
+											"height": 13,
+											"text": "CAN Handler Task"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaEC1bSmhuXUc=",
+											"_parent": {
+												"$ref": "AAAAAAGaEC1bSmhrLE4="
+											},
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 661,
+											"top": 485,
+											"width": 135.138671875,
+											"height": 13,
+											"text": "(from Application)"
+										},
+										{
+											"_type": "LabelView",
+											"_id": "AAAAAAGaEC1bSmhv/7Q=",
+											"_parent": {
+												"$ref": "AAAAAAGaEC1bSmhrLE4="
+											},
+											"visible": false,
+											"font": "Arial;13;0",
+											"parentStyle": true,
+											"left": 2,
+											"top": -82,
+											"height": 13,
+											"horizontalAlignment": 1
+										}
+									],
+									"font": "Arial;13;0",
+									"parentStyle": true,
+									"left": 656,
+									"top": 463,
+									"width": 145.138671875,
+									"height": 40,
+									"stereotypeLabel": {
+										"$ref": "AAAAAAGaEC1bSmhskcU="
+									},
+									"nameLabel": {
+										"$ref": "AAAAAAGaEC1bSmhtxW0="
+									},
+									"namespaceLabel": {
+										"$ref": "AAAAAAGaEC1bSmhuXUc="
+									},
+									"propertyLabel": {
+										"$ref": "AAAAAAGaEC1bSmhv/7Q="
+									}
+								}
+							],
+							"font": "Arial;13;0",
+							"parentStyle": false,
+							"containerChangeable": true,
+							"left": 656,
+							"top": 448,
+							"width": 144.138671875,
+							"height": 55,
+							"showNamespace": true,
+							"nameCompartment": {
+								"$ref": "AAAAAAGaEC1bSmhrLE4="
 							}
 						},
 						{
@@ -9907,13 +10339,8 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-<<<<<<< Updated upstream
 											"left": -217,
 											"top": -169,
-=======
-											"left": -729,
-											"top": -313,
->>>>>>> Stashed changes
 											"height": 13
 										},
 										{
@@ -9924,13 +10351,8 @@
 											},
 											"font": "Arial;13;1",
 											"parentStyle": true,
-<<<<<<< Updated upstream
 											"left": 949,
 											"top": 1158,
-=======
-											"left": 693,
-											"top": 1086,
->>>>>>> Stashed changes
 											"width": 118.76806640625,
 											"height": 13,
 											"text": "IO Expander Driver"
@@ -9943,13 +10365,8 @@
 											},
 											"font": "Arial;13;0",
 											"parentStyle": true,
-<<<<<<< Updated upstream
 											"left": 949,
 											"top": 1173,
-=======
-											"left": 693,
-											"top": 1101,
->>>>>>> Stashed changes
 											"width": 118.76806640625,
 											"height": 13,
 											"text": "(from BSP)"
@@ -9963,26 +10380,16 @@
 											"visible": false,
 											"font": "Arial;13;0",
 											"parentStyle": true,
-<<<<<<< Updated upstream
 											"left": -217,
 											"top": -169,
-=======
-											"left": -729,
-											"top": -313,
->>>>>>> Stashed changes
 											"height": 13,
 											"horizontalAlignment": 1
 										}
 									],
 									"font": "Arial;13;0",
 									"parentStyle": true,
-<<<<<<< Updated upstream
 									"left": 944,
 									"top": 1151,
-=======
-									"left": 688,
-									"top": 1079,
->>>>>>> Stashed changes
 									"width": 128.76806640625,
 									"height": 40,
 									"stereotypeLabel": {
@@ -10005,240 +10412,13 @@
 							"font": "Arial;13;0",
 							"parentStyle": false,
 							"containerChangeable": true,
-<<<<<<< Updated upstream
 							"left": 944,
 							"top": 1136,
-=======
-							"left": 688,
-							"top": 1064,
->>>>>>> Stashed changes
 							"width": 127.76806640625,
 							"height": 55,
 							"showNamespace": true,
 							"nameCompartment": {
 								"$ref": "AAAAAAGaxJtCWsy7VTM="
-							}
-						},
-						{
-							"_type": "UMLPackageView",
-							"_id": "AAAAAAGaECwdAGhK7TQ=",
-							"_parent": {
-								"$ref": "AAAAAAGZwwtwyuZF95w="
-							},
-							"model": {
-								"$ref": "AAAAAAGaECuv1GhFcHk="
-							},
-							"subViews": [
-								{
-									"_type": "UMLNameCompartmentView",
-									"_id": "AAAAAAGaECwdAGhLQHw=",
-									"_parent": {
-										"$ref": "AAAAAAGaECwdAGhK7TQ="
-									},
-									"model": {
-										"$ref": "AAAAAAGaECuv1GhFcHk="
-									},
-									"subViews": [
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaECwdAGhMHCM=",
-											"_parent": {
-												"$ref": "AAAAAAGaECwdAGhLQHw="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 626,
-											"top": -252,
-											"height": 13
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaECwdAGhNLGY=",
-											"_parent": {
-												"$ref": "AAAAAAGaECwdAGhLQHw="
-											},
-											"font": "Arial;13;1",
-											"parentStyle": true,
-											"left": 701,
-											"top": 382,
-											"width": 164.9853515625,
-											"height": 13,
-											"text": "Modbus Handler Task?"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaECwdAGhOcn4=",
-											"_parent": {
-												"$ref": "AAAAAAGaECwdAGhLQHw="
-											},
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 701,
-											"top": 397,
-											"width": 164.9853515625,
-											"height": 13,
-											"text": "(from LAN Network Handler)"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaECwdAGhPIGs=",
-											"_parent": {
-												"$ref": "AAAAAAGaECwdAGhLQHw="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 626,
-											"top": -252,
-											"height": 13,
-											"horizontalAlignment": 1
-										}
-									],
-									"font": "Arial;13;0",
-									"parentStyle": true,
-									"left": 696,
-									"top": 375,
-									"width": 174.9853515625,
-									"height": 40,
-									"stereotypeLabel": {
-										"$ref": "AAAAAAGaECwdAGhMHCM="
-									},
-									"nameLabel": {
-										"$ref": "AAAAAAGaECwdAGhNLGY="
-									},
-									"namespaceLabel": {
-										"$ref": "AAAAAAGaECwdAGhOcn4="
-									},
-									"propertyLabel": {
-										"$ref": "AAAAAAGaECwdAGhPIGs="
-									}
-								}
-							],
-							"containerView": {
-								"$ref": "AAAAAAGaECAlhGd+R8I="
-							},
-							"font": "Arial;13;0",
-							"parentStyle": false,
-							"containerChangeable": true,
-							"left": 696,
-							"top": 360,
-							"width": 173.9853515625,
-							"height": 55,
-							"showNamespace": true,
-							"nameCompartment": {
-								"$ref": "AAAAAAGaECwdAGhLQHw="
-							}
-						},
-						{
-							"_type": "UMLPackageView",
-							"_id": "AAAAAAGaEC1bSmhqEUY=",
-							"_parent": {
-								"$ref": "AAAAAAGZwwtwyuZF95w="
-							},
-							"model": {
-								"$ref": "AAAAAAGaEC0nsWhllmw="
-							},
-							"subViews": [
-								{
-									"_type": "UMLNameCompartmentView",
-									"_id": "AAAAAAGaEC1bSmhrLE4=",
-									"_parent": {
-										"$ref": "AAAAAAGaEC1bSmhqEUY="
-									},
-									"model": {
-										"$ref": "AAAAAAGaEC0nsWhllmw="
-									},
-									"subViews": [
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaEC1bSmhskcU=",
-											"_parent": {
-												"$ref": "AAAAAAGaEC1bSmhrLE4="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 722,
-											"top": -346,
-											"height": 13
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaEC1bSmhtxW0=",
-											"_parent": {
-												"$ref": "AAAAAAGaEC1bSmhrLE4="
-											},
-											"font": "Arial;13;1",
-											"parentStyle": true,
-											"left": 901,
-											"top": 382,
-											"width": 164.9853515625,
-											"height": 13,
-											"text": "CAN Handler Task"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaEC1bSmhuXUc=",
-											"_parent": {
-												"$ref": "AAAAAAGaEC1bSmhrLE4="
-											},
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 901,
-											"top": 397,
-											"width": 164.9853515625,
-											"height": 13,
-											"text": "(from LAN Network Handler)"
-										},
-										{
-											"_type": "LabelView",
-											"_id": "AAAAAAGaEC1bSmhv/7Q=",
-											"_parent": {
-												"$ref": "AAAAAAGaEC1bSmhrLE4="
-											},
-											"visible": false,
-											"font": "Arial;13;0",
-											"parentStyle": true,
-											"left": 722,
-											"top": -346,
-											"height": 13,
-											"horizontalAlignment": 1
-										}
-									],
-									"font": "Arial;13;0",
-									"parentStyle": true,
-									"left": 896,
-									"top": 375,
-									"width": 174.9853515625,
-									"height": 40,
-									"stereotypeLabel": {
-										"$ref": "AAAAAAGaEC1bSmhskcU="
-									},
-									"nameLabel": {
-										"$ref": "AAAAAAGaEC1bSmhtxW0="
-									},
-									"namespaceLabel": {
-										"$ref": "AAAAAAGaEC1bSmhuXUc="
-									},
-									"propertyLabel": {
-										"$ref": "AAAAAAGaEC1bSmhv/7Q="
-									}
-								}
-							],
-							"containerView": {
-								"$ref": "AAAAAAGaECAlhGd+R8I="
-							},
-							"font": "Arial;13;0",
-							"parentStyle": false,
-							"containerChangeable": true,
-							"left": 896,
-							"top": 360,
-							"width": 173.9853515625,
-							"height": 55,
-							"showNamespace": true,
-							"nameCompartment": {
-								"$ref": "AAAAAAGaEC1bSmhrLE4="
 							}
 						}
 					]
@@ -13144,7 +13324,7 @@
 															"left": 1314,
 															"top": 1170,
 															"width": 54.18994140625,
-															"height": 26,
+															"height": 13,
 															"text": "Log Error",
 															"wordWrap": true
 														}
@@ -13182,7 +13362,7 @@
 															"parentStyle": false,
 															"left": 848,
 															"top": 816,
-															"width": 14.2060546875,
+															"width": 14.6884765625,
 															"height": 13,
 															"alpha": 1.7948197901646967,
 															"distance": 81.02468759581859,
@@ -13276,7 +13456,7 @@
 															"parentStyle": false,
 															"left": 1248,
 															"top": 815,
-															"width": 13,
+															"width": 13.71728515625,
 															"height": 13,
 															"alpha": -1.7004989982444896,
 															"distance": 139.16896205691842,
@@ -13416,7 +13596,7 @@
 															"parentStyle": false,
 															"left": 1184,
 															"top": 1083,
-															"width": 18.05908203125,
+															"width": 19.5,
 															"height": 13,
 															"alpha": 0.14189704127083183,
 															"distance": 106.06601717798213,
@@ -15513,9 +15693,9 @@
 																	},
 																	"font": "Arial;13;0",
 																	"parentStyle": true,
-																	"left": 120.72998046875,
+																	"left": 118.55908203125,
 																	"top": 77,
-																	"width": 107.67529296875,
+																	"width": 95.291015625,
 																	"height": 13,
 																	"text": "SequenceDiagram"
 																},
@@ -15529,7 +15709,7 @@
 																	"parentStyle": true,
 																	"left": 101,
 																	"top": 77,
-																	"width": 13.72998046875,
+																	"width": 11.55908203125,
 																	"height": 13,
 																	"text": "sd"
 																}
@@ -25974,9 +26154,9 @@
 																	},
 																	"font": "Arial;13;0",
 																	"parentStyle": true,
-																	"left": 120.72998046875,
+																	"left": 118.55908203125,
 																	"top": 77,
-																	"width": 107.67529296875,
+																	"width": 95.291015625,
 																	"height": 13,
 																	"text": "SequenceDiagram"
 																},
@@ -25990,7 +26170,7 @@
 																	"parentStyle": true,
 																	"left": 101,
 																	"top": 77,
-																	"width": 13.72998046875,
+																	"width": 11.55908203125,
 																	"height": 13,
 																	"text": "sd"
 																}
@@ -28639,7 +28819,7 @@
 															"left": 2266,
 															"top": 2058,
 															"width": 164,
-															"height": 52,
+															"height": 39,
 															"text": "Preliminary Parse Data Types And Notify For Corresponding LAN Handler Task",
 															"wordWrap": true
 														}
@@ -29999,24 +30179,24 @@
 										"$ref": "AAAAAAGaEB/3+2d5okk="
 									},
 									"name": "Thread Handler Task"
-								},
-								{
-									"_type": "UMLPackage",
-									"_id": "AAAAAAGaECuv1GhFcHk=",
-									"_parent": {
-										"$ref": "AAAAAAGaEB/3+2d5okk="
-									},
-									"name": "Modbus Handler Task?"
-								},
-								{
-									"_type": "UMLPackage",
-									"_id": "AAAAAAGaEC0nsWhllmw=",
-									"_parent": {
-										"$ref": "AAAAAAGaEB/3+2d5okk="
-									},
-									"name": "CAN Handler Task"
 								}
 							]
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaECuv1GhFcHk=",
+							"_parent": {
+								"$ref": "AAAAAAGZww+WEeanL0w="
+							},
+							"name": "Modbus Handler Task?"
+						},
+						{
+							"_type": "UMLPackage",
+							"_id": "AAAAAAGaEC0nsWhllmw=",
+							"_parent": {
+								"$ref": "AAAAAAGZww+WEeanL0w="
+							},
+							"name": "CAN Handler Task"
 						}
 					]
 				},
