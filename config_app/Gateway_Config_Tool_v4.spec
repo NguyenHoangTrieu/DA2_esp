@@ -5,7 +5,10 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('dist/bin/flash_WAN.sh', 'bin'),
+        ('dist/bin/flash_WAN.bat', 'bin'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

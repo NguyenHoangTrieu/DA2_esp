@@ -32,8 +32,8 @@ class FirmwareTab(ttk.Frame):
         
         ttk.Label(info_section, text="Flash both WAN and LAN MCU firmware",
                  font=("Segoe UI", 9)).pack(anchor="w")
-        ttk.Label(info_section, text="⚠️ Requires flash_WAN.bat in app directory",
-                 font=("Segoe UI", 9), foreground="#FF9800").pack(anchor="w")
+        ttk.Label(info_section, text="⚠️ Requires flash_WAN.sh (Linux/macOS) or flash_WAN.bat (Windows) in bin/",
+             font=("Segoe UI", 9), foreground="#FF9800").pack(anchor="w")
         
         # COM Port selection - compact
         port_section = ttk.LabelFrame(container, text="COM Port", padding=8)
@@ -122,41 +122,54 @@ class FirmwareTab(ttk.Frame):
         # Extract COM port name only (e.g., "COM47" from "COM47 - USB-Enhanced-SERIAL CH343 (COM47)")
         com_port = port.split(" - ")[0].strip() if " - " in port else port.strip()
         
-        # Find flash script - works with both source and PyInstaller executable
+        # Choose script by platform
         import sys
-        if getattr(sys, 'frozen', False):
-            # Running as PyInstaller executable
-            app_path = Path(sys.executable).parent
+        is_windows = sys.platform.startswith("win")
+        script_name = "flash_WAN.bat" if is_windows else "flash_WAN.sh"
+
+        # Resolve base path (works for PyInstaller onedir/onefile and source)
+        if getattr(sys, "frozen", False):
+            base_path = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
         else:
-            # Running as Python script
-            app_path = Path(__file__).resolve().parent.parent.parent.parent
-        flash_script = app_path / "bin/flash_WAN.bat"
+            base_path = Path(__file__).resolve().parent.parent.parent.parent
+
+        flash_script = base_path / "bin" / script_name
         
         if not flash_script.exists():
-            self._log(f"flash_WAN.bat not found at {flash_script}", "ERROR")
-            messagebox.showerror("Error", "flash_WAN.bat not found!")
+            self._log(f"{script_name} not found at {flash_script}", "ERROR")
+            messagebox.showerror("Error", f"{script_name} not found!")
             return
         
         self.flashing = True
         self.update_btn.config(state=tk.DISABLED)
         self._log("=" * 60, "DEBUG")
         self._log(f"Starting firmware update: BOTH WAN and LAN", "INFO")
-        self._log(f'Command: "{flash_script}" {com_port}', "DEBUG")
-        
+
+        script_dir = flash_script.parent
+
+        if is_windows:
+            cmd = f'"{flash_script}" {com_port}'
+            shell = True
+            display_cmd = cmd
+        else:
+            cmd = ["bash", str(flash_script), com_port]
+            shell = False
+            display_cmd = " ".join(cmd)
+
+        self._log(f"Command: {display_cmd}", "DEBUG")
+
         # Run in thread
-        thread = threading.Thread(target=self._flash_thread, args=(flash_script, com_port))
+        thread = threading.Thread(target=self._flash_thread, args=(cmd, shell, script_dir))
         thread.daemon = True
         thread.start()
     
-    def _flash_thread(self, flash_script: Path, port: str):
+    def _flash_thread(self, cmd, shell: bool, cwd: Path):
         """Flash thread"""
         try:
-            cmd = f'"{flash_script}" {port}'
-            
             process = subprocess.Popen(
                 cmd,
-                shell=True,
-                cwd=str(flash_script.parent),
+                shell=shell,
+                cwd=str(cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

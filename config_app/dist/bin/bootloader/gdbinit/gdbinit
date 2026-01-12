@@ -1,0 +1,2 @@
+source /home/trieunguyen/DATN_Workspace/DA2_esp/build/bootloader/gdbinit/symbols
+source /home/trieunguyen/DATN_Workspace/DA2_esp/build/bootloader/gdbinit/connect
