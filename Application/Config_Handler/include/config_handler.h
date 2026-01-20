@@ -109,9 +109,9 @@ void config_handler_task_stop(void);
 // Helper functions
 config_type_t config_parse_type(const char *cmd, uint16_t len);
 
+// NVS save/load functions
 esp_err_t save_internet_config_to_nvs(void);
 esp_err_t save_server_config_to_nvs(void);
-
 esp_err_t save_mqtt_config_to_nvs(void);
 esp_err_t save_lte_config_to_nvs(void);
 esp_err_t save_wifi_config_to_nvs(void);

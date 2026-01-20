@@ -157,3 +157,5 @@ Vẽ sơ đồ logic cho việc xử lý dữ liệu khi mất mạng và ghi xu
 
 ## Clean code, tối ưu hóa logic nghiệp vụ
 - (mô tả cụ thể sau)
+## Nhận diện, scan gateway/các gateway trên module
+- (mô tả cụ thể sau)

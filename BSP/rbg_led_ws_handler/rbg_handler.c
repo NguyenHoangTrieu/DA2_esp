@@ -54,7 +54,7 @@ static size_t ws2812_encoder_callback(const void *data, size_t data_size,
   }
 }
 
-void init_led_strip(void) {
+esp_err_t init_led_strip(void) {
   // Channel RMT
   rmt_tx_channel_config_t tx_chan_config = {
       .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -63,20 +63,45 @@ void init_led_strip(void) {
       .resolution_hz = RMT_LED_STRIP_RESOLUTION_HZ,
       .trans_queue_depth = 4,
   };
-  ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
+  
+  esp_err_t ret = rmt_new_tx_channel(&tx_chan_config, &led_chan);
+  if (ret != ESP_OK) {
+    ESP_LOGE("RGB_LED", "Failed to create RMT channel: %s", esp_err_to_name(ret));
+    return ret;
+  }
 
   // Encoder callback
   rmt_simple_encoder_config_t enc_cfg = {.callback = ws2812_encoder_callback};
-  ESP_ERROR_CHECK(rmt_new_simple_encoder(&enc_cfg, &simple_encoder));
+  ret = rmt_new_simple_encoder(&enc_cfg, &simple_encoder);
+  if (ret != ESP_OK) {
+    ESP_LOGE("RGB_LED", "Failed to create encoder: %s", esp_err_to_name(ret));
+    return ret;
+  }
 
-  ESP_ERROR_CHECK(rmt_enable(led_chan));
+  ret = rmt_enable(led_chan);
+  if (ret != ESP_OK) {
+    ESP_LOGE("RGB_LED", "Failed to enable RMT: %s", esp_err_to_name(ret));
+    return ret;
+  }
 
   // Turn off LED initially
   memset(led_strip_pixels, 0, sizeof(led_strip_pixels));
   rmt_transmit_config_t tx_config = {.loop_count = 0};
-  ESP_ERROR_CHECK(rmt_transmit(led_chan, simple_encoder, led_strip_pixels,
-                               sizeof(led_strip_pixels), &tx_config));
-  ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
+  ret = rmt_transmit(led_chan, simple_encoder, led_strip_pixels,
+                     sizeof(led_strip_pixels), &tx_config);
+  if (ret != ESP_OK) {
+    ESP_LOGE("RGB_LED", "Failed to transmit LED init: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  ret = rmt_tx_wait_all_done(led_chan, pdMS_TO_TICKS(1000));
+  if (ret != ESP_OK) {
+    ESP_LOGE("RGB_LED", "LED transmission timeout: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  ESP_LOGI("RGB_LED", "LED strip initialized successfully");
+  return ESP_OK;
 }
 
 // Set Color LED: 0-255 (R, G, B)

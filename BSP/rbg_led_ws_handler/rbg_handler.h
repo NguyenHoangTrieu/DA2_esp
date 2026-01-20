@@ -13,7 +13,7 @@
 #define RMT_LED_STRIP_RESOLUTION_HZ 10000000
 #define NUM_LED_RGB 1
 
-void init_led_strip(void);
+esp_err_t init_led_strip(void);  // Returns ESP_OK on success
 void show_led_color(uint8_t r, uint8_t g, uint8_t b);
 void led_on(void);
 void led_off(void);

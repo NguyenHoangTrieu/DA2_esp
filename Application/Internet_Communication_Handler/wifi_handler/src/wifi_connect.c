@@ -52,6 +52,11 @@ esp_netif_t *g_wifi_netif = NULL;
 
 // SNTP sync notification callback
 static void sntp_sync_notification_cb(struct timeval *tv) {
+  if (tv == NULL) {
+    ESP_LOGE(TAG, "SNTP callback: Invalid parameter (tv == NULL)");
+    return;
+  }
+
   ESP_LOGI(TAG, "SNTP time synchronized!");
   g_sntp_synced = true;
 

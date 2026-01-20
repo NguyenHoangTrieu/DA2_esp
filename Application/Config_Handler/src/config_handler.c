@@ -11,6 +11,10 @@
 
 static const char *TAG = "config_handler";
 
+// Configuration command constants
+#define CONFIG_CMD_PREFIX_LEN 2
+#define CONFIG_CMD_MIN_LEN 5
+
 // External global config contexts (defined in wifi_connect.c, lte_connect.c, mqtt_handler.c)
 extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
@@ -21,9 +25,10 @@ QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
 QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
-// global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI; // Default to LTE
-config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT; // Default to MQTT
+
+// Global config contexts
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;
 bool is_internet_connected = false;
 
 static bool config_handler_running = false;
@@ -42,7 +47,8 @@ static esp_err_t config_parse_internet(const char *data, uint16_t len, config_in
  * @return config_type_t Command type enum
  */
 config_type_t config_parse_type(const char *cmd, uint16_t len) {
-    if (len < 2) {
+    if (len < CONFIG_CMD_PREFIX_LEN) {
+        ESP_LOGW(TAG, "Command too short: %d bytes", len);
         return CONFIG_TYPE_UNKNOWN;
     }
     
@@ -63,6 +69,7 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_SERVER;
     }
     
+    ESP_LOGW(TAG, "Unknown command prefix: %c%c", cmd[0], cmd[1]);
     return CONFIG_TYPE_UNKNOWN;
 }
 
@@ -76,11 +83,14 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
  * @return ESP_OK on success, ESP_FAIL on error
  */
 static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_data_t *cfg) {
-    if (!data || !cfg || len < 5) {
+    if (!data || !cfg || len < CONFIG_CMD_MIN_LEN) {
+        ESP_LOGE(TAG, "WiFi config parse: invalid parameters (data=%p, cfg=%p, len=%u)", 
+                 data, cfg, len);
         return ESP_FAIL;
     }
     
     memset(cfg, 0, sizeof(wifi_config_data_t));
+    ESP_LOGD(TAG, "Parsing WiFi config: %.*s", len, data);
     
     // Parse format: "WF:SSID:PASSWORD:AUTH_MODE" or "WF:SSID:PASSWORD:USERNAME:AUTH_MODE"
     const char *ptr = data + 3; // Skip "WF:"
