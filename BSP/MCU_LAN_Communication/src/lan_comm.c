@@ -42,6 +42,16 @@ static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
 static void lan_comm_report_error(lan_comm_handle_t handle,
                                   lan_comm_status_t error, const char *context);
 
+// Helper macro for cleanup on error during initialization
+#define CLEANUP_INIT(handle) do { \
+    if (handle) { \
+        if (handle->buffer_mutex) vSemaphoreDelete(handle->buffer_mutex); \
+        if (handle->rx_buffer) heap_caps_free(handle->rx_buffer); \
+        if (handle->tx_buffer) heap_caps_free(handle->tx_buffer); \
+        free(handle); \
+    } \
+} while(0)
+
 /**
  * @brief Initialize LAN communication library
  */
@@ -86,11 +96,7 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
 
   if (h->rx_buffer == NULL || h->tx_buffer == NULL || h->buffer_mutex == NULL) {
     ESP_LOGE(TAG, "Failed to allocate buffers or mutex");
-    free(h->rx_buffer);
-    free(h->tx_buffer);
-    if (h->buffer_mutex)
-      vSemaphoreDelete(h->buffer_mutex);
-    free(h);
+    CLEANUP_INIT(h);
     return LAN_COMM_ERR_NO_MEM;
   }
 
@@ -120,10 +126,7 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
                                        config->dma_channel);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize SPI slave: %s", esp_err_to_name(ret));
-    free(h->rx_buffer);
-    free(h->tx_buffer);
-    vSemaphoreDelete(h->buffer_mutex);
-    free(h);
+    CLEANUP_INIT(h);
     return LAN_COMM_ERR_INVALID_STATE;
   }
 

@@ -20,6 +20,9 @@ extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 
+// Thread-safety: Mutex for config context protection
+static SemaphoreHandle_t g_config_context_mutex = NULL;
+
 // Queue handles
 QueueHandle_t g_wifi_config_queue = NULL;
 QueueHandle_t g_lte_config_queue = NULL;
@@ -71,6 +74,159 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
     
     ESP_LOGW(TAG, "Unknown command prefix: %c%c", cmd[0], cmd[1]);
     return CONFIG_TYPE_UNKNOWN;
+}
+
+// ===== Thread-Safe Config Access Functions =====
+
+/**
+ * @brief Thread-safe read of WiFi config
+ * @param out_cfg Output buffer for config
+ * @return ESP_OK on success, ESP_ERR_TIMEOUT if mutex timeout
+ */
+esp_err_t config_get_wifi_safe(wifi_config_context_t *out_cfg) {
+    if (out_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        memcpy(out_cfg, &g_wifi_ctx, sizeof(wifi_config_context_t));
+        xSemaphoreGive(g_config_context_mutex);
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Thread-safe update of WiFi config
+ * @param new_cfg New configuration data
+ * @return ESP_OK on success
+ */
+esp_err_t config_update_wifi_safe(const wifi_config_data_t *new_cfg) {
+    if (new_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // wifi_config_context_t is flat - copy fields directly
+        memcpy(&g_wifi_ctx, new_cfg, sizeof(wifi_config_data_t));
+        xSemaphoreGive(g_config_context_mutex);
+        
+        ESP_LOGI(TAG, "WiFi config updated safely");
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Thread-safe read of LTE config
+ */
+esp_err_t config_get_lte_safe(lte_config_context_t *out_cfg) {
+    if (out_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        memcpy(out_cfg, &g_lte_ctx, sizeof(lte_config_context_t));
+        xSemaphoreGive(g_config_context_mutex);
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Thread-safe update of LTE config
+ */
+esp_err_t config_update_lte_safe(const lte_config_data_t *new_cfg) {
+    if (new_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // lte_config_context_t is flat - copy directly
+        memcpy(&g_lte_ctx, new_cfg, sizeof(lte_config_data_t));
+        xSemaphoreGive(g_config_context_mutex);
+        
+        ESP_LOGI(TAG, "LTE config updated safely");
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Thread-safe read of MQTT config
+ */
+esp_err_t config_get_mqtt_safe(mqtt_config_context_t *out_cfg) {
+    if (out_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        memcpy(out_cfg, &g_mqtt_ctx, sizeof(mqtt_config_context_t));
+        xSemaphoreGive(g_config_context_mutex);
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
+}
+
+/**
+ * @brief Thread-safe update of MQTT config
+ */
+esp_err_t config_update_mqtt_safe(const mqtt_config_data_t *new_cfg) {
+    if (new_cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (g_config_context_mutex == NULL) {
+        ESP_LOGE(TAG, "Config mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // mqtt_config_context_t is a flat structure -just copy directly
+        memcpy(&g_mqtt_ctx, new_cfg, sizeof(mqtt_config_data_t));
+        xSemaphoreGive(g_config_context_mutex);
+        
+        ESP_LOGI(TAG, "MQTT config updated safely");
+        return ESP_OK;
+    }
+    
+    ESP_LOGE(TAG, "Failed to acquire config mutex (timeout)");
+    return ESP_ERR_TIMEOUT;
 }
 
 /**
@@ -649,6 +805,16 @@ void config_handler_task_start(void) {
         g_lte_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(lte_config_data_t));
     }
     
+    // Create config context mutex for thread-safe access
+    if (!g_config_context_mutex) {
+        g_config_context_mutex = xSemaphoreCreateMutex();
+        if (g_config_context_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create config context mutex");
+            return;
+        }
+        ESP_LOGI(TAG, "Config context mutex created");
+    }
+    
     config_handler_running = true;
     xTaskCreate(config_handler_task, "config_handler", 4096, NULL, 5, &config_handler_task_handle);
     ESP_LOGI(TAG, "Config handler task created");
@@ -659,5 +825,12 @@ void config_handler_task_start(void) {
  */
 void config_handler_task_stop(void) {
     config_handler_running = false;
-    ESP_LOGI(TAG, "Config handler task stopping");
+    
+    // Delete mutex
+    if (g_config_context_mutex != NULL) {
+        vSemaphoreDelete(g_config_context_mutex);
+        g_config_context_mutex = NULL;
+    }
+    
+    ESP_LOGI(TAG, "Config handler task stopped");
 }

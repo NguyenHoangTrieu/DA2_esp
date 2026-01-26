@@ -10,8 +10,10 @@
 #include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
 
-#define DEFAULT_ESP_WIFI_SSID "Devil"      // Initial hardcoded SSID
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Initial hardcoded password
+// WiFi credentials should be configured via UART/USB config handler
+// Use empty defaults to force proper configuration
+#define DEFAULT_ESP_WIFI_SSID ""      // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS ""      // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define WIFI_ESP_MAXIMUM_RETRY 10000
@@ -41,8 +43,11 @@ wifi_config_context_t g_wifi_ctx = {.ssid = DEFAULT_ESP_WIFI_SSID,
 
 static uint8_t s_wifi_connected = 0; // Connection status flag
 static volatile uint8_t s_reconnect_request =
-    0;                                       // Flag for reconnection request
-static wifi_config_t s_pending_config = {0}; // Pending WiFi config
+    0; // Flag to signal reconfiguration with new credentials
+static wifi_config_t s_pending_config; // Staging area for new WiFi config
+
+// Thread-safety: Mutex for WiFi reconfiguration
+static SemaphoreHandle_t g_wifi_reconfig_mutex = NULL;
 static bool wifi_connect_task_close = false;
 static bool g_sntp_synced = false;
 static bool g_wifi_sntp_started = false;  // Flag to prevent re-init SNTP
@@ -124,15 +129,25 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    // Check if this is a requested reconnection with new credentials
-    if (s_reconnect_request) {
-      s_reconnect_request = 0; // Reset flag
-      s_retry_num = 0;         // Reset retry counter for new connection
-
-      // Apply the new configuration
-      ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &s_pending_config));
+    // Check if this is a requested reconnection with new credentials (thread-safe)
+    bool should_reconnect = false;
+    wifi_config_t temp_config;
+    
+    if (g_wifi_reconfig_mutex && xSemaphoreTake(g_wifi_reconfig_mutex, 0) == pdTRUE) {
+      if (s_reconnect_request) {
+        s_reconnect_request = 0; // Reset flag
+        s_retry_num = 0;         // Reset retry counter for new connection
+        temp_config = s_pending_config;  // Copy under lock
+        should_reconnect = true;
+      }
+      xSemaphoreGive(g_wifi_reconfig_mutex);
+    }
+    
+    if (should_reconnect) {
+      // Apply the new configuration (outside lock to avoid holding mutex during operation)
+      ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &temp_config));
       esp_wifi_connect();
-      ESP_LOGI(TAG, "Connecting to new AP: %s", s_pending_config.sta.ssid);
+      ESP_LOGI(TAG, "Connecting to new AP: %s", temp_config.sta.ssid);
     } else if (s_retry_num < WIFI_ESP_MAXIMUM_RETRY) {
       esp_wifi_connect();
       s_retry_num++;
@@ -269,6 +284,16 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
     }
   }
 
+  // Create reconfiguration mutex
+  if (g_wifi_reconfig_mutex == NULL) {
+    g_wifi_reconfig_mutex = xSemaphoreCreateMutex();
+    if (g_wifi_reconfig_mutex == NULL) {
+      ESP_LOGE(TAG, "Failed to create WiFi reconfig mutex");
+      return;
+    }
+    ESP_LOGI(TAG, "WiFi reconfig mutex created");
+  }
+
   ESP_ERROR_CHECK(esp_wifi_start());
   ESP_LOGI(TAG, "wifi_init_sta finished.");
 
@@ -357,8 +382,9 @@ static void wifi_config_task(void *arg) {
             s_pending_config.sta.threshold.authmode =
                 ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
             s_pending_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
-            strcpy((char *)s_pending_config.sta.sae_h2e_identifier,
-                   EXAMPLE_H2E_IDENTIFIER);
+            strncpy((char *)s_pending_config.sta.sae_h2e_identifier,
+                  EXAMPLE_H2E_IDENTIFIER,
+                  sizeof(s_pending_config.sta.sae_h2e_identifier));
 
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
             s_pending_config.sta.disable_wpa3_compatible_mode = 0;
@@ -367,20 +393,24 @@ static void wifi_config_task(void *arg) {
             esp_wifi_sta_enterprise_disable();
           }
 
-          // Set reconnection flag and trigger disconnect
-          s_reconnect_request = 1;
-
-          if (s_wifi_connected) {
-            esp_err_t ret = esp_wifi_disconnect();
-            if (ret == ESP_ERR_WIFI_NOT_STARTED) {
-              ESP_LOGE(TAG, "WiFi not started");
-            } else if (ret != ESP_OK) {
-              ESP_LOGE(TAG, "Disconnect failed: 0x%x", ret);
+          // Thread-safe config update - set reconnect flag under mutex
+          if (g_wifi_reconfig_mutex && xSemaphoreTake(g_wifi_reconfig_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            s_reconnect_request = 1;
+            xSemaphoreGive(g_wifi_reconfig_mutex);
+            
+            ESP_LOGI(TAG, "WiFi config updated, triggering reconnect");
+            if (s_wifi_connected) {
+              esp_err_t ret = esp_wifi_disconnect();
+              if (ret == ESP_ERR_WIFI_NOT_STARTED) {
+                ESP_LOGE(TAG, "WiFi not started");
+              } else if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Disconnect failed");
+              }
+            } else {
+              ESP_LOGI(TAG, "WiFi not connected, will connect on next attempt");
             }
           } else {
-            // If not connected, directly post disconnect event
-            esp_event_post(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL, 0,
-                           portMAX_DELAY);
+            ESP_LOGE(TAG, "Failed to acquire reconfig mutex");
           }
         } else {
           ESP_LOGW(TAG, "Invalid SSID/Password/Username length from queue");

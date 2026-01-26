@@ -199,27 +199,28 @@ esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,
   signal_data_ready();
 
   // Wait for completion
+  esp_err_t result;
   if (xSemaphoreTake(g_config_req_async->completion_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
     ESP_LOGE(TAG, "Config request timeout");
     clear_data_ready();
-    vSemaphoreDelete(g_config_req_async->completion_sem);
-    free(g_config_req_async);
-    g_config_req_async = NULL;
-    g_active_config_request_valid = false;
-    g_active_config_request_ptr = NULL;
-    g_config_req_state = CONFIG_REQ_STATE_IDLE;
-    return ESP_ERR_TIMEOUT;
+    result = ESP_ERR_TIMEOUT;
+    goto cleanup;  // Proper cleanup on timeout
   }
 
   // Get result from heap-allocated struct (safe now!)
-  esp_err_t result = g_config_req_async->request.result;
+  result = g_config_req_async->request.result;
   ESP_LOGI(TAG, "Config request completed with result: %s",
            esp_err_to_name(result));
 
-  // Clean up
-  vSemaphoreDelete(g_config_req_async->completion_sem);
-  free(g_config_req_async);
-  g_config_req_async = NULL;
+cleanup:
+  // Clean up - always delete semaphore and free memory
+  if (g_config_req_async) {
+    if (g_config_req_async->completion_sem) {
+      vSemaphoreDelete(g_config_req_async->completion_sem);
+    }
+    free(g_config_req_async);
+    g_config_req_async = NULL;
+  }
   g_active_config_request_valid = false;
   g_active_config_request_ptr = NULL;
   g_config_req_state = CONFIG_REQ_STATE_IDLE;

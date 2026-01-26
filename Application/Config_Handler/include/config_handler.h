@@ -119,4 +119,12 @@ esp_err_t save_wifi_config_to_nvs(void);
 esp_err_t erase_all_configs_from_nvs(void);
 esp_err_t config_init(void);
 
+// Thread-safe config access functions
+esp_err_t config_get_wifi_safe(wifi_config_context_t *out_cfg);
+esp_err_t config_update_wifi_safe(const wifi_config_data_t *new_cfg);
+esp_err_t config_get_lte_safe(lte_config_context_t *out_cfg);
+esp_err_t config_update_lte_safe(const lte_config_data_t *new_cfg);
+esp_err_t config_get_mqtt_safe(mqtt_config_context_t *out_cfg);
+esp_err_t config_update_mqtt_safe(const mqtt_config_data_t *new_cfg);
+
 #endif // CONFIG_HANDLER_H

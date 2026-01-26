@@ -111,25 +111,36 @@ static void handle_cfsc_command_usb(void) {
                                   : "UNKNOWN";
   usb_send_kv("internet_type", inet_type_str);
 
-  // WiFi settings
-  usb_send_kv("wifi_ssid", g_wifi_ctx.ssid);
-  usb_send_kv("wifi_password",
-              strlen(g_wifi_ctx.pass) > 0 ? "***HIDDEN***" : "");
-  usb_send_kv("wifi_username", g_wifi_ctx.username);
-  usb_send_kv_int("wifi_auth_mode", g_wifi_ctx.auth_mode);
+  // WiFi settings - thread-safe read
+  wifi_config_context_t wifi_cfg;
+  if (config_get_wifi_safe(&wifi_cfg) == ESP_OK) {
+    usb_send_kv("wifi_ssid", wifi_cfg.ssid);
+    usb_send_kv("wifi_password",
+                strlen(wifi_cfg.pass) > 0 ? "***HIDDEN***" : "");
+    usb_send_kv("wifi_username", wifi_cfg.username);
+    usb_send_kv_int("wifi_auth_mode", wifi_cfg.auth_mode);
+  } else {
+    usb_send_kv("wifi_ssid", "ERROR:MUTEX_TIMEOUT");
+    ESP_LOGE(TAG, "Failed to get WiFi config safely");
+  }
 
-  // LTE settings
-  usb_send_kv("lte_apn", g_lte_ctx.apn);
-  usb_send_kv("lte_username", g_lte_ctx.username);
-  usb_send_kv("lte_password",
-              strlen(g_lte_ctx.password) > 0 ? "***HIDDEN***" : "");
-  const char *lte_comm_str =
-      (g_lte_ctx.comm_type == LTE_HANDLER_UART) ? "UART" : "USB";
-  usb_send_kv("lte_comm_type", lte_comm_str);
-  usb_send_kv_ulong("lte_max_retries", g_lte_ctx.max_reconnect_attempts);
-  usb_send_kv_ulong("lte_timeout_ms", g_lte_ctx.reconnect_timeout_ms);
-  usb_send_kv("lte_auto_reconnect",
-              g_lte_ctx.auto_reconnect ? "true" : "false");
+  // LTE settings - thread-safe read
+  lte_config_context_t lte_cfg;
+  if (config_get_lte_safe(&lte_cfg) == ESP_OK) {
+    usb_send_kv("lte_apn", lte_cfg.apn);
+    usb_send_kv("lte_username", lte_cfg.username);
+    usb_send_kv("lte_password",
+                strlen(lte_cfg.password) > 0 ? "***HIDDEN***" : "");
+    const char *lte_comm_str =
+        (lte_cfg.comm_type == LTE_HANDLER_UART) ? "UART" : "USB";
+    usb_send_kv("lte_comm_type", lte_comm_str);
+    usb_send_kv_ulong("lte_max_retries", lte_cfg.max_reconnect_attempts);
+    usb_send_kv_ulong("lte_timeout_ms", lte_cfg.reconnect_timeout_ms);
+    usb_send_kv("lte_auto_reconnect",
+                lte_cfg.auto_reconnect ? "true" : "false");
+  } else {
+    usb_send_kv("lte_apn", "ERROR:MUTEX_TIMEOUT");
+  }
 
   // Server settings
   const char *srv_type_str = (g_server_type == CONFIG_SERVERTYPE_MQTT) ? "MQTT"
@@ -138,14 +149,18 @@ static void handle_cfsc_command_usb(void) {
                                  : "UNKNOWN";
   usb_send_kv("server_type", srv_type_str);
 
-  // MQTT settings
-  // MQTT settings
-  usb_send_kv("mqtt_broker", g_mqtt_ctx.broker_uri);
-  usb_send_kv("mqtt_pub_topic", g_mqtt_ctx.publish_topic);
-  usb_send_kv("mqtt_sub_topic", g_mqtt_ctx.subscribe_topic);
-  usb_send_kv("mqtt_device_token",
-              strlen(g_mqtt_ctx.device_token) > 0 ? "***HIDDEN***" : "");
-  usb_send_kv("mqtt_attribute_topic", g_mqtt_ctx.attribute_topic);
+  // MQTT settings - thread-safe read
+  mqtt_config_context_t mqtt_cfg;
+  if (config_get_mqtt_safe(&mqtt_cfg) == ESP_OK) {
+    usb_send_kv("mqtt_broker", mqtt_cfg.broker_uri);
+    usb_send_kv("mqtt_pub_topic", mqtt_cfg.publish_topic);
+    usb_send_kv("mqtt_sub_topic", mqtt_cfg.subscribe_topic);
+    usb_send_kv("mqtt_device_token",
+                strlen(mqtt_cfg.device_token) > 0 ? "***HIDDEN***" : "");
+    usb_send_kv("mqtt_attribute_topic", mqtt_cfg.attribute_topic);
+  } else {
+    usb_send_kv("mqtt_broker", "ERROR:MUTEX_TIMEOUT");
+  }
 
   // ==================== LAN CONFIG (FROM LAN MCU VIA SPI) ====================
   usb_println("");
