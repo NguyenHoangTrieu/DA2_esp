@@ -155,7 +155,7 @@ Vẽ sơ đồ logic cho việc xử lý dữ liệu khi mất mạng và ghi xu
 ## Nâng cấp bảo mật cho gateway
 - (mô tả cụ thể sau)
 
-## Clean code, tối ưu hóa logic nghiệp vụ
+## Clean code, tối ưu hóa business logic
 - (mô tả cụ thể sau)
 ## Nhận diện, scan gateway/các gateway trên module
 - (mô tả cụ thể sau)
