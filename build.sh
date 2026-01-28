@@ -11,7 +11,7 @@ idf.py build
 
 #4. copy firmware to flash directory
 cp -r build/DA2_esp.bin config_app/dist/bin
-cp -r build/bootloader config_app/dist/bin
+cp -r build/bootloader.bin config_app/dist/bin
 cp -r build/partition_table/partition-table.bin config_app/dist/bin
 
 # cp -r build/DA2_esp.bin flash_file

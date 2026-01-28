@@ -74,15 +74,15 @@ if [ $FLASH_WAN -eq 1 ]; then
     check_error_wan
     
     echo "[WAN 2/4] Bootloader..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 write-flash 0x0 bootloader.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 write_flash 0x0 bootloader.bin
     check_error_wan
     
     echo "[WAN 3/4] Partition table..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 write-flash 0x8000 partition-table.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 write_flash 0x8000 partition-table.bin
     check_error_wan
     
     echo "[WAN 4/4] Application..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 write-flash 0x20000 DA2_esp.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 write_flash 0x20000 DA2_esp.bin
     check_error_wan
     
     echo ""
@@ -108,15 +108,15 @@ if [ $FLASH_LAN -eq 1 ]; then
     check_error_lan
     
     echo "[LAN 2/4] Bootloader..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write-flash 0x0 bootloader_LAN.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write_flash 0x0 bootloader_LAN.bin
     check_error_lan
     
     echo "[LAN 3/4] Partition table..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write-flash 0x8000 partition-table_LAN.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write_flash 0x8000 partition-table_LAN.bin
     check_error_lan
     
     echo "[LAN 4/4] Application..."
-    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write-flash 0x110000 DA2_esp_LAN.bin
+    esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset --after no_reset write_flash 0x110000 DA2_esp_LAN.bin
     check_error_lan
     
     echo ""

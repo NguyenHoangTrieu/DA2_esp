@@ -15,6 +15,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Data_Communication_Handler/src/uart_handler.c"
                                 "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
                                 "../BSP/rbg_led_ws_handler/rbg_handler.c"
+                                "../BSP/QSPI_Driver/src/qspi_hal_slave.c"
+                                "../BSP/QSPI_Driver/src/qspi_hal_common.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
                                 ${I2C_DEVICES}
@@ -61,5 +63,6 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/sim7600_communication/include"
                                 "../BSP/MCU_LAN_Communication/include"
                                 "../BSP/i2c_dev_support/include"
+                                "../BSP/QSPI_Driver/include"
                                 "../Middleware/LTE_Handler/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)
