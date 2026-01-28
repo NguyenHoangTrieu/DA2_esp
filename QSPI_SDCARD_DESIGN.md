@@ -1,20 +1,4 @@
-# THIẾT KẾ HỆ THỐNG: QSPI REFACTORING & SD CARD OPTIMIZATION
-
-**Ngày tạo:** 13/01/2026  
-**Cập nhật:** 27/01/2026 - QSPI SYMMETRIC ARCHITECTURE  
-**Giai đoạn:** 3.0 - Zero-delay streaming protocol  
-
----
-
-##  MỤC LỤC
-
-1. [Kiến trúc tổng quan](#1-kiến-trúc-tổng-quan)
-2. [BSP Layer - QSPI Hardware Abstraction](#2-bsp-layer---qspi-hardware-abstraction)
-3. [Application Layer - Stream Protocol](#3-application-layer---stream-protocol)
-4. [SD Card Storage Handler](#4-sd-card-storage-handler)
-5. [Implementation Code](#5-implementation-code)
-6. [Performance Analysis](#6-performance-analysis)
-
+# ARCHITECTURE DESIGN: QSPI REFACTORING & SD CARD OPTIMIZATION
 ---
 
 ## 1. KIẾN TRÚC TỔNG QUAN
@@ -240,7 +224,7 @@ flowchart TD
     CheckData -->|Yes| PackFrame[Pack frame:<br/>SYNC+TYPE+LEN+PAYLOAD+CRC]
     PackFrame --> AppendRing[Append to ring buffer]
     
-    AppendRing --> CheckThresh{Buffer ><br/>32KB?}
+    AppendRing --> CheckThresh{Buffer ><br/>4KB?}
     CheckThresh -->|No| WaitQueue
     CheckThresh -->|Yes| Flush[qspi_hal_stream_write<br/>DMA transfer 4-bit]
     
@@ -363,7 +347,7 @@ sequenceDiagram
     LT->>LT: Pack frame (SYNC+TYPE+LEN+DATA+CRC)
     LT->>LT: Append to 64KB ring buffer
     
-    alt Buffer > 32KB
+    alt Buffer > 4KB
         LT->>QM: qspi_hal_stream_write(buffer, len)
         QM->>QM: Assert DR GPIO (notify slave)
         QM->>QS: WRITE transaction (CMD=0xAA, 4-bit QIO)
