@@ -42,3 +42,5 @@ ENV/
 *.elf
 *.map
 # TODO.md
+
+.cache/
