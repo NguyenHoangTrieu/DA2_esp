@@ -1,612 +1,329 @@
-# ARCHITECTURE DESIGN: QSPI REFACTORING & SD CARD OPTIMIZATION
----
-
-## 1. KIẾN TRÚC TỔNG QUAN
-
-### 1.1. Layered Architecture
-```
-
-┌─────────────────────────────────────────────────────────────┐
-│                    APPLICATION LAYER                         │
-│  ┌──────────────────────┐      ┌──────────────────────┐    │
-│  │   WAN MCU (ESP32)    │      │   LAN MCU (ESP32)    │    │
-│  │  Stream TX/RX Tasks  │◄────►│  Stream TX/RX Tasks  │    │
-│  │  (Slave HD Mode)     │ QSPI │  (Master Mode)       │    │
-│  └──────────────────────┘      └──────────────────────┘    │
-└──────────────────┬──────────────────────────┬───────────────┘
-│                          │
-┌──────────────────▼──────────────────────────▼───────────────┐
-│                      BSP LAYER (SYMMETRIC)                   │
-│  ┌────────────────────────────────────────────────────┐     │
-│  │  qspi_hal.c - Dual-buffer DMA streaming           │     │
-│  │  -  Master: spi_master.h (QIO mode)                │     │
-│  │  -  Slave:  spi_slave_hd.h (QIO mode)              │     │
-│  └────────────────────────────────────────────────────┘     │
-└──────────────────────────────┬───────────────────────────────┘
-│
-┌──────────────────────────────▼───────────────────────────────┐
-│                       HARDWARE LAYER                          │
-│  ┌─────────────────────────────────────────────────────┐     │
-│  │  QSPI Bus (4-bit, 40MHz, DMA-enabled)              │     │
-│  │  GPIO: CS, CLK, D0-D3, DR_WAN, DR_LAN              │     │
-│  └─────────────────────────────────────────────────────┘     │
-└───────────────────────────────────────────────────────────────┘
-
-```
-
-### 1.2. Key Design Principles
-
-| Principle | Implementation | Benefit |
-|-----------|----------------|---------|
-| **Zero-ACK** | Transaction-based reliability | No wait time |
-| **Dual-buffer** | Ping-pong DMA buffers | Continuous streaming |
-| **Ring buffer** | 64KB circular buffers | Smooth data flow |
-| **Batch write** | 100KB SD card writes | Minimal fsync() calls |
-| **Stream mode** | No packet boundaries | Max throughput |
-| **GPIO handshake** | Data-ready signaling only | Minimal overhead |
-
-### 1.3. Performance Comparison
-
-| Metric | Old (Standard SPI) | New (QSPI Stream) | Improvement |
-|--------|-------------------|-------------------|-------------|
-| **Bandwidth** | ~2 MB/s | ~8 MB/s | 4x |
-| **Latency** | 50-100ms (ACK wait) | <5ms (stream) | 10-20x |
-| **CPU usage** | 15% (polling) | <3% (DMA) | 5x |
-| **SD writes/sec** | 100 (per packet) | 1 (batch) | 100x fewer |
+# QSPI + SD Card Communication Design Document
+## Modular Architecture with Mandatory QSPI Interface
 
 ---
 
-## 2. BSP LAYER - QSPI HARDWARE ABSTRACTION
+## 1. SYSTEM OVERVIEW
 
-### 2.1. File Structure
+Dual ESP32 architecture with **mandatory QSPI (Quad SPI)** for high-speed bidirectional communication and modular task separation.
 
-```
-
-BSP/
-├── QSPI_Driver/
-│   ├── include/
-│   │   ├── qspi_hal.h              \# Public API
-│   │   └── qspi_hal_config.h       \# Hardware config
-│   └── src/
-│       ├── qspi_hal_master.c       \# LAN MCU (master)
-│       ├── qspi_hal_slave.c        \# WAN MCU (slave HD)
-│       └── qspi_hal_common.c       \# Shared utilities
-│
-└── SDCard_Driver/
-├── include/
-│   └── sdcard_hal.h
-└── src/
-└── sdcard_hal.c            \# SDMMC init + FAT
-
-```
+**Key Features**:
+- QSPI: 40 MHz, 4-bit parallel (20 MB/s theoretical, 8-12 MB/s practical)
+- LAN MCU (Master): Protocol handlers (CAN/LoRa/ZigBee/RS485) + SD card storage
+- WAN MCU (Slave): WiFi/MQTT + RTC (PCF8563)
+- Uplink throughput: 800 KB/s sustained, 2 MB/s burst
+- Downlink latency: <5 ms (ISR to data received)
 
 ---
 
-## 3. APPLICATION LAYER - STREAM PROTOCOL
+## 2. HARDWARE ARCHITECTURE
 
-### 3.1. File Structure
+### 2.1. QSPI Bus (Mandatory - 40 MHz)
 
-```
-Application/
-├── MCU_LAN_Handler/                    # WAN MCU (Slave)
-│   ├── include/
-│   │   ├── mcu_lan_stream.h
-│   │   └── mcu_lan_protocol.h
-│   └── src/
-│       ├── mcu_lan_stream.c            # Main init
-│       ├── mcu_lan_tx_task.c           # Uplink to LAN
-│       └── mcu_lan_rx_task.c           # Downlink from LAN
-│
-├── MCU_WAN_Handler/                    # LAN MCU (Master)
-│   ├── include/
-│   │   ├── mcu_wan_stream.h
-│   │   └── mcu_wan_protocol.h
-│   └── src/
-│       ├── mcu_wan_stream.c            # Main init
-│       ├── mcu_wan_tx_task.c           # Uplink to WAN
-│       └── mcu_wan_rx_task.c           # Downlink from WAN
-│
-└── Storage_Handler/
-    ├── include/
-    │   └── storage_handler.h
-    └── src/
-        └── storage_handler.c           # Ring buffer + SD batch
-```
+| Signal | LAN MCU (Master) | WAN MCU (Slave) | GPIO | Purpose |
+|--------|------------------|-----------------|------|---------|
+| CLK | Output | Input | GPIO12 | 40 MHz clock |
+| CS | Output | Input | GPIO10 | Chip select |
+| IO0 (D0) | Bidirectional | Bidirectional | GPIO11 | Data line 0 |
+| IO1 (D1) | Bidirectional | Bidirectional | GPIO13 | Data line 1 |
+| IO2 (D2) | Bidirectional | Bidirectional | GPIO14 | Data line 2 |
+| IO3 (D3) | Bidirectional | Bidirectional | GPIO15 | Data line 3 |
+| DR_LAN | Input (ISR) | - | GPIO46 | Data-ready from WAN |
+| DR_WAN | - | Output | GPIO8 | Data-ready to LAN |
+
+### 2.2. SD Card Interface (LAN MCU Only)
+
+| Pin | Function | GPIO | Notes |
+|-----|----------|------|-------|
+| CLK | SDMMC Clock | GPIO7 | Separate from QSPI |
+| CMD | Command | GPIO6 | |
+| D0-D3 | Data Lines | GPIO8,3,4,5 | 4-bit mode |
+
+**No Pin Conflicts**: QSPI (GPIO10-15) vs SD (GPIO3-8)
 
 ---
 
-## 6. PERFORMANCE ANALYSIS
+## 3. MODULAR FILE STRUCTURE
 
-### 6.1. Latency Breakdown
+### 3.1. LAN MCU (Master) - 8 Files
 
-| Stage | Old (Standard SPI + ACK) | New (QSPI Stream) | Improvement |
-| :-- | :-- | :-- | :-- |
-| **Pack frame** | 0.5 ms | 0.5 ms | Same |
-| **Wait peer ready** | 10-50 ms | 0 ms (pre-queued) | ∞ |
-| **TX transaction** | 2 ms (1-bit @ 10MHz) | 0.5 ms (4-bit @ 40MHz) | 4x |
-| **Wait ACK** | 50-100 ms | 0 ms (no ACK) | ∞ |
-| **RX ACK transaction** | 2 ms | 0 ms | ∞ |
-| **Total per packet** | 64-155 ms | **1 ms** | **64-155x** |
+mcu_wan_handler.h # Public API
+mcu_wan_handler_downlink.c # Downlink task (Priority 7)
+mcu_wan_handler_uplink.c # Uplink task (Priority 5)
+storage_handler.h/c # SD card abstraction
+wan_comm.h/c # QSPI master driver
+frame_types.h # Protocol definitions
 
-### 6.2. Throughput
+text
 
-```
-Old: ~100 packets/sec × 100 bytes = 10 KB/s
-New: ~8000 packets/sec × 100 bytes = 800 KB/s (80x improvement)
+### 3.2. WAN MCU (Slave) - 6 Files
 
-Maximum QSPI throughput: 40 MHz × 4 bits = 20 MB/s (theoretical)
-Actual: ~8 MB/s (accounting for protocol overhead)
-```
+mcu_lan_handler.h # Public API
+mcu_lan_handler_uplink.c # Uplink processor (Priority 6)
+mcu_lan_handler_downlink.c # Downlink manager (no task)
+lan_comm.h/c # QSPI slave driver
+frame_types.h # Protocol definitions
 
-
-### 6.3. SD Card Write Optimization
-
-```
-Old: 100 writes/sec × 5ms fsync() = 500 ms/sec spent in I/O
-New: 1 write/sec × 5ms fsync() = 5 ms/sec spent in I/O (100x reduction)
-```
-
-
-### 6.4. Memory Usage
-
-```
-QSPI buffers: 4KB × 2 × 2 = 16 KB (dual-buffer × TX/RX × 2 MCUs)
-Ring buffers: 64KB × 2 (TX/RX per MCU) = 128 KB
-SD ring buffer: 100 KB
-Total: ~250 KB (acceptable for ESP32-S3)
-```
-
+text
 
 ---
 
-## 7. CONFIGURATION EXAMPLE
+## 4. MODULE RESPONSIBILITIES
 
-### 7.1. menuconfig Options
+### 4.1. LAN MCU
 
-```kconfig
-menu "QSPI Configuration"
-    config QSPI_FREQ_MHZ
-        int "QSPI Frequency (MHz)"
-        default 40
-        range 10 80
-        
-    config QSPI_BUFFER_SIZE
-        int "DMA Buffer Size (bytes)"
-        default 4096
-        
-    config QSPI_ENABLE_STATS
-        bool "Enable statistics"
-        default y
-endmenu
+**mcu_wan_handler_downlink.c** (Priority 7):
+- GPIO46 ISR response (<5ms latency)
+- DQ retry (10×50ms via QSPI)
+- Frame dispatch to CAN/LoRa/ZigBee/RS485
+- Config query response
 
-menu "Storage Configuration"
-    config STORAGE_RING_BUFFER_SIZE
-        int "Ring buffer size (KB)"
-        default 100
-        
-    config STORAGE_FLUSH_THRESHOLD
-        int "Flush threshold (KB)"
-        default 80
-endmenu
-```
+**mcu_wan_handler_uplink.c** (Priority 5):
+- Handshake with WAN MCU
+- Process uplink queue (50 items)
+- QSPI transmission + ACK (200ms timeout)
+- RTC request (1s interval)
+- SD card retry when online
 
+**storage_handler.c**:
+- Thread-safe SD operations
+- FIFO queue: /sdcard/QUEUE/PKT_NNNNNNNN.dat
+- Batch writes (reduced fsync overhead)
+- Power-cycle recovery via directory scan
 
-### 7.2. GPIO Pin Mapping
+**wan_comm.c** (QSPI Master):
+- QIO mode: SPI_TRANS_MODE_QIO
+- 40 MHz, 4-bit parallel
+- DMA buffers: 16KB TX/RX
+- Full-duplex transactions
 
-```
-ESP32-S3 QSPI Pins (Both MCUs):
-  CLK:  GPIO12
-  CS:   GPIO10
-  D0:   GPIO11 (MOSI equivalent)
-  D1:   GPIO13 (MISO equivalent)
-  D2:   GPIO14 (WP)
-  D3:   GPIO15 (HOLD)
-  DR:   GPIO46 (Data Ready handshake on WAN MCU), GPIO 8 (on LAN MCU)
-```
+### 4.2. WAN MCU
 
+**mcu_lan_handler_uplink.c** (Priority 6):
+- QSPI slave receive loop
+- Frame dispatch: CF/DT/DQ
+- Forward to MQTT/HTTP
+- RTC response (PCF8563)
 
----
+**mcu_lan_handler_downlink.c** (No Task):
+- Downlink queue (20 items)
+- GPIO8 data-ready signaling
+- Config cache management
+- Async config request (semaphore-based)
 
-## 7. SYSTEM FLOWCHARTS
-
-### 7.1. Uplink Task Flow (LAN MCU → WAN MCU)
-
-```mermaid
-flowchart TD
-    Start([Uplink Task Start<br/>LAN MCU]) --> InitBuf[Init 64KB Ring Buffer]
-    InitBuf --> WaitQueue[xQueueReceive<br/>uplink_queue]
-    
-    WaitQueue --> CheckData{Data<br/>received?}
-    CheckData -->|Timeout 100ms| CheckFlush{Buffer > 0?}
-    CheckFlush -->|Yes| Flush
-    CheckFlush -->|No| WaitQueue
-    
-    CheckData -->|Yes| PackFrame[Pack frame:<br/>SYNC+TYPE+LEN+PAYLOAD+CRC]
-    PackFrame --> AppendRing[Append to ring buffer]
-    
-    AppendRing --> CheckThresh{Buffer ><br/>4KB?}
-    CheckThresh -->|No| WaitQueue
-    CheckThresh -->|Yes| Flush[qspi_hal_stream_write<br/>DMA transfer 4-bit]
-    
-    Flush --> ResetBuf[Reset buffer index]
-    ResetBuf --> WaitQueue
-```
-
-
-### 7.2. Downlink Task Flow (WAN MCU → LAN MCU)
-
-```mermaid
-flowchart TD
-    ```
-    Start([Downlink Task Start<br/>WAN MCU]) --> RegCB[Register RX callback<br/>with QSPI HAL]
-    ```
-    RegCB --> WaitCB[Wait for callback trigger<br/>from DMA ISR]
-    
-    WaitCB --> CBTrigger{Callback<br/>invoked?}
-    CBTrigger -->|Yes| ParseFrame[Parse frame:<br/>extract TYPE+PAYLOAD]
-    
-    ParseFrame --> CheckType{Frame<br/>Type?}
-    
-    CheckType -->|DATA| DispatchHandler[Dispatch to handler<br/>CAN/LORA/ZIGBEE/RS485]
-    CheckType -->|CONFIG| UpdateConfig[Update config cache]
-    CheckType -->|RTC| SendRTC[Send RTC response<br/>to LAN MCU]
-    CheckType -->|STATUS| UpdateInternet[Update internet status]
-    CheckType -->|FOTA_NOTIFY| LogFOTA[Log FOTA available]
-    
-    DispatchHandler --> WaitCB
-    UpdateConfig --> WaitCB
-    SendRTC --> WaitCB
-    UpdateInternet --> WaitCB
-    LogFOTA --> WaitCB
-```
-
-
-### 7.3. SD Storage Handler Flow
-
-```mermaid
-flowchart TD
-    Start([Storage Task Start]) --> InitSD[Init SD card SDMMC<br/>Mount FAT32]
-    InitSD --> InitRing[Alloc 100KB ring buffer<br/>in heap]
-    
-    InitRing --> Loop[Every 1 second check]
-    Loop --> CheckThresh{Buffer ><br/>80KB?}
-    
-    CheckThresh -->|No| Loop
-    CheckThresh -->|Yes| OpenFile[fopen /sdcard/data.log<br/>append mode]
-    
-    OpenFile --> WriteAll[fwrite entire buffer<br/>1 chunk 100KB]
-    WriteAll --> Sync[fflush + fsync<br/>1 time only]
-    
-    Sync --> Close[fclose]
-    Close --> Reset[Reset buffer:<br/>write_idx = 0]
-    Reset --> Loop
-```
-
-
-### 7.4. QSPI HAL Stream Task (Master Side - LAN MCU)
-
-```mermaid
-flowchart TD
-    Start([QSPI Master<br/>Stream Task<br/>LAN MCU]) --> CheckTX{TX queue<br/>has data?}
-    
-    CheckTX -->|Yes| CopyDMA[Copy to DMA buffer<br/>ping-pong buffer 0 or 1]
-    CopyDMA --> AssertDR[Assert DR GPIO]
-    AssertDR --> TXTrans[spi_device_transmit<br/>CMD=0xAA WRITE QIO]
-    TXTrans --> DeassertDR[Deassert DR GPIO]
-    DeassertDR --> ToggleBuf[Toggle buffer index]
-    
-    CheckTX -->|No| RXPoll[Poll RX:<br/>spi_device_transmit<br/>CMD=0x55 READ QIO]
-    
-    ToggleBuf --> RXPoll
-    RXPoll --> CheckRX{RX data<br/>valid?}
-    
-    CheckRX -->|Yes| InvokeCB[Invoke RX callback]
-    CheckRX -->|No| CheckTX
-    InvokeCB --> CheckTX
-```
-
-
-### 7.5. QSPI HAL RX Task (Slave Side - WAN MCU)
-
-```mermaid
-flowchart TD
-    ```
-    Start([QSPI Slave<br/>RX Task<br/>WAN MCU]) --> PreQueue[Pre-queue RX buffers<br/>spi_slave_hd_queue_trans<br/>CHAN_RX]
-    ```
-    
-    PreQueue --> WaitTrans[spi_slave_hd_get_trans_res<br/>Block until master writes]
-    
-    WaitTrans --> CheckRes{Trans<br/>complete?}
-    CheckRes -->|Timeout| WaitTrans
-    
-    CheckRes -->|Success| InvokeCB[Invoke RX callback<br/>with received data]
-    InvokeCB --> ReQueue[Re-queue RX buffer<br/>for next transaction]
-    
-    ReQueue --> WaitTrans
-```
-
+**lan_comm.c** (QSPI Slave):
+- QIO mode reception
+- DMA buffers: 8KB TX/RX
+- TX buffer flush: disable→write→enable
+- Hardware-driven QIO
 
 ---
 
-## 8. SEQUENCE DIAGRAMS
+## 5. TASK ARCHITECTURE
 
-### 8.1. Complete Communication Flow
+### 5.1. LAN MCU - Dual Task
 
-```mermaid
-sequenceDiagram
-    participant H as Handler<br/>(CAN/LORA)
-    participant LT as LAN MCU<br/>Uplink Task
-    participant QM as QSPI Master<br/>(LAN MCU)
-    participant QS as QSPI Slave<br/>(WAN MCU)
-    participant WT as WAN MCU<br/>RX Task
-    participant SRV as Server<br/>(MQTT/HTTP)
-    
-    Note over H,SRV: Uplink Data Flow (LAN → WAN → Server)
-    
-    H->>LT: Enqueue sensor data
-    LT->>LT: Pack frame (SYNC+TYPE+LEN+DATA+CRC)
-    LT->>LT: Append to 64KB ring buffer
-    
-    alt Buffer > 4KB
-        LT->>QM: qspi_hal_stream_write(buffer, len)
-        QM->>QM: Assert DR GPIO (notify slave)
-        QM->>QS: WRITE transaction (CMD=0xAA, 4-bit QIO)
-        QS->>QS: RX callback triggered
-        QS->>WT: Parse frame, forward to server
-        WT->>SRV: MQTT/HTTP publish
-        QM->>QM: Deassert DR GPIO
-    end
-    
-    Note over H,SRV: Downlink Data Flow (Server → WAN → LAN)
-    
-    SRV->>WT: Downlink command (RTC/Config/Data)
-    WT->>QS: qspi_hal_stream_write(frame)
-    QS->>QS: Pre-queue TX buffer (spi_slave_hd_queue_trans)
-    
-    QM->>QM: Periodic READ transaction (CMD=0x55)
-    QM-->>QS: SPI transaction (4-bit QIO)
-    QS-->>QM: DMA transfer data
-    
-    QM->>LT: RX callback with data
-    LT->>LT: Parse frame, validate CRC
-    LT->>H: Dispatch to handler (CAN/LORA/etc)
-```
+**Downlink Poll Task** (Priority 7):
 
+Block on GPIO46 ISR → Acquire g_qspi_mutex → Retry DQ (10×50ms)
+→ Parse frame → Dispatch → Release mutex → Block
+Total: <5ms ISR response, 500ms max retry
 
-### 8.2. Simplified Uplink Flow (LAN → WAN)
+text
 
-```mermaid
-sequenceDiagram
-    participant LAN as LAN MCU<br/>Uplink Task<br/>(Sensor side)
-    participant QSPI as QSPI Bus<br/>(40MHz 4-bit)
-    participant WAN as WAN MCU<br/>Stream Task<br/>(Internet side)
-    
-    Note over LAN,WAN: Continuous Streaming (No ACK)
-    
-    loop Every 100ms or buffer full
-        LAN->>LAN: Accumulate sensor data in ring buffer
-        LAN->>QSPI: DMA write (4KB chunk)
-        Note right of LAN: <1ms transfer time
-        
-        QSPI->>WAN: Data ready notification
-        WAN->>WAN: RX callback processes frames
-        
-        par Parallel operations
-            WAN->>WAN: Forward to MQTT/HTTP server
-        and
-            LAN->>LAN: Continue accumulating next chunk
-        end
-    end
-    
-    Note over LAN,WAN: Total latency: <5ms (vs 64-155ms with ACK)
-```
+**Uplink Handler Task** (Priority 5):
 
+Phase 1: Handshake (blocking until success)
+Phase 2: Loop {
+Queue check → Build DT packet → QSPI send (0.5ms)
+→ Wait ACK (200ms) → On fail: storage_save()
+RTC request (1s interval)
+SD retry (if online + has_data)
+}
+Mutex timeout: 50ms (yields gracefully)
 
-### 8.3. Downlink Flow (WAN → LAN) - RTC Example
+text
 
-```mermaid
-sequenceDiagram
-    participant LAN as LAN MCU
-    participant QSPI as QSPI Bus
-    participant WAN as WAN MCU
-    participant RTC as RTC Module<br/>(PCF8563)
-    
-    Note over LAN,WAN: RTC Request (Downlink from WAN)
-    
-    LAN->>LAN: Timer expires (1 second)
-    LAN->>QSPI: Send RTC_REQUEST frame (uplink)
-    QSPI->>WAN: Master WRITE
-    
-    WAN->>RTC: pcf8563_read_time()
-    RTC-->>WAN: Return timestamp
-    
-    WAN->>WAN: Pack RTC_RESPONSE frame
-    WAN->>QSPI: Pre-queue TX (spi_slave_hd_queue_trans)
-    
-    LAN->>QSPI: Periodic READ poll (CMD=0x55)
-    QSPI-->>LAN: Return RTC frame (downlink)
-    
-    LAN->>LAN: Update RTC cache
-    
-    Note over LAN,WAN: Downlink = WAN sends data to LAN
-```
+### 5.2. WAN MCU - Single Task
 
+**Uplink Processor** (Priority 6):
 
-### 8.4. SD Card Batch Write Sequence
+Pre-queue RX → Block on completion (100ms) → Parse frame
+→ Dispatch: CF (handshake/RTC) | DT (forward to server) | DQ (check pending)
+→ Re-queue transaction
 
-```mermaid
-sequenceDiagram
-    participant APP as Application<br/>Tasks
-    participant RING as Ring Buffer<br/>(100KB RAM)
-    participant SD as Storage Task
-    participant FS as SD Card<br/>FAT32
-    
-    Note over APP,FS: Continuous Data Accumulation
-    
-    loop Every packet
-        APP->>RING: Append data (lock mutex)
-        RING-->>APP: Success
-    end
-    
-    Note over APP,FS: Periodic Flush (80KB threshold)
-    
-    SD->>SD: Check every 1 second
-    
-    alt Buffer > 80KB
-        SD->>RING: Lock mutex
-        SD->>FS: fopen("/sdcard/data.log", "ab")
-        SD->>FS: fwrite(buffer, 100KB)
-        Note right of SD: Single write, no chunking
-        
-        SD->>FS: fflush()
-        SD->>FS: fsync()
-        Note right of SD: Sync once per batch
-        
-        SD->>FS: fclose()
-        SD->>RING: Reset buffer, unlock mutex
-    end
-    
-    Note over APP,FS: 100x fewer fsync() calls vs old design
-```
+text
 
-
-### 8.5. GPIO Handshake Timing
-
-```mermaid
-sequenceDiagram
-    participant M as Master<br/>(LAN MCU)
-    participant DR as DR GPIO<br/>Line
-    participant S as Slave<br/>(WAN MCU)
-    
-    Note over M,S: Uplink: LAN signals data ready
-    
-    M->>M: Prepare TX data in buffer
-    M->>DR: Assert HIGH
-    Note right of DR: Signal: "Data ready to send"
-    
-    M->>S: WRITE transaction (CMD=0xAA)
-    Note over M,S: 4-bit QIO DMA transfer
-    
-    S-->>M: DMA complete (no ACK frame)
-    M->>DR: Deassert LOW
-    
-    Note over M,S: Total overhead: <100μs
-```
-
-
-### 8.6. Error Recovery Flow
-
-```mermaid
-sequenceDiagram
-    participant LAN as LAN MCU<br/>(Uplink sender)
-    participant QSPI as QSPI HAL
-    participant WAN as WAN MCU<br/>(Receiver)
-    
-    Note over LAN,WAN: CRC Error Detection
-    
-    LAN->>QSPI: Stream write data
-    QSPI->>WAN: DMA transfer
-    
-    WAN->>WAN: Validate CRC16
-    
-    alt CRC Valid
-        WAN->>WAN: Process frame normally
-    else CRC Invalid
-        WAN->>WAN: Drop frame silently
-        Note right of WAN: No NACK sent (stateless)
-        WAN->>WAN: Log error stats
-    end
-    
-    Note over LAN,WAN: Upper layer handles retransmission if needed
-    
-    alt DMA Error
-        QSPI->>QSPI: Increment error counter
-        QSPI->>LAN: Return ESP_FAIL
-        LAN->>LAN: Retry from ring buffer
-    end
-```
-
-
-### 8.7. Bidirectional Communication Summary
-
-```mermaid
-sequenceDiagram
-    participant Sensors as Sensor Handlers<br/>(CAN/LORA/RS485)
-    participant LAN as LAN MCU<br/>(Master)
-    participant WAN as WAN MCU<br/>(Slave)
-    participant Server as Internet Server<br/>(MQTT/HTTP)
-    
-    rect rgba(0, 0, 0, 1)
-        Note over Sensors,Server: UPLINK: LAN → WAN → Server
-        Sensors->>LAN: Sensor data
-        LAN->>WAN: QSPI WRITE (4-bit)
-        WAN->>Server: Publish telemetry
-    end
-    
-    rect rgba(0, 0, 0, 1)
-        Note over Sensors,Server: DOWNLINK: Server → WAN → LAN
-        Server->>WAN: Commands/Config
-        WAN->>LAN: QSPI READ by master (4-bit)
-        LAN->>Sensors: Execute command
-    end
-    
-    rect rgba(0, 0, 0, 1)
-        Note over Sensors,Server: DOWNLINK: RTC Sync (WAN → LAN)
-        LAN->>WAN: Request RTC
-        WAN->>WAN: Read PCF8563
-        WAN->>LAN: Return timestamp
-        LAN->>Sensors: Update cached time
-    end
-```
-
+**Downlink** (No Task): MQTT calls mcu_lan_enqueue_downlink() → signal GPIO8
 
 ---
 
-## 9. PERFORMANCE METRICS
+## 6. COMMUNICATION PROTOCOL
 
-### 9.1. Latency Comparison
+### 6.1. Frame Types
 
-```
-Old Design (Standard SPI + ACK):
-┌─────────┬─────────┬──────────┬─────────┬─────────┐
-│ Pack    │ GPIO    │ TX 1-bit │ Wait    │ RX ACK  │
-│ Frame   │ Wait    │ @10MHz   │ ACK     │ 1-bit   │
-│ 0.5ms   │ 10-50ms │ 2ms      │ 50-100ms│ 2ms     │
-└─────────┴─────────┴──────────┴─────────┴─────────┘
-Total: 64-155ms per packet
+| Header | Value | Direction | QSPI Time (512B) | Purpose |
+|--------|-------|-----------|------------------|---------|
+| CF | 0x4346 | LAN → WAN | ~0.1 ms | Command |
+| DT | 0x4454 | Bidirectional | ~0.5 ms | Data (vs 2ms standard SPI) |
+| DQ | 0x4451 | LAN → WAN | ~0.05 ms | Query slave |
+| CQ | 0x4351 | Bidirectional | ~0.2 ms | Config |
+| RT | ASCII | WAN → LAN | ~0.05 ms | RTC status |
+| ACK | 0x02 | WAN → LAN | ~0.05 ms | Acknowledgment |
 
-New Design (QSPI Stream):
-┌─────────┬─────────┬──────────┐
-│ Pack    │ TX 4-bit│ DMA      │
-│ Frame   │ @40MHz  │ Done     │
-│ 0.5ms   │ 0.5ms   │ instant  │
-└─────────┴─────────┴──────────┘
-Total: 1ms per packet (64-155x faster)
-```
+### 6.2. Key Packets
 
+**Handshake**: `[CF][0x01]` → Response: `[ACK][0x10][internet_flag]`
 
-### 9.2. Resource Usage
+**Data**: `[DT][handler_type(3)][length(2)][payload]`
+- Handler types: CAN, LOR, ZIG, RS4
 
-| Resource | Usage | Notes |
-| :-- | :-- | :-- |
-| **RAM** | 250 KB | QSPI buffers + ring buffers |
-| **CPU (idle)** | <1% | DMA-driven |
-| **CPU (peak)** | 3% | During batch flush |
-| **SPI bandwidth** | 8 MB/s | 40MHz × 4 bits × 0.5 efficiency |
-| **SD write rate** | 1/sec | vs 100/sec old design |
+**RTC**: `[CF][RT]` → Response: `[RT][dd/mm/yyyy-hh:mm:ss][status]`
 
-### 9.3. Direction Definitions
+**Config**: `[CF][CQ]` → Response: `[CQ][length(2)][key=value|key=value|...]`
 
-| Direction | From | To | Example Use Cases |
-| :-- | :-- | :-- | :-- |
-| **Uplink** | LAN MCU | WAN MCU | Sensor data, status reports, telemetry |
-| **Downlink** | WAN MCU | LAN MCU | RTC sync, config updates, commands, FOTA notify |
+**ACK Codes**:
+- 0x10: Handshake OK
+- 0x11: Data received
+- 0x12: Internet online
+- 0x13: Internet offline
 
-**Key Points:**
+---
 
-- LAN MCU = Sensor handlers (CAN/LORA/Zigbee/RS485) - **data source**
-- WAN MCU = Internet gateway (WiFi/MQTT/HTTP) - **data sink \& command source**
-- Uplink = Data flowing from sensors to internet
-- Downlink = Data/commands flowing from internet to sensors
+## 7. DATA FLOW
+
+### 7.1. Uplink (LAN → WAN → Server)
+
+Handler → mcu_wan_enqueue_uplink() → Queue → Uplink task
+→ Build DT → QSPI send (0.5ms) → Wait ACK (200ms)
+→ If OK: success | If fail: storage_save()
+WAN receives → Parse → server_handler_enqueue_uplink() → MQTT
+Total latency: 10-20ms (vs 64-155ms standard SPI)
+
+text
+
+### 7.2. Downlink (Server → WAN → LAN)
+
+MQTT → mcu_lan_enqueue_downlink() → signal_data_ready()
+→ GPIO46 ISR → Downlink task wakes → DQ retry (10×50ms)
+→ QSPI read (0.5ms) → Dispatch to handler
+Total latency: <5ms (vs 50-100ms standard SPI)
+
+text
+
+### 7.3. SD Backup/Recovery
+
+Offline: uplink fails → storage_handler_save() → /sdcard/QUEUE/PKT_*.dat
+Online: storage_handler_read_oldest() → QSPI send → ACK OK → delete
+QSPI advantage: 50 packets/sec (vs 10 packets/sec standard SPI)
+
+text
+
+---
+
+## 8. PERFORMANCE CHARACTERISTICS
+
+### 8.1. QSPI vs Standard SPI
+
+| Metric | Standard SPI | QSPI | Improvement |
+|--------|--------------|------|-------------|
+| Clock | 10 MHz | 40 MHz | 4× |
+| Data width | 1-bit | 4-bit | 4× |
+| Throughput | ~2 MB/s | ~8 MB/s | 4× |
+| Uplink latency | 64-155ms | 10-20ms | 6-8× |
+| Downlink latency | 50-100ms | <5ms | 10-20× |
+| SD recovery rate | 10 pkt/s | 50 pkt/s | 5× |
+
+### 8.2. Timing Parameters
+
+| Parameter | Value | Location | Notes |
+|-----------|-------|----------|-------|
+| QSPI Clock | 40 MHz | wan_comm.c, lan_comm.c | Mandatory |
+| GPIO ISR Response | <5 ms | mcu_wan_handler_downlink.c | ISR → data received |
+| DQ Retry Interval | 50 ms | mcu_wan_handler_downlink.c | 10 retries max |
+| ACK Wait Timeout | 200 ms | mcu_wan_handler_uplink.c | Reduced from 1000ms |
+| RTC Update | 1000 ms | mcu_wan_handler_uplink.c | Periodic |
+| QSPI Mutex Timeout | 50 ms | mcu_wan_handler_uplink.c | Non-blocking |
+
+---
+
+## 9. SYNCHRONIZATION
+
+### 9.1. Mutexes
+
+**LAN MCU**:
+- `g_qspi_mutex`: Binary semaphore, protects QSPI bus
+- `g_storage_mutex`: Protects SD operations
+- `g_rtc_mutex`: Protects RTC cache
+
+**WAN MCU**:
+- `g_config_mutex`: Protects config cache
+- `g_downlink_queue_mutex`: Protects downlink queue
+
+### 9.2. Queues
+
+- LAN uplink: 50 items × 532B = 26 KB
+- WAN downlink: 20 items × 1030B = 20 KB
+
+**QSPI Benefit**: Faster drain rate (4× throughput), lower overflow risk
+
+---
+
+## 10. ERROR HANDLING
+
+### 10.1. QSPI Errors
+
+**LAN MCU**:
+- DQ retry exhaustion (10×50ms): Log, continue (non-fatal)
+- Send failure: Fallback to storage_handler_save()
+- ACK timeout (200ms): Assume offline, save to SD
+- DMA error: Check buffer alignment, retry
+
+**WAN MCU**:
+- Parse error: Log, discard, re-queue
+- TX load failure: Log, skip transmission
+- Slave overrun: Increase buffer size
+
+### 10.2. SD Card Errors
+
+- Mount failure: Log, continue without backup (non-fatal)
+- Write failure: Check directory, auto-delete corrupt files
+- Read failure: Delete corrupt file, scan next
+- Power cycle: scan_and_update_counters() recovers state
+
+---
+
+## 11. MEMORY USAGE
+
+**LAN MCU**: ~64 KB heap (QSPI buffers 16KB + uplink queue 26KB + storage 4KB + SD cache 4KB) + 8 KB stack
+
+**WAN MCU**: ~33 KB heap (QSPI buffers 8KB + downlink queue 20KB) + 4 KB stack
+
+---
+
+## 12. KEY DESIGN DECISIONS
+
+1. **QSPI Mandatory**: 40 MHz, 4-bit, QIO mode for 4× throughput
+2. **Modular Separation**: Uplink/downlink split for clarity and independent scaling
+3. **Storage Abstraction**: storage_handler.c wraps SDCard_comm with thread safety
+4. **Priority-Based Preemption**: Downlink (7) > Uplink (5) for <5ms ISR response
+5. **Reduced Timeouts**: ACK 200ms (vs 1s), DQ retry 50ms (vs 150ms) due to QSPI speed
+6. **SD FIFO Queue**: Sequential files for power-cycle recovery
+7. **Async Config Request**: Heap-allocated + semaphore for timeout handling
+8. **No ACK on Downlink**: GPIO ISR + DQ polling (stateless, high speed)
+
+---
+
+## 13. MIGRATION FROM STANDARD SPI
+
+**Hardware**: Change SPI pins to GPIO10-15 (QSPI), keep SD on GPIO3-8
+
+**Software**:
+- wan_comm.c: Add `SPI_TRANS_MODE_QIO`, increase clock to 40 MHz
+- lan_comm.c: Configure slave for QIO reception
+- Reduce timeouts: ACK 200ms, DQ retry 50ms
+- Increase DMA buffers: 16KB (master), 8KB (slave)
+
+**Testing**: Verify 4× throughput improvement, <5ms ISR latency
 
 ---
