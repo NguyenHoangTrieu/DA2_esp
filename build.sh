@@ -21,3 +21,5 @@ cp -r build/partition_table/partition-table.bin config_app/dist/bin
 #5. build LAN version
 cd ../DA2_esp_LAN
 ./build.sh
+cd ../DA2_esp
+./config_app/dist/bin/flash_WAN.sh /dev/ttyUSB0

@@ -13,7 +13,9 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/PPP_Server/src/ppp_server.c"
                                 "../Application/Data_Communication_Handler/src/usb_handler.c"
                                 "../Application/Data_Communication_Handler/src/uart_handler.c"
-                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
+                                # "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
+                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler_uplink.c"
+                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler_downlink.c"
                                 "../BSP/rbg_led_ws_handler/rbg_handler.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
