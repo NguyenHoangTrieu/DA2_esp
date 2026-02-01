@@ -130,6 +130,50 @@ void reset_slave_normal_mode(void) {
   esp_rom_printf("[%s] Slave reset to normal mode\n", TAG);
 }
 
+// Initialize USB switch GPIO (GPIO 3)
+void init_usb_switch_gpio(void) {
+  // Configure USB_SWITCH_PIN as output
+  esp_rom_gpio_pad_select_gpio(USB_SWITCH_PIN);
+  esp_rom_gpio_pad_set_drv(USB_SWITCH_PIN, 2);
+  gpio_output_enable_safe(USB_SWITCH_PIN);
+
+  // Set HIGH to enable USB routing to ESP32-S3
+  gpio_set_level_safe(USB_SWITCH_PIN, 1);
+
+  // Small delay for hardware switch to settle
+  esp_rom_delay_us(50000); // 50ms
+
+  esp_rom_printf("[%s] USB switch enabled (GPIO %d = HIGH)\\n", TAG,
+                 USB_SWITCH_PIN);
+}
+
+// Initialize USB Serial/JTAG peripheral
+void init_usb_serial_jtag(void) {
+  // ESP32-S3's USB Serial/JTAG is always available - no reset needed
+
+  esp_rom_printf("[%s] USB Serial/JTAG initialized\\n", TAG);
+}
+
+// Non-blocking read from USB RX FIFO
+int usb_rx_one_char(uint8_t *c) {
+  if (usb_serial_jtag_ll_rxfifo_data_available()) {
+    usb_serial_jtag_ll_read_rxfifo(c, 1);
+    return 0;
+  }
+  return -1;
+}
+
+// Write one byte to USB TX FIFO
+void usb_tx_one_char(uint8_t c) {
+  while (!usb_serial_jtag_ll_txfifo_writable()) {
+    // Wait for space in TX FIFO
+  }
+  usb_serial_jtag_ll_write_txfifo(&c, 1);
+}
+
+// Flush USB TX buffer
+void usb_flush(void) { usb_serial_jtag_ll_txfifo_flush(); }
+
 // Configure UART2 for slave communication using LL
 void configure_uart2_for_slave(void) {
   periph_ll_enable_clk_clear_rst(PERIPH_UART2_MODULE);
@@ -190,97 +234,6 @@ int uart2_rx_one_char(uint8_t *c) {
   }
   uart_ll_read_rxfifo(uart, c, 1);
   return 0;
-}
-
-/**
- * @brief UART bridge with timeout and debug logging
- */
-void uart_bridge_passthrough(void) {
-  uint8_t byte;
-  uint32_t pc_to_slave = 0;
-  uint32_t slave_to_pc = 0;
-  bool flash_in_progress = false;
-  uint32_t idle_counter = 0;
-  uint32_t wdt_feed_counter = 0;
-   uint32_t gpio_check_counter = 0; 
-  uint32_t max_idle = 60000; // 60 seconds
-
-  configure_uart2_for_slave();
-  esp_rom_printf("[%s] UART bridge active v1.1\n", TAG);
-
-  while (1) {
-    bool data_activity = false;
-    // Forward: PC -> Slave
-    if (uart0_rx_one_char(&byte) == 0) {
-      uart2_tx_one_char(byte);
-      pc_to_slave++;
-      data_activity = true;
-      if (byte == SLIP_END) {
-        flash_in_progress = true;
-      }
-    }
-
-    // Forward: Slave -> PC
-    if (uart2_rx_one_char(&byte) == 0) {
-      uart0_tx_one_char(byte);
-      slave_to_pc++;
-      data_activity = true;
-    }
-
-    if (data_activity) {
-      idle_counter = 0;
-    } else {
-      idle_counter++;
-      wdt_feed_counter++;
-      gpio_check_counter++;
-      esp_rom_delay_us(1000);
-
-      if (gpio_check_counter >= 100) {
-        gpio_check_counter = 0;
-
-        // Read GPIO 45 with simple debounce
-        int button_pressed_count = 0;
-        for (int i = 0; i < 3; i++) {
-          if (gpio_get_level_safe(SKIP_FLASH_BRIDGE_PIN) == 0) {
-            esp_rom_printf(
-                "[%s] GPIO%d read LOW (%d/3)\n", TAG, SKIP_FLASH_BRIDGE_PIN,
-                i + 1);
-            button_pressed_count++;
-          }
-          esp_rom_delay_us(1000);
-        }
-
-        // If button pressed (at least 2/3 reads = LOW)
-        if (button_pressed_count >= 2) {
-          esp_rom_printf(
-              "\n[%s] GPIO%d pressed - exiting flash bridge mode\n", TAG,
-              SKIP_FLASH_BRIDGE_PIN);
-          esp_rom_printf("[%s] Stats: PC->Slave=%d, Slave->PC=%d bytes\n", TAG,
-                         pc_to_slave, slave_to_pc);
-          reset_slave_normal_mode();
-          return;
-        }
-      }
-
-      if (flash_in_progress && idle_counter > max_idle) {
-        esp_rom_printf("[%s] Flash done: %d/%d bytes\n", TAG, pc_to_slave,
-                       slave_to_pc);
-        reset_slave_normal_mode();
-        return;
-      }
-
-      if (wdt_feed_counter >= 5000) {
-        bootloader_feed_wdt();
-        wdt_feed_counter = 0;
-      }
-
-      if (idle_counter > 60000) {
-        esp_rom_printf("[%s] Timeout\n", TAG);
-        reset_slave_normal_mode();
-        return;
-      }
-    }
-  }
 }
 
 // Select boot partition
@@ -377,4 +330,128 @@ void bootloader_feed_wdt(void) {
   REG_WRITE(RTC_CNTL_SWD_WPROTECT_REG, 0x8F1D312AU);
   REG_SET_BIT(RTC_CNTL_SWD_CONF_REG, BIT(1));
   REG_WRITE(RTC_CNTL_SWD_WPROTECT_REG, 0U);
+}
+/**
+ * @brief Dual-mode UART/USB bridge with auto-detection
+ * Supports both UART0 and USB Serial/JTAG for PC communication
+ */
+void uart_bridge_passthrough(void) {
+  uint8_t byte;
+  uint32_t pc_to_slave = 0;
+  uint32_t slave_to_pc = 0;
+  bool flash_in_progress = false;
+  uint32_t idle_counter = 0;
+  uint32_t wdt_feed_counter = 0;
+  uint32_t gpio_check_counter = 0;
+  uint32_t max_idle = 60000; // 60 seconds
+
+  // Active source: 0=None, 1=UART, 2=USB
+  typedef enum { SOURCE_NONE = 0, SOURCE_UART = 1, SOURCE_USB = 2 } source_t;
+  source_t active_source = SOURCE_NONE;
+
+  // Initialize both interfaces
+  configure_uart2_for_slave(); // Slave UART
+  init_usb_serial_jtag();      // USB JTAG
+
+  esp_rom_printf("[%s] Dual-mode bridge active (UART + USB)\\n", TAG);
+
+  while (1) {
+    bool data_activity = false;
+
+    // === PC -> Slave (Auto-detect source on first data) ===
+    if (active_source == SOURCE_NONE || active_source == SOURCE_USB) {
+      if (usb_rx_one_char(&byte) == 0) {
+        uart2_tx_one_char(byte);
+        pc_to_slave++;
+        data_activity = true;
+        if (active_source == SOURCE_NONE) {
+          esp_rom_printf("[%s] Detected USB connection\\n", TAG);
+          active_source = SOURCE_USB;
+        }
+        if (byte == SLIP_END) {
+          flash_in_progress = true;
+        }
+      }
+    }
+
+    if (active_source == SOURCE_NONE || active_source == SOURCE_UART) {
+      if (uart0_rx_one_char(&byte) == 0) {
+        uart2_tx_one_char(byte);
+        pc_to_slave++;
+        data_activity = true;
+        if (active_source == SOURCE_NONE) {
+          esp_rom_printf("[%s] Detected UART connection\\n", TAG);
+          active_source = SOURCE_UART;
+        }
+        if (byte == SLIP_END) {
+          flash_in_progress = true;
+        }
+      }
+    }
+
+    // === Slave -> PC (Route to active source) ===
+    if (uart2_rx_one_char(&byte) == 0) {
+      if (active_source == SOURCE_USB) {
+        usb_tx_one_char(byte);
+        usb_flush();
+      } else {
+        uart0_tx_one_char(byte); // Default to UART or when SOURCE_NONE
+      }
+      slave_to_pc++;
+      data_activity = true;
+    }
+
+    // === Idle handling ===
+    if (data_activity) {
+      idle_counter = 0;
+    } else {
+      idle_counter++;
+      wdt_feed_counter++;
+      gpio_check_counter++;
+      esp_rom_delay_us(1000);
+
+      // GPIO check for manual exit
+      if (gpio_check_counter >= 100) {
+        gpio_check_counter = 0;
+
+        int button_pressed_count = 0;
+        for (int i = 0; i < 3; i++) {
+          if (gpio_get_level_safe(SKIP_FLASH_BRIDGE_PIN) == 0) {
+            button_pressed_count++;
+          }
+          esp_rom_delay_us(1000);
+        }
+
+        if (button_pressed_count >= 2) {
+          esp_rom_printf("\\n[%s] GPIO%d pressed - exiting bridge\\n", TAG,
+                         SKIP_FLASH_BRIDGE_PIN);
+          esp_rom_printf("[%s] Stats: PC->Slave=%d, Slave->PC=%d bytes\\n", TAG,
+                         pc_to_slave, slave_to_pc);
+          reset_slave_normal_mode();
+          return;
+        }
+      }
+
+      // Flash completion timeout
+      if (flash_in_progress && idle_counter > max_idle) {
+        esp_rom_printf("[%s] Flash done: %d/%d bytes\\n", TAG, pc_to_slave,
+                       slave_to_pc);
+        reset_slave_normal_mode();
+        return;
+      }
+
+      // Watchdog feed
+      if (wdt_feed_counter >= 5000) {
+        bootloader_feed_wdt();
+        wdt_feed_counter = 0;
+      }
+
+      // Global timeout
+      if (idle_counter > 60000) {
+        esp_rom_printf("[%s] Timeout\\n", TAG);
+        reset_slave_normal_mode();
+        return;
+      }
+    }
+  }
 }

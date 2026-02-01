@@ -8,12 +8,13 @@
 #include "esp_private/periph_ctrl.h"
 #include "esp_rom_gpio.h"
 #include "esp_rom_serial_output.h"
-#include "soc/gpio_sig_map.h"
 #include "hal/clk_gate_ll.h"
 #include "hal/gpio_ll.h"
-#include "hal/uart_ll.h" // HAL UART
+#include "hal/uart_ll.h"            // HAL UART
+#include "hal/usb_serial_jtag_ll.h" // USB Serial/JTAG Low-Level
 #include "sdkconfig.h"
 #include "soc/gpio_reg.h"
+#include "soc/gpio_sig_map.h"
 #include "soc/periph_defs.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/uart_struct.h" // UART hardware struct
@@ -26,6 +27,7 @@
 #define SLAVE_RX_PIN 41
 #define SLAVE_TX_PIN 42
 #define SKIP_FLASH_BRIDGE_PIN 0
+#define USB_SWITCH_PIN 3 // Controls USB routing (HIGH = USB enabled)
 
 // UART configuration
 #define UART_NUM_SLAVE 2
@@ -48,6 +50,13 @@ void init_slave_control_gpios(void);
 void enter_slave_bootloader_mode(void);
 void reset_slave_normal_mode(void);
 void uart_bridge_passthrough(void);
+
+// USB Switch and JTAG functions
+void init_usb_switch_gpio(void);
+void init_usb_serial_jtag(void);
+int usb_rx_one_char(uint8_t *c);
+void usb_tx_one_char(uint8_t c);
+void usb_flush(void);
 
 // UART configuration functions
 void configure_uart1_for_slave(void);

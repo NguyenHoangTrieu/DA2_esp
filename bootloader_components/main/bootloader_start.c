@@ -1,6 +1,6 @@
 /*
-* ESP32 Master-Slave Bootloader
-*/
+ * ESP32 Master-Slave Bootloader
+ */
 #include "boot_support_function.h"
 #include "bootloader_hooks.h"
 
@@ -36,6 +36,9 @@ void __attribute__((noreturn)) call_start_cpu0(void) {
 
   // 2. Initialize GPIO pins for slave control
   init_slave_control_gpios();
+
+  // 2.1 Initialize USB switch to enable USB flashing
+  init_usb_switch_gpio();
 
   // 3. Enter flash bridge mode for slave programming
   esp_rom_printf("[%s] Entering flash bridge mode for slave programming\n",
