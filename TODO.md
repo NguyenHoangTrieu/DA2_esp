@@ -159,3 +159,119 @@ Vẽ sơ đồ logic cho việc xử lý dữ liệu khi mất mạng và ghi xu
 - (mô tả cụ thể sau)
 ## Nhận diện, scan gateway/các gateway trên module
 - (mô tả cụ thể sau)
+
+
+## Module base setting:
+- sử dụng file json để định dạng các tập lệnh của module theo hướng chức năng (thay vì chuẩn hóa về định dạng tập lệnh chung (kg khả thi), chuẩn hóa theo dạng chức năng của nó ví duk START, RESET, CONNECT_DEVICE, v.v..)
+- chuẩn hóa theo dạng chức năng do tôi nhận thấy đa số các tập lệnh của các module đều có chức năng tương tự nhau (khoảng 70 - 80%), ví dụ như chức năng khởi động module, chức năng reset module, chức năng kết nối thiết bị, v.v.. nên việc chuẩn hóa theo dạng chức năng sẽ giúp việc phát triển firmware nhanh hơn và dễ dàng hơn rất nhiều so với việc chuẩn hóa theo định dạng tập lệnh chung (vì mỗi module có một định dạng tập lệnh khác nhau, rất khó để chuẩn hóa chung) 
+- File json bao gồm: module type, module name vs id, communication port type (uart, spi, i2c, usb, ...), communication parameters (baudrate, parity, stopbit, ...), các chức năng tương úng với tập lệnh tương ứng theo dạng:
+- tên chức năng
+- cú pháp tập lệnh tương ứng (đối với các chức năng như reset hay sleep mà kg cần tập lệnh thì để trống)
+- các gpio cần phải điều khiển tương ứng để chạy chức năng đó (nếu có) (lưu ý bao gồm cả trạng thái gpio đó là high hay low)
+- thời gian delay cần chờ sau khi toogle gpio đó rồi mới chạy command (nếu có) (có thể có nhiều gpio cần toogle, liệt kê theo thứ tự)
+- expect phản hồi của command (nếu có)
+- thời gian timeout chờ phản hồi (nếu có)
+- khi nhận phản hồi hoặc timeout thì gpio đó sẽ trở về trạng thái nào (high hay low, list ra nếu có)
+- use case của file json: file json này giúp configuarable and modular gateway của tôi dễ dàng hơn, kg cần nạp / viết lại firmware cho từng module khác nhau, chỉ cần thay đổi file json tương ứng với module đó là được, giúp tiết kiệm thời gian và giảm độ sử dụng flash memory trên baseboard
+cấu trúc file json đơn giản (chỉ cần nhiêu đây là đủ):
+- module_id: "001" | "002" | ...
+- module_type: "zigbee" | "bluetooth" | "lora" | ...
+- module_name:
+- module_communication:
+  - port_type: "uart" | "spi" | "i2c" | "usb" | ...
+  - parameters (example for uart):
+      - baudrate: 115200
+      - parity: "none"
+      - stopbit: 1
+- functions:
+    - function_name: "START"
+        command: "AT+START"
+        gpio_start_control:
+        - pin: "001" state: "HIGH"
+        - pin: "002" state: "LOW"
+        delay_1st: 100
+        expect_response: "OK"
+        timeout: 500
+        gpio_end_control:
+        - pin: "001" state: "LOW"
+        - pin: "002" state: "HIGH"
+        delay_2nd: 100
+    - function_name: "RESET"
+        command: "" // no command needed
+        gpio_start_control:
+        - pin: "003" state: "HIGH"
+        delay_after: 200
+        expect_response: ""
+        timeout: 0
+        gpio_end_control:
+        - pin: "003" state: "LOW"
+    - function_name: "SETTING"
+        command: "AT+SET=PARAMS"
+        gpio_start_control: []  
+        delay_1st: 0
+        expect_response: "SET_OK"
+        timeout: 1000
+        gpio_end_control: []
+
+## FOR BLE:
+Core function set (15 function)
+1. Lifecycle (3)
+MODULE_HW_RESET
+Reset cứng GPIO (quan trọng nhất để recover lỗi).
+
+MODULE_SW_RESET
+Reset mềm qua lệnh (fallback nếu không có GPIO RST).
+
+MODULE_FACTORY_RESET
+Xóa config khi cần thiết lập lại từ đầu.
+
+2. Info/Config (4)
+MODULE_GET_INFO
+Đọc version/model để verify module đúng.
+
+MODULE_SET_NAME
+Đặt tên thiết bị (thường cần cho deployment).
+
+MODULE_SET_COMM_CONFIG
+Cài baud/parity/stop (UART), clock (SPI), addr (I2C) – gộp tất cả comm setting vào 1 function.
+
+MODULE_SET_RF_PARAMS
+Cài TX power/channel – gộp tất cả RF setting vào 1 function.
+
+3. Mode (2)
+MODULE_ENTER_CMD_MODE
+Chuyển sang nhận lệnh AT/command.
+
+MODULE_ENTER_DATA_MODE
+Chuyển sang transparent UART↔RF.
+
+4. Connection (4)
+MODULE_START_BROADCAST
+Bật quảng bá (slave) hoặc permit join (coordinator).
+
+MODULE_CONNECT
+Kết nối đến địa chỉ (master/central).
+
+MODULE_DISCONNECT
+Ngắt kết nối.
+
+MODULE_GET_CONNECTION_STATUS
+Kiểm tra trạng thái link (idle/connected/error).
+
+5. Power (2)
+MODULE_ENTER_SLEEP
+Vào sleep mode.
+
+MODULE_WAKEUP
+Đánh thức từ sleep.
+
+Optional (thêm 5 nếu cần advanced)
+MODULE_START_DISCOVERY (nếu làm central/coordinator scan network)
+
+MODULE_SEND_DATA (nếu module không dùng transparent mà cần command-based send)
+
+MODULE_GET_DIAGNOSTICS (đọc RSSI/link quality cho monitoring)
+
+MODULE_SET_SECURITY_CONFIG (nếu cần pairing/PIN)
+
+MODULE_ENTER_BOOTLOADER (nếu gateway phải OTA update module)
