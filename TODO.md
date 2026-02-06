@@ -275,3 +275,15 @@ MODULE_GET_DIAGNOSTICS (đọc RSSI/link quality cho monitoring)
 MODULE_SET_SECURITY_CONFIG (nếu cần pairing/PIN)
 
 MODULE_ENTER_BOOTLOADER (nếu gateway phải OTA update module)
+
+Các component mới trong các layer:
+- BSP: USB/UART/SPI/I2C Module Communication: cung cấp các hàm giao tiếp cơ bản với module qua các giao thức khác nhau.
+- BSP: IO Expander Driver: dùng để điểu khiển các GPIO của IO Expander, có thể copy từ stack handler cũ.
+- Middleware: Json config Parser: phân tích file json để lấy cấu hình module và chức năng sau khi nhận được từ uart.
+- Middleware: Module Config Controller: cung cấp các hàm điều khiển module dựa trên cấu hình từ file json (gọi hàm giao tiếp từ BSP và điều khiển GPIO từ IO Expander thay vì để ble/zigbee/lora handler phải làm điều đó).
+
+công việc cần làm:
+- xóa đi các package cũ như ble handler, zigbee handler, lora handler
+- viết các component mới như đã mô tả ở trên
+- cập nhật lại config handler để đọc file json và lưu vào cấu trúc dữ liệu tương ứng
+- ...
