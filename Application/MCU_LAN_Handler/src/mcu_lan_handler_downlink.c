@@ -1,6 +1,6 @@
 /**
  * @file mcu_lan_handler_downlink.c
- * @brief MCU LAN Handler - Downlink Manager (QSPI Slave, No Task)
+ * @brief MCU LAN Handler - Downlink Manager (SPI Slave, No Task)
  */
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -62,6 +62,7 @@ static QueueHandle_t g_downlink_queue = NULL;
 SemaphoreHandle_t g_config_mutex = NULL;
 static config_cache_t g_config_cache = {0};
 bool g_config_cache_has_config = false; // Exposed to uplink
+bool g_fota_request_pending = false; // Exposed to uplink
 
 // Pending downlink (accessed by uplink task)
 extern downlink_item_t g_pending_downlink;
@@ -107,7 +108,7 @@ static void signal_data_ready(void) {
   gpio_set_level(GPIO_DATA_READY_PIN, 0);
   ets_delay_us(GPIO_PULSE_WIDTH_US);
   gpio_set_level(GPIO_DATA_READY_PIN, 1);
-  ESP_LOGD(TAG, "Data-ready pulse sent (GPIO%d, %uμs)", GPIO_DATA_READY_PIN,
+  ESP_LOGI(TAG, "Data-ready pulse sent (GPIO%d, %uμs)", GPIO_DATA_READY_PIN,
            GPIO_PULSE_WIDTH_US);
 }
 
@@ -157,7 +158,7 @@ void downlink_send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
   ack[1] = ack_type;
   ack[2] = internet_flag;
   lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
-  ESP_LOGD(TAG, "ACK sent: type=0x%02X, internet=%u", ack_type, internet_flag);
+  ESP_LOGI(TAG, "ACK sent: type=0x%02X, internet=%u", ack_type, internet_flag);
 }
 
 // ===== Config Request Handler =====
@@ -207,7 +208,7 @@ esp_err_t mcu_lan_handler_start(void) {
   }
 
   ESP_LOGI(TAG, "╔════════════════════════════════════════════════════╗");
-  ESP_LOGI(TAG, "║   MCU LAN Handler (QSPI Slave - WAN MCU)          ║");
+  ESP_LOGI(TAG, "║   MCU LAN Handler (SPI Slave - WAN MCU)           ║");
   ESP_LOGI(TAG, "╚════════════════════════════════════════════════════╝");
 
   if (setup_data_ready_gpio() != ESP_OK) {
@@ -231,29 +232,26 @@ esp_err_t mcu_lan_handler_start(void) {
     }
   }
 
-  // Initialize LAN communication (QSPI Slave HD)
+  // Initialize LAN communication (SPI Slave)
   lan_comm_config_t lan_config = {.gpio_sck = 12,
                                   .gpio_cs = 10,
                                   .gpio_io0 = 11,
                                   .gpio_io1 = 13,
-                                  .gpio_io2 = 14,
-                                  .gpio_io3 = 15,
                                   .gpio_data_ready = GPIO_DATA_READY_PIN,
                                   .mode = 0,
                                   .host_id = SPI2_HOST,
                                   .dma_channel = SPI_DMA_CH_AUTO,
                                   .rx_buffer_size = 8192,
                                   .tx_buffer_size = 8192,
-                                  .enable_quad_mode = true,
                                   .auto_signal_data_ready = false};
 
   lan_comm_status_t status = lan_comm_init(&lan_config, &g_lan_handle);
   if (status != LAN_COMM_OK) {
-    ESP_LOGE(TAG, "Failed to initialize LAN comm (QSPI Slave): %d", status);
+    ESP_LOGE(TAG, "Failed to initialize LAN comm (SPI Slave): %d", status);
     return ESP_FAIL;
   }
 
-  ESP_LOGI(TAG, "QSPI Slave initialized: 40 MHz, 8KB buffers, QIO mode");
+  ESP_LOGI(TAG, "SPI Slave initialized: 8KB buffers");
 
   g_downlink_queue = xQueueCreate(DOWNLINK_QUEUE_SIZE, sizeof(downlink_item_t));
   if (g_downlink_queue == NULL) {
@@ -382,6 +380,10 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     g_config_cache.has_config = true;
     g_config_cache.is_fota = is_fota;
     g_config_cache_has_config = true;
+
+    if (is_fota) {
+      g_fota_request_pending = true;
+    }
 
     ESP_LOGI(TAG, "Config cached: %u bytes, FOTA=%s", length,
              is_fota ? "YES" : "NO");

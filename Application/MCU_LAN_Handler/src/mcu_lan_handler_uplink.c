@@ -1,6 +1,6 @@
 /**
  * @file mcu_lan_handler_uplink.c
- * @brief MCU LAN Handler - Uplink Processor Task (QSPI Slave, Priority 6)
+ * @brief MCU LAN Handler - Uplink Processor Task (SPI Slave, Priority 6)
  */
 #include "DA2_esp.h"
 #include "config_handler.h"
@@ -45,6 +45,7 @@ extern config_req_state_t g_config_req_state;
 extern config_request_t *g_active_config_request_ptr;
 extern bool g_active_config_request_valid;
 extern bool g_config_cache_has_config;
+extern bool g_fota_request_pending;
 
 // Forward declarations from downlink module
 extern void downlink_send_rtc_response(void);
@@ -55,6 +56,9 @@ extern void downlink_send_ack_to_lan(ack_type_t ack_type,
 // ===== Uplink Module State =====
 static uint32_t g_cached_lan_fw_version = 0;
 static TaskHandle_t g_uplink_task_handle = NULL;
+static TaskHandle_t g_fota_task_handle = NULL;
+static SemaphoreHandle_t g_fota_start_sem = NULL;
+static bool g_fota_pending = false;
 
 // Pending downlink (set by downlink module)
 typedef struct {
@@ -80,13 +84,13 @@ static rtc_cache_t g_rtc_cache = {.valid = false};
 
 // ===== Forward Declarations =====
 static void uplink_processor_task(void *pvParameters);
+static void fota_task(void *pvParameters);
 static esp_err_t perform_handshake_slave(void);
 static void process_handshake(const uint8_t *payload, uint16_t length);
 static void process_data_from_lan(const uint8_t *payload, uint16_t length);
 static void process_data_query(void);
 static void process_config_query(const lan_comm_packet_t *packet);
 static bool check_fota_required(uint32_t received_lan_version);
-static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms);
 static void send_downlink_to_lan(const downlink_item_t *item);
 static void clear_data_ready(void);
 
@@ -114,6 +118,26 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
     return ESP_FAIL;
   }
 
+  g_fota_start_sem = xSemaphoreCreateBinary();
+  if (g_fota_start_sem == NULL) {
+    ESP_LOGE(TAG, "Failed to create FOTA semaphore");
+    vTaskDelete(g_uplink_task_handle);
+    g_uplink_task_handle = NULL;
+    vSemaphoreDelete(g_rtc_cache.mutex);
+    return ESP_FAIL;
+  }
+
+  ret = xTaskCreate(fota_task, "lan_fota", 4096, NULL, 5, &g_fota_task_handle);
+  if (ret != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create FOTA task");
+    vSemaphoreDelete(g_fota_start_sem);
+    g_fota_start_sem = NULL;
+    vTaskDelete(g_uplink_task_handle);
+    g_uplink_task_handle = NULL;
+    vSemaphoreDelete(g_rtc_cache.mutex);
+    return ESP_FAIL;
+  }
+
   ESP_LOGI(TAG, "Uplink processor task started (Priority 6, stack 6KB)");
   return ESP_OK;
 }
@@ -122,6 +146,14 @@ void mcu_lan_handler_stop_uplink_task(void) {
   if (g_uplink_task_handle) {
     vTaskDelete(g_uplink_task_handle);
     g_uplink_task_handle = NULL;
+  }
+  if (g_fota_task_handle) {
+    vTaskDelete(g_fota_task_handle);
+    g_fota_task_handle = NULL;
+  }
+  if (g_fota_start_sem) {
+    vSemaphoreDelete(g_fota_start_sem);
+    g_fota_start_sem = NULL;
   }
   if (g_rtc_cache.mutex) {
     vSemaphoreDelete(g_rtc_cache.mutex);
@@ -132,23 +164,23 @@ void mcu_lan_handler_stop_uplink_task(void) {
 // ===== Main Uplink Task =====
 static void uplink_processor_task(void *pvParameters) {
   ESP_LOGI(TAG, "╔════════════════════════════════════════════════════╗");
-  ESP_LOGI(TAG, "║   Uplink Processor (QSPI Slave, Priority 6)       ║");
+  ESP_LOGI(TAG, "║   Uplink Processor (SPI Slave, Priority 6)        ║");
   ESP_LOGI(TAG, "╚════════════════════════════════════════════════════╝");
 
   // ===== Phase 1: Handshake =====
   ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
   while (g_handler_running) {
     if (perform_handshake_slave() == ESP_OK) {
-      ESP_LOGI(TAG, "Handshake complete, entering QSPI receive loop");
+      ESP_LOGI(TAG, "Handshake complete, entering SPI receive loop");
       break;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
-  // ===== Phase 2: QSPI Receive Loop =====
-  ESP_LOGI(TAG, "Phase 2: QSPI Receive Loop");
+  // ===== Phase 2: SPI Receive Loop =====
+  ESP_LOGI(TAG, "Phase 2: SPI Receive Loop");
   while (g_handler_running) {
-    // Pre-queue RX transaction (mandatory for QSPI slave)
+    // Pre-queue RX transaction (mandatory for SPI slave)
     lan_comm_queue_receive(g_lan_handle);
 
     // Block on completion (100ms timeout)
@@ -162,9 +194,23 @@ static void uplink_processor_task(void *pvParameters) {
       continue;
     }
 
+    // Handle FOTA handshake ACK without blocking the RX loop.
+    if (g_fota_pending && packet.payload_length >= 2 &&
+        packet.payload[0] == FRAME_TYPE_ACK &&
+        packet.payload[1] == ACK_TYPE_HANDSHAKE) {
+      ESP_LOGI(TAG, "FOTA handshake ACK received from LAN MCU");
+      g_fota_pending = false;
+      g_fota_request_pending = false;
+      if (g_fota_start_sem) {
+        xSemaphoreGive(g_fota_start_sem);
+      }
+      vTaskDelay(pdMS_TO_TICKS(1));
+      continue;
+    }
+
     // Extract header (big-endian)
     uint16_t header = (packet.payload[0] << 8) | packet.payload[1];
-    ESP_LOGD(TAG, "QSPI RX: header=0x%04X, len=%u", header,
+    ESP_LOGI(TAG, "SPI RX: header=0x%04X, len=%u", header,
              packet.payload_length);
 
     // ===== Dispatch Frame =====
@@ -223,8 +269,15 @@ static esp_err_t perform_handshake_slave(void) {
   lan_comm_status_t status =
       lan_comm_get_received_packet(g_lan_handle, &packet, 500);
   if (status != LAN_COMM_OK) {
+    ESP_LOGD(TAG, "Handshake RX timeout or error: %d", status);
     return ESP_FAIL;
   }
+
+  // Debug: Log received packet
+  ESP_LOGI(TAG, "RX packet: len=%u", packet.payload_length);
+  ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
+                         packet.payload_length > 32 ? 32 : packet.payload_length, 
+                         ESP_LOG_INFO);
 
   // Check for handshake request: [CF][0x01][fw_version(4)]
   if (packet.payload_length >= 7 && packet.payload[0] == 0x43 &&
@@ -254,6 +307,9 @@ static esp_err_t perform_handshake_slave(void) {
     response[6] = WAN_FW_VERSION & 0xFF;
 
     // Load TX buffer
+    ESP_LOGI(TAG, "Sending handshake response:");
+    ESP_LOG_BUFFER_HEXDUMP(TAG, response, sizeof(response), ESP_LOG_INFO);
+    
     lan_comm_load_tx_data(g_lan_handle, response, sizeof(response));
     ESP_LOGI(TAG,
              "Handshake complete: Internet=%s, WAN FW=v%u.%u.%u.%u, FOTA=%s",
@@ -266,18 +322,8 @@ static esp_err_t perform_handshake_slave(void) {
       ESP_LOGW(TAG, "╔════════════════════════════════════════════════════╗");
       ESP_LOGW(TAG, "║  FOTA TRIGGER: New LAN version detected           ║");
       ESP_LOGW(TAG, "╚════════════════════════════════════════════════════╝");
-
-      // Wait for FOTA handshake ACK before starting update
-      if (wait_for_fota_handshake_ack(300000) == ESP_OK) {
-        ESP_LOGI(TAG, "FOTA pre-handshake completed, initiating WAN update");
-        server_connect_stop(g_server_type);
-        led_show_blue();
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        fota_handler_task_start();
-        vTaskDelay(pdMS_TO_TICKS(200000)); // Block until FOTA done
-      } else {
-        ESP_LOGW(TAG, "FOTA pre-handshake failed, aborting");
-      }
+      g_fota_pending = true;
+      ESP_LOGI(TAG, "FOTA pending, waiting for ACK in receive loop");
     }
 
     return ESP_OK;
@@ -303,7 +349,10 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
            FW_VERSION_PATCH(lan_fw_version), FW_VERSION_BUILD(lan_fw_version));
 
   // Check FOTA requirement
-  check_fota_required(lan_fw_version);
+  if (check_fota_required(lan_fw_version)) {
+    g_fota_pending = true;
+    ESP_LOGI(TAG, "FOTA pending, waiting for ACK in receive loop");
+  }
 
   // Send handshake response
   uint8_t response[7];
@@ -316,7 +365,7 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
   response[6] = WAN_FW_VERSION & 0xFF;
 
   lan_comm_load_tx_data(g_lan_handle, response, sizeof(response));
-  ESP_LOGD(TAG, "Handshake ACK sent in data mode");
+  ESP_LOGI(TAG, "Handshake ACK sent in data mode");
 }
 
 // ===== Process Data from LAN =====
@@ -410,7 +459,7 @@ static void process_data_query(void) {
     // Clear GPIO handshake once something has been served
     clear_data_ready();
   } else {
-    ESP_LOGD(TAG, "DQ received but nothing pending to send");
+    ESP_LOGI(TAG, "DQ received but nothing pending to send");
   }
 }
 
@@ -503,41 +552,36 @@ static void process_config_query(const lan_comm_packet_t *packet) {
 }
 
 // ===== FOTA Handshake ACK Wait =====
-static esp_err_t wait_for_fota_handshake_ack(uint32_t timeout_ms) {
-  TickType_t start = xTaskGetTickCount();
-  while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(timeout_ms)) {
-    lan_comm_queue_receive(g_lan_handle);
-
-    lan_comm_packet_t packet;
-    lan_comm_status_t status =
-        lan_comm_get_received_packet(g_lan_handle, &packet, RX_TIMEOUT_MS);
-
-    if (status == LAN_COMM_OK && packet.payload_length >= 2) {
-      if (packet.payload[0] == FRAME_TYPE_ACK &&
-          packet.payload[1] == ACK_TYPE_HANDSHAKE) {
-        ESP_LOGI(TAG, "FOTA handshake ACK received from LAN MCU");
-        return ESP_OK;
-      }
+static void fota_task(void *pvParameters) {
+  while (true) {
+    if (xSemaphoreTake(g_fota_start_sem, portMAX_DELAY) != pdTRUE) {
+      continue;
     }
-    vTaskDelay(pdMS_TO_TICKS(50));
-  }
 
-  ESP_LOGW(TAG, "FOTA handshake ACK timeout");
-  return ESP_FAIL;
+    ESP_LOGI(TAG, "FOTA pre-handshake completed, initiating WAN update");
+    server_connect_stop(g_server_type);
+    led_show_blue();
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    fota_handler_task_start();
+    vTaskDelay(pdMS_TO_TICKS(200000));
+  }
 }
 
 // ===== FOTA Version Check =====
 static bool check_fota_required(uint32_t received_lan_version) {
   if (received_lan_version > g_cached_lan_fw_version) {
     g_cached_lan_fw_version = received_lan_version;
-    ESP_LOGW(TAG, "New LAN version: v%u.%u.%u.%u → Trigger FOTA",
-             FW_VERSION_MAJOR(received_lan_version),
-             FW_VERSION_MINOR(received_lan_version),
-             FW_VERSION_PATCH(received_lan_version),
-             FW_VERSION_BUILD(received_lan_version));
-    return true;
+    if (g_fota_request_pending) {
+      ESP_LOGW(TAG, "New LAN version: v%u.%u.%u.%u → Trigger FOTA",
+               FW_VERSION_MAJOR(received_lan_version),
+               FW_VERSION_MINOR(received_lan_version),
+               FW_VERSION_PATCH(received_lan_version),
+               FW_VERSION_BUILD(received_lan_version));
+      return true;
+    }
+    ESP_LOGI(TAG, "New LAN version but no FOTA request, skip WAN FOTA");
   } else if (received_lan_version == g_cached_lan_fw_version) {
-    ESP_LOGD(TAG, "LAN version unchanged: v%u.%u.%u.%u",
+    ESP_LOGI(TAG, "LAN version unchanged: v%u.%u.%u.%u",
              FW_VERSION_MAJOR(received_lan_version),
              FW_VERSION_MINOR(received_lan_version),
              FW_VERSION_PATCH(received_lan_version),

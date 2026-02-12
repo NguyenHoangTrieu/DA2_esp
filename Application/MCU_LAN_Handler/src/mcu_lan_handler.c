@@ -295,14 +295,11 @@ esp_err_t mcu_lan_handler_start(void) {
                                   .gpio_cs = 10,
                                   .gpio_io0 = 11,
                                   .gpio_io1 = 13,
-                                  .gpio_io2 = -1,
-                                  .gpio_io3 = -1,
                                   .mode = 0,
                                   .host_id = SPI2_HOST,
                                   .dma_channel = SPI_DMA_CH_AUTO,
                                   .rx_buffer_size = 4096,
-                                  .tx_buffer_size = 4096,
-                                  .enable_quad_mode = false};
+                                  .tx_buffer_size = 4096};
 
   lan_comm_status_t status = lan_comm_init(&lan_config, &g_lan_handle);
   if (status != LAN_COMM_OK) {

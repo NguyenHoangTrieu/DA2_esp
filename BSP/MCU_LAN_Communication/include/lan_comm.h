@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "driver/spi_slave_hd.h"
+#include "driver/spi_slave.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -16,7 +16,7 @@ extern "C" {
 #define LAN_COMM_ACK_TIMEOUT_MS       500
 #define LAN_COMM_DQ_RETRY_MS          50        //
 #define LAN_COMM_DQ_RETRY_COUNT       10
-#define LAN_COMM_GPIO_PULSE_US        100       // Data-ready pulse width
+#define LAN_COMM_GPIO_PULSE_US        100
 #define LAN_COMM_DMA_DESCRIPTOR_SIZE  4092
 #define LAN_COMM_MAX_DMA_DESCRIPTORS  8
 
@@ -46,7 +46,7 @@ typedef enum {
 // STRUCTURES
 
 /**
- * @brief QSPI Slave Configuration
+ * @brief SPI Slave Configuration
  */
 typedef struct {
     // GPIO pins
@@ -54,8 +54,6 @@ typedef struct {
     int gpio_cs;
     int gpio_io0;
     int gpio_io1;
-    int gpio_io2;           // -1 if not used
-    int gpio_io3;           // -1 if not used
     int gpio_data_ready;    // GPIO8 output, -1 to disable
     
     // SPI settings
@@ -68,7 +66,6 @@ typedef struct {
     size_t tx_buffer_size;
     
     // Features
-    bool enable_quad_mode;
     bool auto_signal_data_ready;  // Auto-pulse GPIO on TX load
 } lan_comm_config_t;
 
@@ -80,15 +77,12 @@ typedef struct {
     .gpio_cs = 10, \
     .gpio_io0 = 11, \
     .gpio_io1 = 13, \
-    .gpio_io2 = -1, \
-    .gpio_io3 = -1, \
     .gpio_data_ready = 8, \
     .mode = 0, \
     .host_id = SPI2_HOST, \
     .dma_channel = SPI_DMA_CH_AUTO, \
     .rx_buffer_size = LAN_COMM_DEFAULT_RX_BUFFER, \
     .tx_buffer_size = LAN_COMM_DEFAULT_TX_BUFFER, \
-    .enable_quad_mode = false, \
     .auto_signal_data_ready = false \
 }
 
@@ -114,7 +108,7 @@ typedef void (*lan_comm_frame_callback_t)(const lan_comm_packet_t *packet, void 
 
 // PUBLIC API
 /**
- * @brief Initialize QSPI Slave with DMA buffering
+ * @brief Initialize SPI Slave with DMA buffering
  * 
  * @param config Configuration structure
  * @param[out] handle Output handle
@@ -123,7 +117,7 @@ typedef void (*lan_comm_frame_callback_t)(const lan_comm_packet_t *packet, void 
 lan_comm_status_t lan_comm_init(const lan_comm_config_t *config, lan_comm_handle_t *handle);
 
 /**
- * @brief Deinitialize QSPI Slave
+ * @brief Deinitialize SPI Slave
  */
 lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle);
 
