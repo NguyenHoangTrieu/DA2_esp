@@ -24,4 +24,11 @@ esp_err_t ppp_server_init(void);
  */
 esp_err_t ppp_server_deinit(void);
 
+/**
+ * @brief Check if PPP server is initialized
+ * 
+ * @return true if initialized, false otherwise
+ */
+bool ppp_server_is_initialized(void);
+
 #endif /* PPP_SERVER_H */

@@ -219,3 +219,7 @@ bool ppp_server_is_client_connected(void) {
   EventBits_t bits = xEventGroupGetBits(s_ppp_event_group);
   return (bits & PPP_CLIENT_CONNECTED_BIT) != 0;
 }
+
+bool ppp_server_is_initialized(void) {
+  return s_ppp_server_initialized;
+}

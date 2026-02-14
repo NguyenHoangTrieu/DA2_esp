@@ -11,8 +11,8 @@
 #define PPP_UART_RX_PIN         GPIO_NUM_42
 
 /* UART Buffer Sizes */
-#define PPP_UART_BUF_SIZE       (16*1024)
-#define PPP_UART_QUEUE_SIZE     (20)
+#define PPP_UART_BUF_SIZE       (32*1024)  // Increased to 32KB for FOTA stability
+#define PPP_UART_QUEUE_SIZE     (40)
 
 /* OTA Trigger and Response Commands */
 #define PPP_TRIGGER_CMD         "START_OTA\n"

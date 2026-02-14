@@ -322,22 +322,32 @@ void advanced_ota_task(void *pvParameter)
     esp_https_ota_handle_t https_ota_handle = NULL;
     err = esp_https_ota_begin(&ota_config, &https_ota_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ESP HTTPS OTA Begin failed");
+        ESP_LOGE(TAG, "ESP HTTPS OTA Begin failed: %s", esp_err_to_name(err));
         fota_handler_task_stop();
-        vTaskDelete(NULL);
+        ESP_LOGI(TAG, "FOTA error - restarting device");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
     }
 
     esp_app_desc_t app_desc = {};
     err = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed");
-        goto ota_end;
+        ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed: %s", esp_err_to_name(err));
+        esp_https_ota_abort(https_ota_handle);
+        fota_handler_task_stop();
+        ESP_LOGI(TAG, "FOTA error - restarting device");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
     }
     
     err = validate_image_header(&app_desc);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "image header verification failed");
-        goto ota_end;
+        esp_https_ota_abort(https_ota_handle);
+        fota_handler_task_stop();
+        ESP_LOGI(TAG, "FOTA error - restarting device");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
     }
 
     while (1) {
@@ -378,15 +388,18 @@ void advanced_ota_task(void *pvParameter)
             }
             ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed 0x%x", ota_finish_err);
             fota_handler_task_stop();
-            vTaskDelete(NULL);
+            ESP_LOGI(TAG, "FOTA error - restarting device");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
         }
     }
 
-ota_end:
     esp_https_ota_abort(https_ota_handle);
     ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed");
     fota_handler_task_stop();
-    vTaskDelete(NULL);
+    ESP_LOGI(TAG, "FOTA error - restarting device");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
 }
 
 void fota_handler_task_start(void) 

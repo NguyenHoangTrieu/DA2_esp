@@ -16,9 +16,9 @@
 // ===== Firmware Version =====
 // Update these values for new releases
 #define WAN_FW_VERSION_MAJOR 1
-#define WAN_FW_VERSION_MINOR 2
-#define WAN_FW_VERSION_PATCH 3
-#define WAN_FW_VERSION_BUILD 4
+#define WAN_FW_VERSION_MINOR 1
+#define WAN_FW_VERSION_PATCH 1
+#define WAN_FW_VERSION_BUILD 2
 
 #define WAN_FW_VERSION                                                         \
   FW_VERSION_MAKE(WAN_FW_VERSION_MAJOR, WAN_FW_VERSION_MINOR,                  \

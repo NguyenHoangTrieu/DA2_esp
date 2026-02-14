@@ -17,6 +17,7 @@
 #include "mqtt_handler.h"
 #include "pcf8563_rtc.h"
 #include "rbg_handler.h"
+#include "ppp_server.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -28,6 +29,7 @@ static const char *TAG = "MCU_LAN_UL";
 #define ACK_WAIT_TIMEOUT_MS 500
 #define MAX_RETRY_COUNT 3
 #define GPIO_DATA_READY_PIN 8
+#define LAN_FOTA_TIMEOUT_MS 300000  // 300 seconds timeout for LAN FOTA completion
 
 // ===== Config Request State Machine =====
 typedef enum {
@@ -55,10 +57,18 @@ extern void downlink_send_ack_to_lan(ack_type_t ack_type,
 
 // ===== Uplink Module State =====
 static uint32_t g_cached_lan_fw_version = 0;
+static uint32_t g_cached_wan_fw_version = 0;
+static bool g_waiting_for_lan_update = false;     // LAN is updating via FOTA
+static bool g_wan_fota_in_progress = false;       // WAN FOTA is running (prevents re-trigger)
 static TaskHandle_t g_uplink_task_handle = NULL;
 static TaskHandle_t g_fota_task_handle = NULL;
 static SemaphoreHandle_t g_fota_start_sem = NULL;
 static bool g_fota_pending = false;
+static bool g_fota_trigger_pending = false;  // Flag: FOTA trigger ready to send to LAN
+static bool g_fota_pending_internet = false;  // FOTA needed but waiting for internet
+static uint32_t g_pending_lan_version_for_fota = 0;  // Cached version while waiting
+static internet_status_t g_prev_internet_status = INTERNET_STATUS_OFFLINE;  // Track status changes
+static TickType_t g_lan_fota_wait_start_tick = 0;  // Track when LAN FOTA trigger was sent
 
 // Pending downlink (set by downlink module)
 typedef struct {
@@ -93,6 +103,7 @@ static void process_config_query(const lan_comm_packet_t *packet);
 static bool check_fota_required(uint32_t received_lan_version);
 static void send_downlink_to_lan(const downlink_item_t *item);
 static void clear_data_ready(void);
+static void send_fota_trigger_to_lan(void);
 
 // ===== Helper: Clear Data Ready GPIO =====
 static void clear_data_ready(void) {
@@ -163,9 +174,7 @@ void mcu_lan_handler_stop_uplink_task(void) {
 
 // ===== Main Uplink Task =====
 static void uplink_processor_task(void *pvParameters) {
-  ESP_LOGI(TAG, "╔════════════════════════════════════════════════════╗");
-  ESP_LOGI(TAG, "║   Uplink Processor (SPI Slave, Priority 6)        ║");
-  ESP_LOGI(TAG, "╚════════════════════════════════════════════════════╝");
+  ESP_LOGI(TAG, " Uplink Processor (SPI Slave, Priority 6) started ");
 
   // ===== Phase 1: Handshake =====
   ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
@@ -177,9 +186,48 @@ static void uplink_processor_task(void *pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 
+  // Check if server FOTA was triggered during handshake
+  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if (g_fota_request_pending) {
+      ESP_LOGW(TAG, "[FOTA] Server command detected - waiting for LAN update");
+      g_waiting_for_lan_update = true;
+    }
+    xSemaphoreGive(g_config_mutex);
+  }
+
   // ===== Phase 2: SPI Receive Loop =====
   ESP_LOGI(TAG, "Phase 2: SPI Receive Loop");
+  
   while (g_handler_running) {
+    
+    // ===== Timeout Check: LAN FOTA waiting timeout =====
+    if (g_waiting_for_lan_update && g_lan_fota_wait_start_tick > 0) {
+      TickType_t elapsed = xTaskGetTickCount() - g_lan_fota_wait_start_tick;
+      if (elapsed >= pdMS_TO_TICKS(LAN_FOTA_TIMEOUT_MS)) {
+        ESP_LOGE(TAG, "[TIMEOUT] LAN FOTA handshake not received after %d seconds", LAN_FOTA_TIMEOUT_MS/1000);
+        ESP_LOGE(TAG, "[TIMEOUT] LAN may have failed FOTA or stuck - resetting wait flag");
+        g_waiting_for_lan_update = false;
+        g_lan_fota_wait_start_tick = 0;
+      }
+    }
+    
+    // ===== Periodic Check: FOTA pending internet trigger =====
+    // Check if previously pending FOTA can now be triggered (internet came online)
+    if (g_fota_pending_internet && g_internet_status == INTERNET_STATUS_ONLINE && 
+        g_prev_internet_status == INTERNET_STATUS_OFFLINE) {
+      ESP_LOGI(TAG, "[FOTA] Internet just came online, triggering pending FOTA");
+      g_not_ppp_to_lan = true;
+      if (!ppp_server_is_initialized()) {
+        ppp_server_init();
+        vTaskDelay(pdMS_TO_TICKS(200));
+      }
+      send_fota_trigger_to_lan();
+      g_waiting_for_lan_update = true;
+      g_lan_fota_wait_start_tick = xTaskGetTickCount();  // Start timeout timer
+      g_fota_pending_internet = false;
+    }
+    g_prev_internet_status = g_internet_status;
+    
     // Pre-queue RX transaction (mandatory for SPI slave)
     lan_comm_queue_receive(g_lan_handle);
 
@@ -224,7 +272,13 @@ static void uplink_processor_task(void *pvParameters) {
         } else if (packet.payload[2] == 'R' && packet.payload[3] == 'T') {
           // RTC request
           ESP_LOGI(TAG, "RTC request received");
-          downlink_send_rtc_response();
+          // Avoid overwriting TX buffer while config/downlink is pending.
+          if (g_config_cache_has_config || g_active_config_request_valid ||
+              g_pending_downlink_valid) {
+            ESP_LOGI(TAG, "RTC response deferred (pending TX payload)");
+          } else {
+            downlink_send_rtc_response();
+          }
         } else if (packet.payload[2] == 'C' && packet.payload[3] == 'F') {
           // Config request
           ESP_LOGI(TAG, "Config request received");
@@ -235,6 +289,8 @@ static void uplink_processor_task(void *pvParameters) {
           ESP_LOGI(TAG, "Config query received from LAN");
           process_config_query(&packet);
         }
+        // Note: FOTA trigger from LAN uses format [CF][FW] but WAN doesn't receive it
+        // WAN only sends FOTA trigger to LAN, never receives it from LAN
       }
       break;
 
@@ -257,6 +313,73 @@ static void uplink_processor_task(void *pvParameters) {
 
   ESP_LOGI(TAG, "Uplink processor task exiting");
   vTaskDelete(NULL);
+}
+
+// ===== FOTA Requirement Check =====
+// Wait for internet and trigger FOTA when online (similar to config_handler MCU_LAN case)
+static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
+  g_cached_lan_fw_version = received_lan_version;
+  g_cached_wan_fw_version = WAN_FW_VERSION;
+
+  uint8_t lan_maj = FW_VERSION_MAJOR(received_lan_version);
+  uint8_t lan_min = FW_VERSION_MINOR(received_lan_version);
+  uint8_t lan_pat = FW_VERSION_PATCH(received_lan_version);
+  uint8_t lan_bld = FW_VERSION_BUILD(received_lan_version);
+  uint8_t wan_maj = FW_VERSION_MAJOR(WAN_FW_VERSION);
+  uint8_t wan_min = FW_VERSION_MINOR(WAN_FW_VERSION);
+  uint8_t wan_pat = FW_VERSION_PATCH(WAN_FW_VERSION);
+  uint8_t wan_bld = FW_VERSION_BUILD(WAN_FW_VERSION);
+
+  // Check for version mismatch or server FOTA command
+  bool version_mismatch = (lan_maj != wan_maj || lan_min != wan_min ||
+                           lan_pat != wan_pat || lan_bld != wan_bld);
+  
+  bool server_fota = false;
+  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    server_fota = g_fota_request_pending;
+    xSemaphoreGive(g_config_mutex);
+  }
+
+  if (!version_mismatch && !server_fota) {
+    return;  // No FOTA needed
+  }
+
+  // If already waiting for LAN update or WAN FOTA in progress, don't trigger again
+  if (g_waiting_for_lan_update || g_wan_fota_in_progress) {
+    return;
+  }
+
+  if (version_mismatch) {
+    ESP_LOGW(TAG, "[MISMATCH] Detected: LAN v%u.%u.%u.%u vs WAN v%u.%u.%u.%u",
+             lan_maj, lan_min, lan_pat, lan_bld, wan_maj, wan_min, wan_pat,
+             wan_bld);
+  }
+  if (server_fota) {
+    ESP_LOGW(TAG, "[FOTA] Server command detected");
+  }
+
+  // Check internet status
+  if (g_internet_status != INTERNET_STATUS_ONLINE) {
+    ESP_LOGW(TAG, "[FOTA] Internet offline, marking FOTA pending - will trigger when online");
+    g_fota_pending_internet = true;
+    g_pending_lan_version_for_fota = received_lan_version;
+    return;
+  }
+
+  // Internet is online - proceed with FOTA trigger (following config_handler MCU_LAN pattern)
+  ESP_LOGI(TAG, "[FOTA] Internet online, initializing PPP server for LAN");
+  g_not_ppp_to_lan = true;
+  if (!ppp_server_is_initialized()) {
+    ppp_server_init();
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
+
+  // Trigger LAN FOTA via DQ
+  send_fota_trigger_to_lan();
+  g_waiting_for_lan_update = true;
+  g_lan_fota_wait_start_tick = xTaskGetTickCount();  // Start timeout timer
+  g_fota_pending_internet = false;  // Clear pending flag
+  g_wan_fota_in_progress = false;  // Reset for next FOTA cycle
 }
 
 // ===== Handshake Implementation =====
@@ -293,8 +416,8 @@ static esp_err_t perform_handshake_slave(void) {
              FW_VERSION_PATCH(lan_fw_version),
              FW_VERSION_BUILD(lan_fw_version));
 
-    // Check if FOTA required
-    bool fota_trigger = check_fota_required(lan_fw_version);
+    // Check if FOTA needed and trigger if conditions met
+    trigger_lan_fota_if_needed(lan_fw_version);
 
     // Build handshake response: [ACK][0x10][internet_flag][wan_fw_version(4)]
     uint8_t response[7];
@@ -312,19 +435,9 @@ static esp_err_t perform_handshake_slave(void) {
     
     lan_comm_load_tx_data(g_lan_handle, response, sizeof(response));
     ESP_LOGI(TAG,
-             "Handshake complete: Internet=%s, WAN FW=v%u.%u.%u.%u, FOTA=%s",
+             "Handshake complete: Internet=%s, WAN FW=v%u.%u.%u.%u",
              response[2] ? "ONLINE" : "OFFLINE", WAN_FW_VERSION_MAJOR,
-             WAN_FW_VERSION_MINOR, WAN_FW_VERSION_PATCH, WAN_FW_VERSION_BUILD,
-             fota_trigger ? "TRIGGERED" : "SKIPPED");
-
-    // If FOTA triggered, initiate WAN FOTA
-    if (fota_trigger) {
-      ESP_LOGW(TAG, "╔════════════════════════════════════════════════════╗");
-      ESP_LOGW(TAG, "║  FOTA TRIGGER: New LAN version detected           ║");
-      ESP_LOGW(TAG, "╚════════════════════════════════════════════════════╝");
-      g_fota_pending = true;
-      ESP_LOGI(TAG, "FOTA pending, waiting for ACK in receive loop");
-    }
+             WAN_FW_VERSION_MINOR, WAN_FW_VERSION_PATCH, WAN_FW_VERSION_BUILD);
 
     return ESP_OK;
   }
@@ -348,11 +461,30 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
            FW_VERSION_MAJOR(lan_fw_version), FW_VERSION_MINOR(lan_fw_version),
            FW_VERSION_PATCH(lan_fw_version), FW_VERSION_BUILD(lan_fw_version));
 
-  // Check FOTA requirement
-  if (check_fota_required(lan_fw_version)) {
-    g_fota_pending = true;
-    ESP_LOGI(TAG, "FOTA pending, waiting for ACK in receive loop");
+  // ===== CASE 1: LAN finished FOTA, now WAN starts its own FOTA =====
+  if (g_waiting_for_lan_update) {
+    ESP_LOGW(TAG, "[MISMATCH] LAN FOTA complete (v%u.%u.%u.%u), WAN FOTA starting (NO ACK)",
+             FW_VERSION_MAJOR(lan_fw_version), FW_VERSION_MINOR(lan_fw_version),
+             FW_VERSION_PATCH(lan_fw_version), FW_VERSION_BUILD(lan_fw_version));
+    g_cached_lan_fw_version = lan_fw_version;
+    g_waiting_for_lan_update = false;
+    g_lan_fota_wait_start_tick = 0;  // Clear timeout timer
+    g_wan_fota_in_progress = true;  // Prevent re-triggering while WAN FOTA runs
+    // DO NOT send ACK - let LAN retry handshake
+    // Start WAN FOTA immediately
+    fota_handler_task_start();
+    return;  // Exit without ACK
   }
+
+  // ===== CASE 2: Normal mid-operation handshake =====
+  // If WAN FOTA is in progress, don't send ACK - let LAN keep retrying
+  if (g_wan_fota_in_progress) {
+    ESP_LOGD(TAG, "WAN FOTA in progress, skipping handshake ACK");
+    return;
+  }
+  
+  // Check if FOTA needed - internet check happens in main loop now
+  trigger_lan_fota_if_needed(lan_fw_version);
 
   // Send handshake response
   uint8_t response[7];
@@ -422,8 +554,24 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
 static void process_data_query(void) {
   bool served = false;
 
+  // 0) FOTA trigger to LAN (highest priority)
+  if (g_fota_trigger_pending) {
+    // Build FOTA trigger packet: [CF][length(2)][CFFW]
+    // Format matches what LAN expects for FOTA detection
+    uint8_t fota_trigger_frame[8] = {
+      (WAN_COMM_HEADER_CF >> 8) & 0xFF,  // 'C' = 0x43
+      (WAN_COMM_HEADER_CF & 0xFF),        // 'F' = 0x46
+      0x00, 0x04,                         // Length = 4 bytes
+      'C', 'F', 'F', 'W'                  // FOTA marker
+    };
+    lan_comm_load_tx_data(g_lan_handle, fota_trigger_frame, sizeof(fota_trigger_frame));
+    g_fota_trigger_pending = false;
+    served = true;
+    ESP_LOGI(TAG, "FOTA trigger (CFFW) sent to LAN MCU via DQ");
+  }
+
   // 1) PC-side config scan: send CFCQ only after DQ
-  if (g_active_config_request_valid &&
+  if (!served && g_active_config_request_valid &&
       g_config_req_state == CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ) {
     uint8_t config_request[4];
     config_request[0] = (WAN_COMM_HEADER_CF >> 8) & 0xFF;
@@ -439,13 +587,10 @@ static void process_data_query(void) {
   }
 
   // 2) Config/FOTA downlink to LAN (from WAN config cache)
-  if (!served && xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-    if (g_config_cache_has_config) {
-      ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
-      downlink_handle_config_request();
-      served = true;
-    }
-    xSemaphoreGive(g_config_mutex);
+  if (!served && g_config_cache_has_config) {
+    ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
+    downlink_handle_config_request();
+    served = true;
   }
 
   // 3) Normal downlink data (DT) to LAN
@@ -567,29 +712,15 @@ static void fota_task(void *pvParameters) {
   }
 }
 
-// ===== FOTA Version Check =====
-static bool check_fota_required(uint32_t received_lan_version) {
-  if (received_lan_version > g_cached_lan_fw_version) {
-    g_cached_lan_fw_version = received_lan_version;
-    if (g_fota_request_pending) {
-      ESP_LOGW(TAG, "New LAN version: v%u.%u.%u.%u → Trigger FOTA",
-               FW_VERSION_MAJOR(received_lan_version),
-               FW_VERSION_MINOR(received_lan_version),
-               FW_VERSION_PATCH(received_lan_version),
-               FW_VERSION_BUILD(received_lan_version));
-      return true;
-    }
-    ESP_LOGI(TAG, "New LAN version but no FOTA request, skip WAN FOTA");
-  } else if (received_lan_version == g_cached_lan_fw_version) {
-    ESP_LOGI(TAG, "LAN version unchanged: v%u.%u.%u.%u",
-             FW_VERSION_MAJOR(received_lan_version),
-             FW_VERSION_MINOR(received_lan_version),
-             FW_VERSION_PATCH(received_lan_version),
-             FW_VERSION_BUILD(received_lan_version));
-  } else {
-    ESP_LOGW(TAG, "LAN version downgraded (FOTA aborted)");
-  }
-  return false;
+// ===== Send FOTA Trigger Config to LAN =====
+// (WAN sends this when mismatch detected, to coordinate FOTA timing)
+static void send_fota_trigger_to_lan(void) {
+  // Set flag and signal GPIO - actual frame sent when LAN sends DQ
+  g_fota_trigger_pending = true;
+  gpio_set_level(GPIO_DATA_READY_PIN, 0);
+  vTaskDelay(pdMS_TO_TICKS(1));
+  gpio_set_level(GPIO_DATA_READY_PIN, 1);
+  ESP_LOGI(TAG, "FOTA trigger queued, GPIO signaled - waiting for LAN DQ");
 }
 
 // ===== Public API: Enqueue Uplink to Server =====
