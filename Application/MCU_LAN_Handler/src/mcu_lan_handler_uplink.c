@@ -665,19 +665,20 @@ static void process_config_query(const lan_comm_packet_t *packet) {
     return;
   }
 
-  if (packet->payload_length < 4) {
+  if (packet->payload_length < 6) {
     ESP_LOGE(TAG, "Config query packet too short");
     return;
   }
 
-  // Extract config length
-  uint16_t config_len = (packet->payload[2] << 8) | packet->payload[3];
+  // Extract config length from correct offset: [CF][CQ][length(2)][data...]
+  //                                              0  2   4         6
+  uint16_t config_len = (packet->payload[4] << 8) | packet->payload[5];
   if (config_len > g_active_config_request_ptr->buffer_size - 1) {
     config_len = g_active_config_request_ptr->buffer_size - 1;
   }
 
-  // Copy config data to response buffer
-  memcpy(g_active_config_request_ptr->response_buffer, &packet->payload[4],
+  // Copy config data to response buffer (starts at offset 6)
+  memcpy(g_active_config_request_ptr->response_buffer, &packet->payload[6],
          config_len);
   g_active_config_request_ptr->response_buffer[config_len] = '\0';
   *g_active_config_request_ptr->response_len = config_len;
