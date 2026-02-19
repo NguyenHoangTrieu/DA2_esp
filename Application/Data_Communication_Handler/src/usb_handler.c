@@ -9,7 +9,7 @@
 #include "mqtt_handler.h"
 #include "wifi_connect.h"
 
-#define BUF_SIZE (1024)
+#define BUF_SIZE (8192)
 const char *TAG = "USB_HANDLER";
 
 static TaskHandle_t jtag_task_hdl = NULL;
@@ -257,13 +257,22 @@ static void jtag_task(void *arg) {
 
           config_type_t type = config_parse_type(cmd_data, cmd_len);
           if (type != CONFIG_TYPE_UNKNOWN) {
-            config_command_t cmd;
-            cmd.type = type;
-            cmd.data_len = cmd_len;
-            memcpy(cmd.raw_data, cmd_data, cmd_len);
-            cmd.raw_data[cmd_len] = '\0';
+            // Allocate config_command_t on HEAP (4KB+ struct too large for stack)
+            config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+            if (cmd == NULL) {
+              ESP_LOGE(TAG, "Failed to allocate config command buffer");
+              usb_println("ERROR:OUT_OF_MEMORY");
+              continue;
+            }
+
+            cmd->type = type;
+            cmd->data_len = cmd_len;
+            cmd->from_local_app = true;  // USB commands are from local app
+            memcpy(cmd->raw_data, cmd_data, cmd_len);
+            cmd->raw_data[cmd_len] = '\0';
 
             if (g_config_handler_queue) {
+              // Queue takes ownership, config_handler must free it
               if (xQueueSend(g_config_handler_queue, &cmd,
                              pdMS_TO_TICKS(100)) == pdTRUE) {
                 ESP_LOGI(TAG, "Command forwarded to config handler");
@@ -271,9 +280,11 @@ static void jtag_task(void *arg) {
               } else {
                 ESP_LOGW(TAG, "Config queue full");
                 usb_println("ERROR:QUEUE_FULL");
+                free(cmd);  // Queue full, free memory
               }
             } else {
               usb_println("ERROR:NO_HANDLER");
+              free(cmd);
             }
           } else {
             ESP_LOGW(TAG, "Unknown command type");
@@ -298,7 +309,7 @@ void jtag_task_start(void) {
   close_jtag_task = false;
   BaseType_t task_created;
 
-  task_created = xTaskCreatePinnedToCore(jtag_task, "jtag_handler", 4096, NULL,
+  task_created = xTaskCreatePinnedToCore(jtag_task, "jtag_handler", 1024 * 16, NULL,
                                          JTAG_TASK_PRIORITY, &jtag_task_hdl, 0);
   assert(task_created == pdTRUE);
   ESP_LOGI(TAG, "JTAG handler task created");

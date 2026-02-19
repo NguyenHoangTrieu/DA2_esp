@@ -119,7 +119,9 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
     ESP_LOGE(TAG, "Failed to read time from PCF8563: %s", esp_err_to_name(ret));
     return ret;
   }
-  ESP_LOGD(TAG,
+  
+  // CRITICAL DEBUG: Show RAW register values
+  ESP_LOGI(TAG,
            "Raw PCF8563 registers: [0]=0x%02X [1]=0x%02X [2]=0x%02X [3]=0x%02X "
            "[4]=0x%02X [5]=0x%02X [6]=0x%02X",
            data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
@@ -144,9 +146,10 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
     timeinfo->tm_year = year; // 1900-1999
   }
 
-  ESP_LOGD(TAG, "Read time: %04d-%02d-%02d %02d:%02d:%02d",
+  ESP_LOGI(TAG, "Read time: %04d-%02d-%02d %02d:%02d:%02d (VL=%d, Century=%d)",
            timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-           timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+           timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
+           (data[0] & PCF8563_SECONDS_VL) ? 1 : 0, century);
 
   return ESP_OK;
 }
@@ -205,6 +208,13 @@ esp_err_t pcf8563_write_time(const struct tm *timeinfo) {
            timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
            timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
 
+  // CRITICAL: Restart clock to ensure counting after time write
+  // Without this, the clock may remain halted
+  ret = pcf8563_start();
+  if (ret != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to restart clock after time write");
+  }
+
   return ESP_OK;
 }
 
@@ -240,12 +250,21 @@ esp_err_t pcf8563_start(void) {
     return ret;
   }
 
+  ESP_LOGI(TAG, "Before start: CTRL1=0x%02X (STOP bit=%d)", 
+           ctrl_status1, (ctrl_status1 & PCF8563_CTRL1_STOP) ? 1 : 0);
+
   ctrl_status1 &= ~PCF8563_CTRL1_STOP; // Clear STOP bit
   uint8_t data[2] = {PCF8563_REG_CTRL_STATUS1, ctrl_status1};
 
   ret = i2c_dev_support_write(pcf8563_handle, data, 2, 1000);
   if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "PCF8563 clock started");
+    // Verify write succeeded
+    vTaskDelay(pdMS_TO_TICKS(10));
+    uint8_t verify;
+    i2c_dev_support_write_read(pcf8563_handle, &reg_addr, 1, &verify, 1, 1000);
+    ESP_LOGI(TAG, "After start: CTRL1=0x%02X (STOP bit=%d) - Clock %s", 
+             verify, (verify & PCF8563_CTRL1_STOP) ? 1 : 0,
+             (verify & PCF8563_CTRL1_STOP) ? "STOPPED" : "RUNNING");
   }
 
   return ret;

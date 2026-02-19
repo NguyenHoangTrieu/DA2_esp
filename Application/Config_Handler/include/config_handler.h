@@ -17,8 +17,9 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 
-// Command buffer size
-#define CONFIG_CMD_MAX_LEN 256
+// Command buffer size - Increased to support large JSON configs (up to 4KB)
+// Must match MAX_CONFIG_LENGTH in uart_handler.c
+#define CONFIG_CMD_MAX_LEN 4096
 #define CONFIG_QUEUE_SIZE 20
 
 // Command type codes (2-character prefix)
@@ -78,8 +79,9 @@ typedef struct {
 } mqtt_config_data_t;
 
 //MCU LAN Communication configuration structure
+// Increased buffer size to match CONFIG_CMD_MAX_LEN for large JSON configs
 typedef struct {
-    char command[64];
+    char command[CONFIG_CMD_MAX_LEN];
     int  length;
 } mcu_lan_config_data_t;
 
@@ -88,6 +90,7 @@ typedef struct {
     config_type_t type;
     char raw_data[CONFIG_CMD_MAX_LEN];
     uint16_t data_len;
+    bool from_local_app;  // true = UART/USB, false = MQTT server
 } config_command_t;
 
 // Queue handles for each subsystem

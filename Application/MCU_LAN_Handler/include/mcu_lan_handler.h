@@ -66,9 +66,19 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
 
 /**
  * @brief Update config data to send to LAN MCU
+ * @param config_data Config data buffer
+ * @param length Config length
+ * @param is_fota True if FOTA command
+ * @param from_local_app True if from local app (UART/USB), false if from server
  */
 void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota);
+                                   bool is_fota, bool from_local_app);
+
+/**
+ * @brief Get last config command source (for ACK routing)
+ * @return true if from local app (UART/USB), false if from server (MQTT)
+ */
+bool mcu_lan_handler_get_config_source_is_local(void);
 
 /**
  * @brief Enqueue uplink data to server (MQTT/HTTP)

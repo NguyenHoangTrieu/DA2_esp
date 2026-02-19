@@ -24,7 +24,7 @@
 #define DEFAULT_UART_BAUD_RATE 115200
 #define DEFAULT_UART_TX_PIN GPIO_NUM_43
 #define DEFAULT_UART_RX_PIN GPIO_NUM_44
-#define UART_BUF_SIZE 512
+#define UART_BUF_SIZE 4096
 
 /**
  * @brief Mode switch callback type

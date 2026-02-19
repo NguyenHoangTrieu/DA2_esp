@@ -168,15 +168,16 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       config_command_t cmd;
       cmd.type = type;
       cmd.data_len = cmd_len;
+      cmd.from_local_app = false;  // MQTT commands are from server
       memcpy(cmd.raw_data, cmd_data, cmd_len);
       cmd.raw_data[cmd_len] = '\0';
 
       extern QueueHandle_t g_config_handler_queue;
       if (g_config_handler_queue && xQueueSend(g_config_handler_queue, &cmd,
                                                pdMS_TO_TICKS(100)) == pdTRUE) {
-        ESP_LOGI(TAG, "✓ Config forwarded to config handler");
+        ESP_LOGI(TAG, "Config forwarded to config handler");
       } else {
-        ESP_LOGW(TAG, "✗ Failed to send to config handler");
+        ESP_LOGW(TAG, "Failed to send to config handler");
       }
     } else {
       ESP_LOGW(TAG, "Unknown config type");

@@ -14,7 +14,6 @@
 #define DEFAULT_UART_BAUD_RATE 115200
 #define DEFAULT_UART_TX_PIN GPIO_NUM_43
 #define DEFAULT_UART_RX_PIN GPIO_NUM_44
-#define UART_BUF_SIZE 512
 
 static const char *TAG = "uart_handler";
 static bool uart_handler_running = false;
@@ -259,7 +258,13 @@ static int check_mode_command(const char *data, int len) {
  * @brief UART handler task
  */
 static void uart_handler_task(void *arg) {
-  uint8_t data[UART_BUF_SIZE];
+  // Allocate buffer on HEAP instead of stack to prevent overflow
+  uint8_t *data = (uint8_t *)malloc(UART_BUF_SIZE);
+  if (data == NULL) {
+    ESP_LOGE(TAG, "Failed to allocate UART buffer (%d bytes)", UART_BUF_SIZE);
+    vTaskDelete(NULL);
+    return;
+  }
 
   uart_reinit(DEFAULT_UART_PORT_NUM, DEFAULT_UART_BAUD_RATE,
               DEFAULT_UART_TX_PIN, DEFAULT_UART_RX_PIN);
@@ -274,11 +279,19 @@ static void uart_handler_task(void *arg) {
 
     if (len > 0) {
       data[len] = '\0';
+      
+      // Debug: Log original received length BEFORE trimming
+      int original_len = len;
+      ESP_LOGI(TAG, "UART read: %d bytes (pre-trim)", original_len);
 
       // Trim whitespace
       while (len > 0 && (data[len - 1] == '\r' || data[len - 1] == '\n' ||
                          data[len - 1] == ' ')) {
         data[--len] = '\0';
+      }
+      
+      if (len < original_len) {
+        ESP_LOGI(TAG, "Trimmed %d bytes, new len=%d", original_len - len, len);
       }
 
       if (len == 0)
@@ -305,21 +318,39 @@ static void uart_handler_task(void *arg) {
 
       // Check for config commands starting with "CF"
       if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
-        ESP_LOGI(TAG, "Config command: %s", (char *)data);
+        int null_count = 0, first_null = -1;
 
         if (len > 2) {
           const char *cmd_data = (const char *)(data + 2);
           int cmd_len = len - 2;
 
+          // CRITICAL: Validate command length BEFORE processing
+          #define MAX_CONFIG_LENGTH 4096  // Maximum allowed config size
+          if (cmd_len > MAX_CONFIG_LENGTH) {
+            ESP_LOGE(TAG, "Config too large: %d bytes (max %d)", cmd_len, MAX_CONFIG_LENGTH);
+            uart_println("ERROR:CONFIG_TOO_LARGE");
+            continue;  // Skip processing oversized configs
+          }
+
           config_type_t type = config_parse_type(cmd_data, cmd_len);
           if (type != CONFIG_TYPE_UNKNOWN) {
-            config_command_t cmd;
-            cmd.type = type;
-            cmd.data_len = cmd_len;
-            memcpy(cmd.raw_data, cmd_data, cmd_len);
-            cmd.raw_data[cmd_len] = '\0';
+            // Allocate config_command_t on HEAP (4KB+ struct too large for stack)
+            config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+            if (cmd == NULL) {
+              ESP_LOGE(TAG, "Failed to allocate config command buffer");
+              uart_println("ERROR:OUT_OF_MEMORY");
+              continue;
+            }
+
+            cmd->type = type;
+            cmd->data_len = cmd_len;
+            cmd->from_local_app = true;  // UART commands are from local app
+            memcpy(cmd->raw_data, cmd_data, cmd_len);
+            cmd->raw_data[cmd_len] = '\0';
 
             if (g_config_handler_queue) {
+              // Queue takes ownership, config_handler must free it
+              // Send POINTER (not value) since queue expects config_command_t*
               if (xQueueSend(g_config_handler_queue, &cmd,
                              pdMS_TO_TICKS(100)) == pdTRUE) {
                 ESP_LOGI(TAG, "Command forwarded to config handler");
@@ -327,15 +358,18 @@ static void uart_handler_task(void *arg) {
               } else {
                 ESP_LOGW(TAG, "Config queue full");
                 uart_println("ERROR:QUEUE_FULL");
+                free(cmd);  // Queue full, free memory
               }
             } else {
               uart_println("ERROR:NO_HANDLER");
+              free(cmd);
             }
           } else {
             ESP_LOGW(TAG, "Unknown command type");
             uart_println("ERROR:UNKNOWN_CMD");
           }
         }
+
       } else {
         // Unknown command
         uart_println("ERROR:INVALID_CMD");
@@ -344,10 +378,9 @@ static void uart_handler_task(void *arg) {
     }
   }
 
-  if (s_uart_initialized) {
-    uart_driver_delete(DEFAULT_UART_PORT_NUM);
-  }
 
+  // Cleanup: free heap buffer before exiting
+  free(data);
   ESP_LOGI(TAG, "UART handler task exiting");
   vTaskDelete(NULL);
 }
@@ -359,7 +392,7 @@ void uart_handler_task_start(void) {
   }
 
   uart_handler_running = true;
-  xTaskCreate(uart_handler_task, "uart_handler", 4096, NULL, 5, NULL);
+  xTaskCreate(uart_handler_task, "uart_handler", 1024 * 16, NULL, 5, NULL);
   ESP_LOGI(TAG, "UART handler task created");
 }
 

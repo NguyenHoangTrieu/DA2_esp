@@ -627,20 +627,25 @@ static esp_err_t config_parse_internet(const char *data, uint16_t len, config_in
  * @param arg Task argument (unused)
  */
 static void config_handler_task(void *arg) {
-    config_command_t cmd;
+    config_command_t *cmd = NULL;  // Receive POINTER from queue
     
     ESP_LOGI(TAG, "Config handler task started");
     
     while (config_handler_running) {
-        // Wait for command from gateway
+        // Wait for command pointer from gateway
         if (xQueueReceive(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
-            ESP_LOGI(TAG, "Received config command, type: %d, len: %d", cmd.type, cmd.data_len);
+            if (cmd == NULL) {
+                ESP_LOGE(TAG, "Received NULL command pointer!");
+                continue;
+            }
+            
+            ESP_LOGI(TAG, "Received config command, type: %d, len: %d", cmd->type, cmd->data_len);
             
             // Route to appropriate handler based on type
-            switch (cmd.type) {
+            switch (cmd->type) {
                 case CONFIG_TYPE_WIFI: {
                     wifi_config_data_t wifi_cfg;
-                    if (config_parse_wifi(cmd.raw_data, cmd.data_len, &wifi_cfg) == ESP_OK) {
+                    if (config_parse_wifi(cmd->raw_data, cmd->data_len, &wifi_cfg) == ESP_OK) {
                         // CRITICAL: Save to NVS FIRST before sending to queue
                         // This ensures config is persisted even if device restarts immediately
                         strncpy(g_wifi_ctx.ssid, wifi_cfg.ssid, sizeof(g_wifi_ctx.ssid) - 1);
@@ -667,7 +672,7 @@ static void config_handler_task(void *arg) {
                 
                 case CONFIG_TYPE_MQTT: {
                     mqtt_config_data_t mqtt_cfg;
-                    if (config_parse_mqtt(cmd.raw_data, cmd.data_len, &mqtt_cfg) == ESP_OK) {
+                    if (config_parse_mqtt(cmd->raw_data, cmd->data_len, &mqtt_cfg) == ESP_OK) {
                         // CRITICAL: Save to NVS FIRST before sending to queue
                         strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri, sizeof(g_mqtt_ctx.broker_uri) - 1);
                         g_mqtt_ctx.broker_uri[sizeof(g_mqtt_ctx.broker_uri) - 1] = '\0';
@@ -703,7 +708,7 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_TYPE_INTERNET: {
                     config_internet_type_t internet_type;
-                    if (config_parse_internet(cmd.raw_data, cmd.data_len, &internet_type) == ESP_OK) {
+                    if (config_parse_internet(cmd->raw_data, cmd->data_len, &internet_type) == ESP_OK) {
                         ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
                         g_internet_type = internet_type;  
                         save_internet_config_to_nvs();
@@ -714,7 +719,7 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_TYPE_LTE: {
                     lte_config_data_t lte_cfg;
-                    if (config_parse_lte(cmd.raw_data, cmd.data_len, &lte_cfg) == ESP_OK) {
+                    if (config_parse_lte(cmd->raw_data, cmd->data_len, &lte_cfg) == ESP_OK) {
                         // CRITICAL: Save to NVS FIRST before sending to queue
                         strncpy(g_lte_ctx.apn, lte_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
                         g_lte_ctx.apn[sizeof(g_lte_ctx.apn) - 1] = '\0';
@@ -743,13 +748,30 @@ static void config_handler_task(void *arg) {
                 case CONFIG_TYPE_MCU_LAN: {
                     bool is_fota = false;
                     ESP_LOGI(TAG, "MCU LAN command received, forwarding to MCU LAN handler");
-                    if (cmd.data_len > 5) {
-                        mcu_lan_config_data_t lan_cmd;
-                        lan_cmd.length = cmd.data_len - 3;  // Skip "ML:" prefix
-                        memcpy(lan_cmd.command, &cmd.raw_data[3], lan_cmd.length);
+                    if (cmd->data_len > 5) {
+                        // Validate buffer size BEFORE copying
+                        uint16_t cmd_payload_len = cmd->data_len - 3;  // Skip "ML:" prefix
+                        
+                        if (cmd_payload_len > CONFIG_CMD_MAX_LEN) {
+                            ESP_LOGE(TAG, "MCU LAN command too large: %d bytes (max %d)", 
+                                     cmd_payload_len, CONFIG_CMD_MAX_LEN);
+                            break;
+                        }
+                        
+                        // Allocate on heap to avoid stack overflow (4KB struct)
+                        mcu_lan_config_data_t *lan_cmd = (mcu_lan_config_data_t *)malloc(sizeof(mcu_lan_config_data_t));
+                        if (lan_cmd == NULL) {
+                            ESP_LOGE(TAG, "Failed to allocate MCU LAN command buffer (%d bytes)", 
+                                     sizeof(mcu_lan_config_data_t));
+                            break;
+                        }
+                        
+                        lan_cmd->length = cmd_payload_len;
+                        memcpy(lan_cmd->command, &cmd->raw_data[3], lan_cmd->length);
+                        lan_cmd->command[lan_cmd->length] = '\0';  // Null-terminate
 
                         // Check if this is a firmware update command
-                        if (lan_cmd.length >= 4 && strncmp(lan_cmd.command, "CFFW", 4) == 0) {
+                        if (lan_cmd->length >= 4 && strncmp(lan_cmd->command, "CFFW", 4) == 0) {
                             g_not_ppp_to_lan = true;
                             if (!ppp_server_is_initialized()) {
                                 ppp_server_init();
@@ -758,8 +780,13 @@ static void config_handler_task(void *arg) {
                             is_fota = true;
                         }
                         
-                        // Send to MCU LAN queue
-                        mcu_lan_handler_update_config((const uint8_t *)lan_cmd.command, lan_cmd.length, is_fota);
+                        // Send to MCU LAN queue (pass source flag for ACK routing)
+                        bool from_local = cmd->from_local_app;  // true if from UART/USB
+                        mcu_lan_handler_update_config((const uint8_t *)lan_cmd->command, 
+                                                      lan_cmd->length, is_fota, from_local);
+                        
+                        // Free allocated memory
+                        free(lan_cmd);
                     } else {
                         ESP_LOGW(TAG, "MCU LAN command too short");
                     }
@@ -771,9 +798,13 @@ static void config_handler_task(void *arg) {
                     break;
                 }
                 default:
-                    ESP_LOGW(TAG, "Unknown config type: %d", cmd.type);
+                    ESP_LOGW(TAG, "Unknown config type: %d", cmd->type);
                     break;
             }
+            
+            // CRITICAL: Free heap memory after processing
+            free(cmd);
+            cmd = NULL;
         }
     }
     
@@ -792,7 +823,8 @@ void config_handler_task_start(void) {
     
     // Create queues if not exists
     if (!g_config_handler_queue) {
-        g_config_handler_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(config_command_t));
+        // Store POINTERS to config_command_t (not full 4KB struct!)
+        g_config_handler_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(config_command_t*));
     }
     
     if (!g_wifi_config_queue) {
