@@ -525,3 +525,8 @@ JSON MAU BLE:
         }
     ]
 }
+
+### Next todo:
+- cập nhật lại stack cho lte, thay các gpio control của esp bằng tca
+- cập nhật thêm module monitor task cho WAN (tuy nhiên module monitor này chỉ check xem stack id nào được cắm vào th, kg cần parse json bla bla như của LAN, vì stack của WAN chỉ có 1 và chỉ support LTE/NB-IoT)
+-  cập nhật lại app

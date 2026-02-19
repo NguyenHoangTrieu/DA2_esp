@@ -53,14 +53,8 @@ void i2c_dev_support_scan(void) {
 
 esp_err_t i2c_dev_support_init(void) {
     if (is_initialized) {
-        ESP_LOGD(TAG, "I2C already initialized");
+        ESP_LOGW(TAG, "I2C already initialized");
         return ESP_OK;
-    }
-
-    // Cleanup any existing handle
-    if (i2c_bus_handle != NULL) {
-        ESP_LOGW(TAG, "I2C bus handle exists, deinitializing first");
-        i2c_dev_support_deinit();
     }
 
     ESP_LOGI(TAG, "Initializing I2C Master on port %d (SDA=%d, SCL=%d)", 
@@ -78,8 +72,6 @@ esp_err_t i2c_dev_support_init(void) {
     esp_err_t ret = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create I2C master bus: %s", esp_err_to_name(ret));
-        i2c_bus_handle = NULL;
-        is_initialized = false;
         return ret;
     }
 
