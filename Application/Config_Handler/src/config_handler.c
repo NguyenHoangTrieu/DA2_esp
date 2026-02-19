@@ -780,10 +780,9 @@ static void config_handler_task(void *arg) {
                             is_fota = true;
                         }
                         
-                        // Send to MCU LAN queue (pass source flag for ACK routing)
-                        bool from_local = cmd->from_local_app;  // true if from UART/USB
+                        // Send to MCU LAN queue (pass source for response routing)
                         mcu_lan_handler_update_config((const uint8_t *)lan_cmd->command, 
-                                                      lan_cmd->length, is_fota, from_local);
+                                                      lan_cmd->length, is_fota, cmd->source);
                         
                         // Free allocated memory
                         free(lan_cmd);

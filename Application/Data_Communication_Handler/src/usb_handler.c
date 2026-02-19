@@ -267,7 +267,7 @@ static void jtag_task(void *arg) {
 
             cmd->type = type;
             cmd->data_len = cmd_len;
-            cmd->from_local_app = true;  // USB commands are from local app
+            cmd->source = CMD_SOURCE_USB;   // USB commands → route response back to USB
             memcpy(cmd->raw_data, cmd_data, cmd_len);
             cmd->raw_data[cmd_len] = '\0';
 

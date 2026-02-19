@@ -325,7 +325,7 @@ static void uart_handler_task(void *arg) {
           int cmd_len = len - 2;
 
           // CRITICAL: Validate command length BEFORE processing
-          #define MAX_CONFIG_LENGTH 4096  // Maximum allowed config size
+          #define MAX_CONFIG_LENGTH 8190  // = UART_BUF_SIZE - 2 ("CF" prefix)
           if (cmd_len > MAX_CONFIG_LENGTH) {
             ESP_LOGE(TAG, "Config too large: %d bytes (max %d)", cmd_len, MAX_CONFIG_LENGTH);
             uart_println("ERROR:CONFIG_TOO_LARGE");
@@ -344,7 +344,7 @@ static void uart_handler_task(void *arg) {
 
             cmd->type = type;
             cmd->data_len = cmd_len;
-            cmd->from_local_app = true;  // UART commands are from local app
+            cmd->source = CMD_SOURCE_UART;  // Commands from UART → route response back to UART
             memcpy(cmd->raw_data, cmd_data, cmd_len);
             cmd->raw_data[cmd_len] = '\0';
 

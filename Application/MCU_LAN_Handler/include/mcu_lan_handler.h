@@ -41,6 +41,14 @@ typedef struct {
   esp_err_t result;
 } config_request_t;
 
+// ===== Command Source (for ACK/response routing) =====
+typedef enum {
+  CMD_SOURCE_MQTT    = 0,  // From MQTT server → forward response to server
+  CMD_SOURCE_UART    = 1,  // From UART PC App → forward response to UART
+  CMD_SOURCE_USB     = 2,  // From USB Serial JTAG → forward response to USB
+  CMD_SOURCE_UNKNOWN = 0xFF
+} command_source_t;
+
 // ===== Public API =====
 
 /**
@@ -69,16 +77,16 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
  * @param config_data Config data buffer
  * @param length Config length
  * @param is_fota True if FOTA command
- * @param from_local_app True if from local app (UART/USB), false if from server
+ * @param source Command source (CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT)
  */
 void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota, bool from_local_app);
+                                   bool is_fota, command_source_t source);
 
 /**
- * @brief Get last config command source (for ACK routing)
- * @return true if from local app (UART/USB), false if from server (MQTT)
+ * @brief Get last config command source (for response routing)
+ * @return command_source_t: CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT
  */
-bool mcu_lan_handler_get_config_source_is_local(void);
+command_source_t mcu_lan_handler_get_config_source(void);
 
 /**
  * @brief Enqueue uplink data to server (MQTT/HTTP)

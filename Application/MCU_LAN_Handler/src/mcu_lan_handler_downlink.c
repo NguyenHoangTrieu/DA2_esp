@@ -38,15 +38,10 @@ typedef struct {
 } downlink_item_t;
 
 // ===== Config Cache =====
-typedef enum {
-  CMD_SOURCE_MQTT = 0,   // From MQTT server (forward response to server)
-  CMD_SOURCE_UART = 1,   // From UART PC App (forward response to UART)
-  CMD_SOURCE_USB = 2,    // From USB PC App (forward response to USB)
-  CMD_SOURCE_UNKNOWN = 0xFF
-} command_source_t;
+// command_source_t is now defined in mcu_lan_handler.h (public API)
 
 typedef struct {
-  uint8_t config_data[4096];
+  uint8_t config_data[8912];
   uint16_t config_length;
   bool has_config;
   bool is_fota;
@@ -376,7 +371,7 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
 
 // ===== Public API: Update Config Cache =====
 void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota, bool from_local_app) {
+                                   bool is_fota, command_source_t source) {
   if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
     ESP_LOGW(TAG, "Config mutex timeout");
     return;
@@ -388,19 +383,19 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     g_config_cache.config_length = length;
     g_config_cache.has_config = true;
     g_config_cache.is_fota = is_fota;
-    g_config_cache.source = from_local_app ? CMD_SOURCE_UART : CMD_SOURCE_MQTT;
+    g_config_cache.source = source;
     g_config_cache_has_config = true;
 
     if (is_fota) {
       g_fota_request_pending = true;
     }
 
+    const char *src_str = (source == CMD_SOURCE_UART) ? "UART" :
+                          (source == CMD_SOURCE_USB)  ? "USB"  : "SERVER";
     ESP_LOGI(TAG, "Config cached: %u bytes, FOTA=%s, source=%s", length,
-             is_fota ? "YES" : "NO", 
-             from_local_app ? "LOCAL_APP" : "SERVER");
+             is_fota ? "YES" : "NO", src_str);
     signal_data_ready();
   } else {
-    // Log error if config is rejected
     if (!config_data) {
       ESP_LOGE(TAG, "Config data is NULL");
     } else if (length == 0) {
@@ -413,17 +408,16 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
   xSemaphoreGive(g_config_mutex);
 }
 
-// ===== Public API: Get Config Source for ACK Routing =====  
-bool mcu_lan_handler_get_config_source_is_local(void) {
-  bool is_local = false;
-  
+// ===== Public API: Get Config Source for Response Routing =====
+command_source_t mcu_lan_handler_get_config_source(void) {
+  command_source_t src = CMD_SOURCE_UNKNOWN;
+
   if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    is_local = (g_config_cache.source == CMD_SOURCE_UART || 
-                g_config_cache.source == CMD_SOURCE_USB);
+    src = g_config_cache.source;
     xSemaphoreGive(g_config_mutex);
   }
-  
-  return is_local;
+
+  return src;
 }
 
 // ===== Public API: Request LAN Config Async =====

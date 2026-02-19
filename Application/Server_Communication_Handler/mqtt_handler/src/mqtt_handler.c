@@ -168,7 +168,7 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       config_command_t cmd;
       cmd.type = type;
       cmd.data_len = cmd_len;
-      cmd.from_local_app = false;  // MQTT commands are from server
+      cmd.source = CMD_SOURCE_MQTT;  // MQTT commands → route response to server
       memcpy(cmd.raw_data, cmd_data, cmd_len);
       cmd.raw_data[cmd_len] = '\0';
 

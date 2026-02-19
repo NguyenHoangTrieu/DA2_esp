@@ -19,7 +19,7 @@
 
 // Command buffer size - Increased to support large JSON configs (up to 4KB)
 // Must match MAX_CONFIG_LENGTH in uart_handler.c
-#define CONFIG_CMD_MAX_LEN 4096
+#define CONFIG_CMD_MAX_LEN 8192
 #define CONFIG_QUEUE_SIZE 20
 
 // Command type codes (2-character prefix)
@@ -90,7 +90,7 @@ typedef struct {
     config_type_t type;
     char raw_data[CONFIG_CMD_MAX_LEN];
     uint16_t data_len;
-    bool from_local_app;  // true = UART/USB, false = MQTT server
+    command_source_t source;  // CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT
 } config_command_t;
 
 // Queue handles for each subsystem

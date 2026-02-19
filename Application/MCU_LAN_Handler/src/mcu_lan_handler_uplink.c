@@ -6,7 +6,7 @@
 #include "config_handler.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
-#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag.h"  // For USB source response routing
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "fota_handler.h"
@@ -527,55 +527,54 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   ESP_LOG_BUFFER_HEXDUMP(TAG, &payload[DATA_PACKET_HEADER_SIZE],
                          data_length > 64 ? 64 : data_length, ESP_LOG_INFO);
 
-  // Check if response should go to local app (UART/USB) or server (MQTT)
-  bool is_from_local_app = mcu_lan_handler_get_config_source_is_local();
-  
-  if (is_from_local_app) {
-    // Response from local app command (UART/USB) - forward to UART/USB, not MQTT
-    ESP_LOGI(TAG, "Response is for local app command - forwarding to UART/USB");
-    
-    // Extract actual response data (skip timestamp if present)
-    // Data format from LAN: "17/02/2026-12:53:22BR:JSON:OK" or similar
-    // Find "BR:" prefix which marks the actual response
+  // Route response based on the original command source
+  command_source_t src = mcu_lan_handler_get_config_source();
+  ESP_LOGI(TAG, "Response source: %s",
+           (src == CMD_SOURCE_UART) ? "UART" :
+           (src == CMD_SOURCE_USB)  ? "USB"  : "SERVER/MQTT");
+
+  if (src == CMD_SOURCE_UART || src == CMD_SOURCE_USB) {
+    // Local app command → extract and send back to the originating interface
     const uint8_t *response_data = &payload[DATA_PACKET_HEADER_SIZE];
     uint16_t response_len = data_length;
-    
-    // Search for "BR:" marker (BLE Response)
-    const uint8_t *br_marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
-    if (br_marker != NULL) {
-      // Calculate offset and adjust response data
-      size_t offset = br_marker - response_data;
-      response_data = br_marker;
-      response_len = data_length - offset;
-      ESP_LOGI(TAG, "Found BR: marker at offset %zu, response_len=%u", offset, response_len);
+
+    // Search for "CFBL:" or "BR:" marker as start of actual response
+    const uint8_t *marker = (const uint8_t *)strstr((const char *)response_data, "CFBL:");
+    if (marker == NULL) {
+      marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
     }
-    
-    // Send to UART (PC App via UART0)
-    int uart_sent = uart_write_bytes(UART_NUM_0, (const char *)response_data, response_len);
-    if (uart_sent > 0) {
-      ESP_LOGI(TAG, "Response sent to UART: %d bytes", uart_sent);
+    if (marker != NULL) {
+      size_t offset = marker - response_data;
+      response_data = marker;
+      response_len  = data_length - (uint16_t)offset;
+      ESP_LOGI(TAG, "Found response marker at offset %zu, len=%u", offset, response_len);
+    }
+
+    if (src == CMD_SOURCE_UART) {
+      int sent = uart_write_bytes(UART_NUM_0, (const char *)response_data, response_len);
+      if (sent > 0) {
+        ESP_LOGI(TAG, "Response sent to UART: %d bytes", sent);
+      } else {
+        ESP_LOGE(TAG, "Failed to send response to UART");
+      }
     } else {
-      ESP_LOGE(TAG, "Failed to send response to UART");
+      // CMD_SOURCE_USB
+      int sent = usb_serial_jtag_write_bytes((const char *)response_data, response_len,
+                                             pdMS_TO_TICKS(100));
+      if (sent > 0) {
+        ESP_LOGI(TAG, "Response sent to USB: %d bytes", sent);
+      } else {
+        ESP_LOGW(TAG, "USB response failed (may not be connected)");
+      }
     }
-    
-    // Also send to USB (PC App via USB Serial JTAG)
-    int usb_sent = usb_serial_jtag_write_bytes((const char *)response_data, response_len, 100 / portTICK_PERIOD_MS);
-    if (usb_sent > 0) {
-      ESP_LOGI(TAG, "Response sent to USB: %d bytes", usb_sent);
-    } else {
-      ESP_LOGW(TAG, "Failed to send response to USB (may not be connected)");
-    }
-    
-    // Send ACK to LAN MCU
-    if (g_internet_status == INTERNET_STATUS_ONLINE) {
-      downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK, 1);
-    } else {
-      downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK, 0);
-    }
-    
-    ESP_LOGI(TAG, "Local app response forwarded, ACK sent to LAN");
+
+    // ACK to LAN MCU
+    downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
+                             g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+    ESP_LOGI(TAG, "Local response forwarded, ACK sent to LAN");
     return;
   }
+
 
   // Forward to server (MQTT/HTTP) only if from server command
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
