@@ -13,16 +13,16 @@
 #include "lte_handler.h"
 #include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
+#include "usbh_modem_board.h"
+#include "stack_handler.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
 /* ==================== Default Configuration ==================== */
-#define LTE_DEFAULT_COMM_TYPE LTE_HANDLER_USB
-#define LTE_DEFAULT_APN "v-internet"
-#define LTE_AUTO_RECONNECT true
-#define LTE_RECONNECT_TIMEOUT_MS 30000
-#define LTE_MAX_RECONNECT 10000 /* Infinite */
+/* NOTE: All LTE config fields default to empty / zero.
+ * The LTE task will NOT start until apn is set via the
+ * "LT:MODEM_NAME:APN:..." command. */
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
@@ -30,17 +30,21 @@ static bool g_lte_sntp_synced = false;
 static bool g_lte_sntp_started = false;
 
 /* ==================== LTE Config Context ==================== */
-lte_config_context_t g_lte_ctx = {.comm_type = LTE_DEFAULT_COMM_TYPE,
-                                  .apn = LTE_DEFAULT_APN,
-                                  .username = "",
-                                  .password = "",
-                                  .max_reconnect_attempts = LTE_MAX_RECONNECT,
-                                  .reconnect_timeout_ms =
-                                      LTE_RECONNECT_TIMEOUT_MS,
-                                  .auto_reconnect = LTE_AUTO_RECONNECT,
-                                  .initialized = false,
-                                  .task_running = false,
-                                  .task_handle = NULL};
+lte_config_context_t g_lte_ctx = {
+    .modem_name              = "",
+    .apn                     = "",    /* empty → LTE task will not start */
+    .username                = "",
+    .password                = "",
+    .max_reconnect_attempts  = 0,     /* 0 = infinite once configured      */
+    .reconnect_timeout_ms    = 30000,
+    .auto_reconnect          = false, /* disabled until config received     */
+    .comm_type               = LTE_HANDLER_USB,
+    .pwr_pin                 = STACK_GPIO_PIN_WAKE,   /* 11 */
+    .rst_pin                 = STACK_GPIO_PIN_PERST,  /* 12 */
+    .initialized             = false,
+    .task_running            = false,
+    .task_handle             = NULL,
+};
 
 /**
  * @brief Initialize/Reinitialize LTE with current config
@@ -63,8 +67,14 @@ static esp_err_t lte_init_with_config(void) {
       .reconnect_timeout_ms = g_lte_ctx.reconnect_timeout_ms,
       .max_reconnect_attempts = g_lte_ctx.max_reconnect_attempts};
 
-  ESP_LOGI(TAG, "Initializing LTE - APN: %s, Type: %s", cfg.apn,
+  ESP_LOGI(TAG, "Initializing LTE - Modem: %s, APN: %s, Type: %s",
+           g_lte_ctx.modem_name,
+           cfg.apn,
            cfg.comm_type == LTE_HANDLER_UART ? "UART" : "USB");
+
+  /* Configure TCA GPIO pins and modem name before init */
+  modem_board_set_tca_pins(g_lte_ctx.pwr_pin, g_lte_ctx.rst_pin);
+  modem_board_set_modem_name(g_lte_ctx.modem_name);
 
   esp_err_t ret = lte_handler_init(&cfg);
   if (ret != ESP_OK) {
@@ -232,6 +242,13 @@ static void lte_task(void *arg) {
 void lte_connect_task_start(void) {
   if (g_lte_ctx.task_running) {
     ESP_LOGW(TAG, "Already running");
+    return;
+  }
+
+  /* Refuse to start if APN has not been configured yet */
+  if (g_lte_ctx.apn[0] == '\0') {
+    ESP_LOGW(TAG, "LTE task not started: APN is empty. "
+                  "Send \"LT:MODEM_NAME:APN:...\" command to configure.");
     return;
   }
 

@@ -90,11 +90,26 @@ esp_err_t modem_board_get_signal_quality(int *rssi, int *ber);
 esp_err_t modem_board_get_sim_cart_state(int *if_ready);
 
 /**
- * @brief Force reset modem through reset pin
+ * @brief Force reset modem through reset pin (TCA GPIO).
  *
- * @return ** esp_err_t
+ * @return esp_err_t
  */
 esp_err_t modem_board_force_reset(void);
+
+/**
+ * @brief Configure which TCA GPIO pins to use for modem POWER and RESET.
+ *
+ * Must be called before modem_board_init(). The values correspond to
+ * stack_gpio_pin_num_t entries (e.g. STACK_GPIO_PIN_WAKE = 11 for POWER,
+ * STACK_GPIO_PIN_PERST = 12 for RESET).  Pass STACK_GPIO_PIN_NONE (0xFF)
+ * to disable a signal.
+ *
+ * @param pwr_pin TCA pin enum value for modem POWER signal.
+ * @param rst_pin TCA pin enum value for modem RESET signal.
+ */
+void modem_board_set_tca_pins(uint8_t pwr_pin, uint8_t rst_pin);
+void modem_board_set_modem_name(const char *name);
+const char *modem_board_get_name(void);
 
 /**
  * @brief This function is used to get the operator's name, otherwise return ESP_FAIL if the network is not registered.

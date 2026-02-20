@@ -80,47 +80,9 @@
 
 
 /* ==================== Modem Target Selection ==================== */
-#define CONFIG_MODEM_TARGET_A7600C1      1
-
-#if defined(CONFIG_MODEM_TARGET_USER)
-    #define CONFIG_MODEM_TARGET_NAME               "User Defined"
-#elif defined(CONFIG_MODEM_TARGET_NT26)
-    #define  CONFIG_MODEM_TARGET_NAME               "NT26"
-#elif defined(CONFIG_MODEM_TARGET_ML302_DNLM)
-    #define  CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
-#elif defined(CONFIG_MODEM_TARGET_AIR724UG_NFM)
-    #define CONFIG_MODEM_TARGET_NAME               "AIR724UG-NFM"
-#elif defined(CONFIG_MODEM_TARGET_AIR780_E)
-    #define CONFIG_MODEM_TARGET_NAME               "AIR780E"
-#elif defined(CONFIG_MODEM_TARGET_EC600N_CNLA_N05)
-    #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLA-N05"
-#elif defined(CONFIG_MODEM_TARGET_EC600N_CNLC_N06)
-    #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLC-N06"
-#elif defined(CONFIG_MODEM_TARGET_A7600C1)
-    #define CONFIG_MODEM_TARGET_NAME               "A7600C1"
-#elif defined(CONFIG_MODEM_TARGET_BG95_M3)
-    #define CONFIG_MODEM_TARGET_NAME               "BG95M3"
-#elif defined(CONFIG_MODEM_TARGET_BG96_MA)
-    #define CONFIG_MODEM_TARGET_NAME               "BG96MA"
-#elif defined(CONFIG_MODEM_TARGET_MC610_EU)
-    #define CONFIG_MODEM_TARGET_NAME               "MC610_EU"
-#elif defined(CONFIG_MODEM_TARGET_EC20_CE)
-    #define CONFIG_MODEM_TARGET_NAME               "EC20_CE"
-#elif defined(CONFIG_MODEM_TARGET_EG25_GL)
-    #define CONFIG_MODEM_TARGET_NAME               "EG25_GL"
-#elif defined(CONFIG_MODEM_TARGET_YM310_X09)
-    #define CONFIG_MODEM_TARGET_NAME               "YM310_X09"
-#elif defined(CONFIG_MODEM_TARGET_SIM7600E)
-    #define CONFIG_MODEM_TARGET_NAME               "SIM7600E"
-#elif defined(CONFIG_MODEM_TARGET_A7670E)
-    #define CONFIG_MODEM_TARGET_NAME               "A7670E"
-#elif defined(CONFIG_MODEM_TARGET_SIM7070G)
-    #define CONFIG_MODEM_TARGET_NAME               "SIM7070G"
-#elif defined(CONFIG_MODEM_TARGET_SIM7080)
-    #define CONFIG_MODEM_TARGET_NAME               "SIM7080G"
-#else  // Default
-    #define CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
-#endif
+/* REMOVED: CONFIG_MODEM_TARGET_NAME is now supplied at runtime via the
+ *  "LT:MODEM_NAME:..." command string and stored in g_lte_ctx.modem_name.
+ *  See config_handler.c config_parse_lte() for details. */
 
 /* ==================== Dual CDC Mode Support ==================== */
 
@@ -207,26 +169,26 @@
 #define MODEM_PRINT_DEVICE_DESC             CONFIG_MODEM_PRINT_DEVICE_DESCRIPTOR
 
 /* ==================== GPIO Configuration ==================== */
+/* REMOVED: POWER and RESET GPIO pin numbers are no longer compiled in.
+ *  They are configured at runtime via modem_board_set_tca_pins() which
+ *  maps them to TCA6424A GPIO expander pins from the WAN stack handler.
+ *  Pulse timing constants are kept below. */
 
-#ifndef CONFIG_MODEM_POWER_GPIO
-    #define CONFIG_MODEM_POWER_GPIO         22
+#ifndef MODEM_POWER_GPIO_ACTIVE_MS
+    #define MODEM_POWER_GPIO_ACTIVE_MS      500
 #endif
-#define MODEM_GPIO_POWER                    CONFIG_MODEM_POWER_GPIO
 
-#ifndef CONFIG_MODEM_RESET_GPIO
-    #define CONFIG_MODEM_RESET_GPIO         23
+#ifndef MODEM_POWER_GPIO_INACTIVE_MS
+    #define MODEM_POWER_GPIO_INACTIVE_MS    8000
 #endif
-#define MODEM_GPIO_RESET                    CONFIG_MODEM_RESET_GPIO
 
-#ifndef CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL
-    #define CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL  1
+#ifndef MODEM_RESET_GPIO_ACTIVE_MS
+    #define MODEM_RESET_GPIO_ACTIVE_MS      200
 #endif
-#define MODEM_GPIO_POWER_INACTIVE_LEVEL     CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL
 
-#ifndef CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL
-    #define CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL  1
+#ifndef MODEM_RESET_GPIO_INACTIVE_MS
+    #define MODEM_RESET_GPIO_INACTIVE_MS    5000
 #endif
-#define MODEM_GPIO_RESET_INACTIVE_LEVEL     CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL
 
 /* ==================== Timeout Configuration (milliseconds) ==================== */
 

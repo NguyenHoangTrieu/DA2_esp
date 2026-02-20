@@ -60,13 +60,16 @@ typedef struct {
 
 // LTE configuration structure
 typedef struct {
-    char apn[64];           // Access Point Name
+    char modem_name[32];    // Modem target name (e.g. "A7600C1") -- passed in command, not hardcoded
+    char apn[64];           // Access Point Name; empty = LTE task will not start
     char username[32];      // PPP username (optional)
     char password[32];      // PPP password (optional)
     lte_handler_comm_type_t comm_type;
     bool auto_reconnect;
     uint32_t reconnect_timeout_ms;
     uint32_t max_reconnect_attempts;
+    uint8_t pwr_pin;        // TCA GPIO pin for modem POWER  (STACK_GPIO_PIN_WAKE=11 by default)
+    uint8_t rst_pin;        // TCA GPIO pin for modem RESET  (STACK_GPIO_PIN_PERST=12 by default)
 } lte_config_data_t;
 
 // MQTT configuration structure
@@ -129,5 +132,10 @@ esp_err_t config_get_lte_safe(lte_config_context_t *out_cfg);
 esp_err_t config_update_lte_safe(const lte_config_data_t *new_cfg);
 esp_err_t config_get_mqtt_safe(mqtt_config_context_t *out_cfg);
 esp_err_t config_update_mqtt_safe(const mqtt_config_data_t *new_cfg);
+
+// WAN hardware stack ID tracking (clears LTE config from NVS if connector changed)
+extern char g_stack_id_wan[8];
+esp_err_t config_init_wan_stack_id(void);
+const char *config_get_wan_stack_id(void);
 
 #endif // CONFIG_HANDLER_H

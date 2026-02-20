@@ -8,6 +8,7 @@
 #include "esp_modem_usb_internal.h"
 #include "esp_modem_usb_dte_internal.h"
 #include "esp_modem_usb_netif.h"
+#include "usbh_modem_board.h"
 
 static const char *TAG = "esp-modem-usb";
 
@@ -151,7 +152,7 @@ esp_err_t esp_modem_usb_dce_init(esp_modem_usb_dce_t *dce, esp_modem_usb_dce_con
         ESP_MODEM_USB_ERR_CHECK(esp_modem_usb_set_default_command_list(dce) == ESP_OK, "esp_modem_usb_dce_set_default_commands failed", err);
     }
     ESP_LOGI(TAG, "--------- Modem PreDefined Info ------------------");
-    ESP_LOGI(TAG, "Model: %s", CONFIG_MODEM_TARGET_NAME);
+    ESP_LOGI(TAG, "Model: %s", modem_board_get_name());
     ESP_LOGI(TAG, "Modem itf %d", CONFIG_MODEM_USB_ITF);
 #ifdef CONFIG_MODEM_SUPPORT_SECONDARY_AT_PORT
     ESP_LOGI(TAG, "Secondary AT itf %d", CONFIG_MODEM_USB_ITF2);

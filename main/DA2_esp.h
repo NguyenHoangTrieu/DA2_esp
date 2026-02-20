@@ -14,6 +14,7 @@
 #include "i2c_dev_support.h"
 #include "oled_monitor_task.h"
 #include "tca_handler.h"
+#include "stack_handler.h"
 #include "pwr_source_handler.h"
 #include "pcf8563_rtc.h"
 extern TaskHandle_t main_task_handle;

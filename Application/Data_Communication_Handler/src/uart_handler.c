@@ -318,7 +318,6 @@ static void uart_handler_task(void *arg) {
 
       // Check for config commands starting with "CF"
       if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
-        int null_count = 0, first_null = -1;
 
         if (len > 2) {
           const char *cmd_data = (const char *)(data + 2);

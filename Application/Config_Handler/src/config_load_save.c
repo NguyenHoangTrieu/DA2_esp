@@ -5,6 +5,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "wifi_connect.h"
+#include "stack_handler.h"
 #include <string.h>
 
 static const char *TAG = "CONFIG_NVS";
@@ -20,6 +21,10 @@ static const char *TAG = "CONFIG_NVS";
 #define NVS_KEY_MQTT_CONFIG "mqtt_cfg"
 #define NVS_NS_GATEWAY "gateway_cfg"
 #define NVS_KEY_INITIALIZED "initialized"
+#define NVS_KEY_WAN_STACK_ID "wan_stack_id"  /* tracks WAN hardware stack, clears LTE config on change */
+
+/* WAN stack module ID — pseudo hardware identifier (always "001" for single-stack WAN) */
+char g_stack_id_wan[8] = "000";
 
 /* External global variables from your modules */
 extern wifi_config_context_t g_wifi_ctx;
@@ -545,3 +550,48 @@ esp_err_t config_init(void) {
     
     return ESP_OK;
 }
+
+/**
+ * @brief Compare current WAN hardware stack ID with the NVS-stored value.
+ *
+ * If the stack ID has changed (i.e. the hardware connector changed),
+ * all LTE configuration is erased from NVS so it is re-entered for the
+ * new modem.  The current ID is then persisted.
+ *
+ * For WAN the hardware module always reports "001" (single stack).
+ */
+esp_err_t config_init_wan_stack_id(void) {
+    const char *cur_id = stack_handler_get_module_id(0);  /* always "001" */
+
+    nvs_handle_t h;
+    char old_id[8] = "000";
+
+    /* Load previously stored stack ID */
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &h) == ESP_OK) {
+        size_t len = sizeof(old_id);
+        nvs_get_str(h, NVS_KEY_WAN_STACK_ID, old_id, &len);
+        nvs_close(h);
+    }
+
+    if (strcmp(cur_id, old_id) != 0) {
+        ESP_LOGW(TAG, "WAN stack module changed: '%s' -> '%s', clearing LTE config",
+                 old_id, cur_id);
+        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+            nvs_erase_key(h, NVS_KEY_LTE_CONFIG);
+            nvs_commit(h);
+            nvs_close(h);
+        }
+    }
+
+    /* Persist current ID */
+    strncpy(g_stack_id_wan, cur_id, sizeof(g_stack_id_wan) - 1);
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_str(h, NVS_KEY_WAN_STACK_ID, g_stack_id_wan);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    ESP_LOGI(TAG, "WAN stack ID: %s", g_stack_id_wan);
+    return ESP_OK;
+}
+
+const char *config_get_wan_stack_id(void) { return g_stack_id_wan; }

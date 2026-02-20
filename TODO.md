@@ -527,6 +527,92 @@ JSON MAU BLE:
 }
 
 ### Next todo:
-- cập nhật lại stack cho lte, thay các gpio control của esp bằng tca
-- cập nhật thêm module monitor task cho WAN (tuy nhiên module monitor này chỉ check xem stack id nào được cắm vào th, kg cần parse json bla bla như của LAN, vì stack của WAN chỉ có 1 và chỉ support LTE/NB-IoT)
--  cập nhật lại app
+cụ thể:
+- cập nhật lại cho LAN stack handler thêm gpio wake và reset còn thiếu (thêm vào thay vì chỉ 9 gpio như trước), thêm STACK_GPIO_PIN_WAKE, STACK_GPIO_PIN_PERST, đồng thời thêm vào parse, nhãn của chúng trong json sẽ là 0W (stack 1 chân WAKE), 0P (stack 1 chân PERST), tương tự cho stack 2
+- giúp tôi thêm một chức năng như thế này mỗi lần khởi động module monitor task sẽ lấy id của các stack, thêm cho tôi một chức năng so sánh stack id cũ trong nvs, nếu chúng khác nhau thực hiện cập nhật stack id mới vào nvs và xóa json config cũ của stack nào có id khac trước (ví dụ khi get id của stack 1 khác id cũ của nó, xóa config json của stack 1, tuy nhiên nếu id của stack 2 vẫn giống với nvs thì giữ kg xóa config json)
+- cập nhật lại stack handler cho WAN mcu, gpio mapping của stack handler như hình đã gửi (có cả wake và reset), WAN chỉ có một stack duy nhất, thêm cả điều khiển wake và reset
+- với WAN do chỉ có một stack nên label của PIN sẽ là 01, 02, ..., 10, 11, WK, PE
+- xóa bỏ hardcode các config của lte esp modem usb, thay vào đó tất cả đều để rỗng hết cho tôi, thêm vào lte task nếu các field này rỗng thì lte task kg được khởi động.
+- xóa bỏ hard code field name của module thay vào đó sẽ được nhét vào ở command, field name hardcode:
+```c
+/* ==================== Modem Target Selection ==================== */
+#define CONFIG_MODEM_TARGET_A7600C1      1
+
+#if defined(CONFIG_MODEM_TARGET_USER)
+    #define CONFIG_MODEM_TARGET_NAME               "User Defined"
+#elif defined(CONFIG_MODEM_TARGET_NT26)
+    #define  CONFIG_MODEM_TARGET_NAME               "NT26"
+#elif defined(CONFIG_MODEM_TARGET_ML302_DNLM)
+    #define  CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
+#elif defined(CONFIG_MODEM_TARGET_AIR724UG_NFM)
+    #define CONFIG_MODEM_TARGET_NAME               "AIR724UG-NFM"
+#elif defined(CONFIG_MODEM_TARGET_AIR780_E)
+    #define CONFIG_MODEM_TARGET_NAME               "AIR780E"
+#elif defined(CONFIG_MODEM_TARGET_EC600N_CNLA_N05)
+    #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLA-N05"
+#elif defined(CONFIG_MODEM_TARGET_EC600N_CNLC_N06)
+    #define CONFIG_MODEM_TARGET_NAME               "EC600NCNLC-N06"
+#elif defined(CONFIG_MODEM_TARGET_A7600C1)
+    #define CONFIG_MODEM_TARGET_NAME               "A7600C1"
+#elif defined(CONFIG_MODEM_TARGET_BG95_M3)
+    #define CONFIG_MODEM_TARGET_NAME               "BG95M3"
+#elif defined(CONFIG_MODEM_TARGET_BG96_MA)
+    #define CONFIG_MODEM_TARGET_NAME               "BG96MA"
+#elif defined(CONFIG_MODEM_TARGET_MC610_EU)
+    #define CONFIG_MODEM_TARGET_NAME               "MC610_EU"
+#elif defined(CONFIG_MODEM_TARGET_EC20_CE)
+    #define CONFIG_MODEM_TARGET_NAME               "EC20_CE"
+#elif defined(CONFIG_MODEM_TARGET_EG25_GL)
+    #define CONFIG_MODEM_TARGET_NAME               "EG25_GL"
+#elif defined(CONFIG_MODEM_TARGET_YM310_X09)
+    #define CONFIG_MODEM_TARGET_NAME               "YM310_X09"
+#elif defined(CONFIG_MODEM_TARGET_SIM7600E)
+    #define CONFIG_MODEM_TARGET_NAME               "SIM7600E"
+#elif defined(CONFIG_MODEM_TARGET_A7670E)
+    #define CONFIG_MODEM_TARGET_NAME               "A7670E"
+#elif defined(CONFIG_MODEM_TARGET_SIM7070G)
+    #define CONFIG_MODEM_TARGET_NAME               "SIM7070G"
+#elif defined(CONFIG_MODEM_TARGET_SIM7080)
+    #define CONFIG_MODEM_TARGET_NAME               "SIM7080G"
+#else  // Default
+    #define CONFIG_MODEM_TARGET_NAME               "ML302-DNLM/CNLM"
+#endif
+```
+- cập nhật thêm hàm gọi stack get id cho WAN, gọi hàm này ở main luôn (cũng làm persuado như LAN, trả về lưu vào g_stack_id_wan = 001), lưu ý đây là var sẽ lưu vào nvs cũng làm tương tự logic trên.
+- cập nhật lại thêm command cho lte modem để set các chân này dựa trên gpio mapping trên:
+```c
+#ifndef CONFIG_MODEM_POWER_GPIO
+    #define CONFIG_MODEM_POWER_GPIO         22
+#endif
+#define MODEM_GPIO_POWER                    CONFIG_MODEM_POWER_GPIO
+
+#ifndef CONFIG_MODEM_RESET_GPIO
+    #define CONFIG_MODEM_RESET_GPIO         23
+#endif
+#define MODEM_GPIO_RESET                    CONFIG_MODEM_RESET_GPIO
+
+#ifndef CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL
+    #define CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL  1
+#endif
+#define MODEM_GPIO_POWER_INACTIVE_LEVEL     CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL
+
+#ifndef CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL
+    #define CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL  1
+#endif
+#define MODEM_GPIO_RESET_INACTIVE_LEVEL     CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL
+```
+thêm vào chuỗi này:
+```c
+/**
+ * @brief Parse LTE configuration from command string
+ * Format: "LT:MODEM_NAME:TYPE:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
+ * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE"
+ * Note: Username and password can be empty
+ * @param data Raw command data
+ * @param len Command length
+ * @param cfg Output LTE config structure
+ * @return ESP_OK on success, ESP_FAIL on error
+ */
+```
+- sau khi có các phần gpio trên, thêm vào esp_modem_usb, cập nhật lại như sau, thay vì dùng gpio của esp32 thì dùng của tca.
+-  cập nhật lại app config, check lại nếu stack id nào hiện thì mối hiện config cho stack đó (miêu tả sau)

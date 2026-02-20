@@ -291,6 +291,8 @@ void app_main(void) {
     gpio_set_level(TCA6424A_RESET_PIN, 0);
     vTaskDelay(pdMS_TO_TICKS(100));
     i2c_dev_support_scan(); // Scan I2C bus for devices
+    stack_handler_init();   // Init WAN TCA GPIO expander mapping
+    config_init_wan_stack_id(); // Compare WAN stack ID with NVS; clear LTE config if changed
     init_led_strip();
     pwr_source_init();
     led_on();

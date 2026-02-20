@@ -15,6 +15,12 @@ static const char *TAG = "config_handler";
 #define CONFIG_CMD_PREFIX_LEN 2
 #define CONFIG_CMD_MIN_LEN 5
 
+/* Field parsing helpers for string tokenization (colon-separated fields) */
+#define _PARSE_FIELD_START(i, ptr, sep, sep_count) ((i) == 0 ? (ptr) : sep[(i)-1] + 1)
+#define _PARSE_FIELD_END(i, end, sep, sep_count)   ((i) < (sep_count) ? sep[i] : (end))
+#define _PARSE_FIELD_LEN(i, ptr, end, sep, sep_count) \
+    ((int)(_PARSE_FIELD_END(i, end, sep, sep_count) - _PARSE_FIELD_START(i, ptr, sep, sep_count)))
+
 // External global config contexts (defined in wifi_connect.c, lte_connect.c, mqtt_handler.c)
 extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
@@ -168,11 +174,22 @@ esp_err_t config_update_lte_safe(const lte_config_data_t *new_cfg) {
     }
     
     if (xSemaphoreTake(g_config_context_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        // lte_config_context_t is flat - copy directly
-        memcpy(&g_lte_ctx, new_cfg, sizeof(lte_config_data_t));
+        /* Explicitly copy config fields; do NOT touch runtime state fields
+         * (initialized, task_running, task_handle). */
+        strncpy(g_lte_ctx.modem_name, new_cfg->modem_name, sizeof(g_lte_ctx.modem_name) - 1);
+        strncpy(g_lte_ctx.apn,        new_cfg->apn,        sizeof(g_lte_ctx.apn)        - 1);
+        strncpy(g_lte_ctx.username,   new_cfg->username,   sizeof(g_lte_ctx.username)   - 1);
+        strncpy(g_lte_ctx.password,   new_cfg->password,   sizeof(g_lte_ctx.password)   - 1);
+        g_lte_ctx.comm_type               = new_cfg->comm_type;
+        g_lte_ctx.auto_reconnect          = new_cfg->auto_reconnect;
+        g_lte_ctx.reconnect_timeout_ms    = new_cfg->reconnect_timeout_ms;
+        g_lte_ctx.max_reconnect_attempts  = new_cfg->max_reconnect_attempts;
+        g_lte_ctx.pwr_pin                 = new_cfg->pwr_pin;
+        g_lte_ctx.rst_pin                 = new_cfg->rst_pin;
         xSemaphoreGive(g_config_context_mutex);
         
-        ESP_LOGI(TAG, "LTE config updated safely");
+        ESP_LOGI(TAG, "LTE config updated safely (modem=%s, apn=%s)",
+                 g_lte_ctx.modem_name, g_lte_ctx.apn);
         return ESP_OK;
     }
     
@@ -332,156 +349,174 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 
 /**
  * @brief Parse LTE configuration from command string
- * Format: "LT:TYPE:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
- * Example: "LT:v-internet:user:pass:USB:true:30000:0"
- * Note: Username and password can be empty
+ * Format: "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
+ * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE"
+ * Note: USERNAME and PASSWORD can be empty (consecutive colons allowed).
+ *       PWR_PIN / RST_PIN are TCA pin labels: "WK"="WAKE#"(11), "PE"="PERST#"(12),
+ *       or "01".."11" for numbered GPIO pins (0-10).  Omit or use "" to keep default.
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output LTE config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
+static uint8_t parse_tca_pin_label(const char *s, int len) {
+    if (len == 2) {
+        if ((s[0] == 'W' || s[0] == 'w') && (s[1] == 'K' || s[1] == 'k')) return 11; /* STACK_GPIO_PIN_WAKE  */
+        if ((s[0] == 'P' || s[0] == 'p') && (s[1] == 'E' || s[1] == 'e')) return 12; /* STACK_GPIO_PIN_PERST */
+        /* "01" - "11" -> index 0-10 */
+        if (s[0] == '0' || s[0] == '1') {
+            int num = (s[0] - '0') * 10 + (s[1] - '0');
+            if (num >= 1 && num <= 11) return (uint8_t)(num - 1);
+        }
+    }
+    return 0xFF; /* STACK_GPIO_PIN_NONE */
+}
+
 static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
     if (!data || !cfg || len < 5) {
         return ESP_FAIL;
     }
-    
+
     memset(cfg, 0, sizeof(lte_config_data_t));
-    
-    // Parse format: "LT:COMM_TYPE:APN:USERNAME:PASSWORD:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT"
-    const char *ptr = data + 3; // Skip "LT:"
+    /* Default TCA pins if not supplied in command */
+    cfg->pwr_pin = 11; /* STACK_GPIO_PIN_WAKE  */
+    cfg->rst_pin = 12; /* STACK_GPIO_PIN_PERST */
+
+    /* Parse format:
+     * "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
+     * Field indices (0-based after the "LT:" prefix):
+     *  0 MODEM_NAME   1 APN   2 USERNAME   3 PASSWORD
+     *  4 COMM_TYPE    5 AUTO_RECONNECT   6 RECONNECT_TIMEOUT   7 MAX_RECONNECT
+     *  8 PWR_PIN      9 RST_PIN
+     */
+    const char *ptr = data + 3; /* skip "LT:" */
     const char *end = data + len;
-    const char *separators[7] = {0}; // Array to store separator positions
+    const char *sep[11] = {0};
     int sep_count = 0;
-    
-    // Find all separators
-    const char *temp_ptr = ptr;
-    while (temp_ptr < end && sep_count < 7) {
-        const char *colon = strchr(temp_ptr, ':');
-        if (!colon || colon >= end) {
-            break;
-        }
-        separators[sep_count++] = colon;
-        temp_ptr = colon + 1;
+
+    const char *p = ptr;
+    while (p < end && sep_count < 11) {
+        const char *colon = memchr(p, ':', end - p);
+        if (!colon) break;
+        sep[sep_count++] = colon;
+        p = colon + 1;
     }
-    
-    if (sep_count < 2) {
-        ESP_LOGE(TAG, "LTE config: insufficient parameters");
+
+    /* Must have at least MODEM_NAME, APN, and COMM_TYPE (fields 0,1,4) */
+    if (sep_count < 4) {
+        ESP_LOGE(TAG, "LTE config: insufficient fields (need at least 5)");
         return ESP_FAIL;
     }
-    
-    int field_index = 0;
-    const char *start = ptr;
-    const char *field_end = separators[field_index];
-    int field_len;
-    
-    // Parse COMM_TYPE (required)
-    field_len = field_end - start;
-    if (field_len <= 0) {
-        ESP_LOGE(TAG, "LTE comm type missing");
-        return ESP_FAIL;
-    }
-    
-    if (strncmp(start, "UART", 4) == 0) {
-        cfg->comm_type = LTE_HANDLER_UART;
-    } else if (strncmp(start, "USB", 3) == 0) {
-        cfg->comm_type = LTE_HANDLER_USB;
-    } else {
-        ESP_LOGE(TAG, "LTE comm type unknown");
-        return ESP_FAIL;
-    }
-    field_index++;
-    
-    // Parse APN (required)
-    start = separators[field_index - 1] + 1;
-    field_end = separators[field_index];
-    field_len = field_end - start;
-    if (field_len <= 0 || field_len >= sizeof(cfg->apn)) {
-        ESP_LOGE(TAG, "LTE APN length invalid: %d", field_len);
-        return ESP_FAIL;
-    }
-    memcpy(cfg->apn, start, field_len);
-    cfg->apn[field_len] = '\0';
-    field_index++;
-    
-    // Parse username (optional)
-    if (field_index < sep_count) {
-        start = separators[field_index - 1] + 1;
-        field_end = separators[field_index];
-        field_len = field_end - start;
-        if (field_len > 0 && field_len < sizeof(cfg->username)) {
-            memcpy(cfg->username, start, field_len);
-            cfg->username[field_len] = '\0';
-        }
-        field_index++;
-    }
-    
-    // Parse password (optional)
-    if (field_index < sep_count) {
-        start = separators[field_index - 1] + 1;
-        field_end = separators[field_index];
-        field_len = field_end - start;
-        if (field_len > 0 && field_len < sizeof(cfg->password)) {
-            memcpy(cfg->password, start, field_len);
-            cfg->password[field_len] = '\0';
-        }
-        field_index++;
-    } else if (field_index - 1 < sep_count) {
-        // Last field without separator
-        start = separators[field_index - 1] + 1;
-        field_len = end - start;
-        if (field_len > 0 && field_len < sizeof(cfg->password)) {
-            memcpy(cfg->password, start, field_len);
-            cfg->password[field_len] = '\0';
+
+    /* Field 0: MODEM_NAME */
+    {
+        int fl = _PARSE_FIELD_LEN(0, ptr, end, sep, sep_count);
+        if (fl > 0 && fl < (int)sizeof(cfg->modem_name)) {
+            memcpy(cfg->modem_name, _PARSE_FIELD_START(0, ptr, sep, sep_count), fl);
+            cfg->modem_name[fl] = '\0';
         }
     }
-    
-    // Parse auto_reconnect (optional, boolean)
-    if (field_index < sep_count) {
-        start = separators[field_index - 1] + 1;
-        field_end = separators[field_index];
-        field_len = field_end - start;
-        if (field_len > 0) {
-            cfg->auto_reconnect = (strncmp(start, "true", 4) == 0);
+
+    /* Field 1: APN (required) */
+    {
+        int fl = _PARSE_FIELD_LEN(1, ptr, end, sep, sep_count);
+        if (fl <= 0) {
+            ESP_LOGE(TAG, "LTE config: APN is empty");
+            return ESP_FAIL;
         }
-        field_index++;
+        if (fl >= (int)sizeof(cfg->apn)) {
+            ESP_LOGE(TAG, "LTE config: APN too long");
+            return ESP_FAIL;
+        }
+        memcpy(cfg->apn, _PARSE_FIELD_START(1, ptr, sep, sep_count), fl);
+        cfg->apn[fl] = '\0';
     }
-    
-    // Parse reconnect_timeout_ms (optional, integer in ms)
-    if (field_index < sep_count) {
-        start = separators[field_index - 1] + 1;
-        field_end = separators[field_index];
-        field_len = field_end - start;
-        if (field_len > 0) {
-            char timeout_str[16] = {0};
-            memcpy(timeout_str, start, field_len < 15 ? field_len : 15);
-            cfg->reconnect_timeout_ms = atoi(timeout_str);
-        }
-        field_index++;
-    }
-    
-    // Parse max_reconnect_attempts (optional, integer)
-    if (field_index < sep_count) {
-        start = separators[field_index - 1] + 1;
-        field_end = separators[field_index];
-        field_len = field_end - start;
-        if (field_len > 0) {
-            char max_str[16] = {0};
-            memcpy(max_str, start, field_len < 15 ? field_len : 15);
-            cfg->max_reconnect_attempts = atoi(max_str);
-        }
-    } else if (field_index - 1 < sep_count && field_index > 0) {
-        // Last field without separator
-        start = separators[field_index - 1] + 1;
-        field_len = end - start;
-        if (field_len > 0) {
-            char max_str[16] = {0};
-            memcpy(max_str, start, field_len < 15 ? field_len : 15);
-            cfg->max_reconnect_attempts = atoi(max_str);
+
+    /* Field 2: USERNAME (optional) */
+    if (sep_count >= 2) {
+        int fl = _PARSE_FIELD_LEN(2, ptr, end, sep, sep_count);
+        if (fl > 0 && fl < (int)sizeof(cfg->username)) {
+            memcpy(cfg->username, _PARSE_FIELD_START(2, ptr, sep, sep_count), fl);
+            cfg->username[fl] = '\0';
         }
     }
-    
-    ESP_LOGI(TAG, "Parsed LTE config - CommType: %d, APN: '%s', Username: '%s', Password: '%s', AutoReconnect: %d, Timeout: %d, MaxReconnect: %d",
-             cfg->comm_type, cfg->apn, cfg->username, cfg->password, cfg->auto_reconnect, cfg->reconnect_timeout_ms, cfg->max_reconnect_attempts);
+
+    /* Field 3: PASSWORD (optional) */
+    if (sep_count >= 3) {
+        int fl = _PARSE_FIELD_LEN(3, ptr, end, sep, sep_count);
+        if (fl > 0 && fl < (int)sizeof(cfg->password)) {
+            memcpy(cfg->password, _PARSE_FIELD_START(3, ptr, sep, sep_count), fl);
+            cfg->password[fl] = '\0';
+        }
+    }
+
+    /* Field 4: COMM_TYPE */
+    if (sep_count >= 4) {
+        const char *s = _PARSE_FIELD_START(4, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(4, ptr, end, sep, sep_count);
+        if (fl >= 3 && strncmp(s, "USB", 3) == 0) {
+            cfg->comm_type = LTE_HANDLER_USB;
+        } else if (fl >= 4 && strncmp(s, "UART", 4) == 0) {
+            cfg->comm_type = LTE_HANDLER_UART;
+        } else {
+            ESP_LOGW(TAG, "LTE config: unknown COMM_TYPE, defaulting to USB");
+            cfg->comm_type = LTE_HANDLER_USB;
+        }
+    }
+
+    /* Field 5: AUTO_RECONNECT (optional, true/false) */
+    if (sep_count >= 5) {
+        const char *s = _PARSE_FIELD_START(5, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(5, ptr, end, sep, sep_count);
+        cfg->auto_reconnect = (fl >= 4 && strncmp(s, "true", 4) == 0);
+    }
+
+    /* Field 6: RECONNECT_TIMEOUT_MS (optional, integer) */
+    if (sep_count >= 6) {
+        const char *s = _PARSE_FIELD_START(6, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(6, ptr, end, sep, sep_count);
+        if (fl > 0 && fl < 12) {
+            char buf[12] = {0};
+            memcpy(buf, s, fl);
+            cfg->reconnect_timeout_ms = (uint32_t)atoi(buf);
+        }
+    }
+
+    /* Field 7: MAX_RECONNECT_ATTEMPTS (optional, integer) */
+    if (sep_count >= 7) {
+        const char *s = _PARSE_FIELD_START(7, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(7, ptr, end, sep, sep_count);
+        if (fl > 0 && fl < 12) {
+            char buf[12] = {0};
+            memcpy(buf, s, fl);
+            cfg->max_reconnect_attempts = (uint32_t)atoi(buf);
+        }
+    }
+
+    /* Field 8: PWR_PIN (optional, e.g. "WK", "PE", "01".."11") */
+    if (sep_count >= 8) {
+        const char *s = _PARSE_FIELD_START(8, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(8, ptr, end, sep, sep_count);
+        uint8_t p = parse_tca_pin_label(s, fl);
+        if (p != 0xFF) cfg->pwr_pin = p;
+    }
+
+    /* Field 9: RST_PIN (optional) */
+    if (sep_count >= 9) {
+        const char *s = _PARSE_FIELD_START(9, ptr, sep, sep_count);
+        int fl = _PARSE_FIELD_LEN(9, ptr, end, sep, sep_count);
+        uint8_t r = parse_tca_pin_label(s, fl);
+        if (r != 0xFF) cfg->rst_pin = r;
+    }
+
+    ESP_LOGI(TAG, "Parsed LTE config - Modem: '%s', APN: '%s', Usr: '%s', "
+                  "CommType: %d, AutoConn: %d, Timeout: %lu, MaxRetry: %lu, "
+                  "PwrPin: %u, RstPin: %u",
+             cfg->modem_name, cfg->apn, cfg->username,
+             cfg->comm_type, cfg->auto_reconnect,
+             (unsigned long)cfg->reconnect_timeout_ms,
+             (unsigned long)cfg->max_reconnect_attempts,
+             cfg->pwr_pin, cfg->rst_pin);
     return ESP_OK;
 }
 
