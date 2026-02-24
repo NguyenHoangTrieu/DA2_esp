@@ -615,4 +615,5 @@ thêm vào chuỗi này:
  */
 ```
 - sau khi có các phần gpio trên, thêm vào esp_modem_usb, cập nhật lại như sau, thay vì dùng gpio của esp32 thì dùng của tca.
+(chưa test)
 -  cập nhật lại app config, check lại nếu stack id nào hiện thì mối hiện config cho stack đó (miêu tả sau)

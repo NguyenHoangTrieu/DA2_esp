@@ -291,6 +291,8 @@ void lte_connect_task_stop(void) {
   if (g_lte_ctx.initialized) {
     if (lte_handler_is_connected()) {
       lte_handler_disconnect();
+      // Wait a bit for clean disconnect before deinit
+      vTaskDelay(pdMS_TO_TICKS(1500));
     }
     lte_handler_deinit();
     g_lte_ctx.initialized = false;
