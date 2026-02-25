@@ -30,9 +30,11 @@
 #define USB_SWITCH_PIN 3 // Controls USB routing (HIGH = USB enabled)
 
 // UART configuration
-#define UART_NUM_SLAVE 2
-#define UART_BAUD_RATE 115200
-#define UART_BUFFER_SIZE 1024
+#define UART_NUM_SLAVE   2
+// Must match slave ESP32 ROM bootloader default. Speed mismatch with USB is
+// handled by discarding slave boot messages before esptool connects.
+#define UART_BAUD_RATE   115200
+#define UART_BUFFER_SIZE 4096
 
 // SLIP protocol constants
 #define SLIP_END 0xC0
@@ -55,7 +57,7 @@ void uart_bridge_passthrough(void);
 void init_usb_switch_gpio(void);
 void init_usb_serial_jtag(void);
 int usb_rx_one_char(uint8_t *c);
-void usb_tx_one_char(uint8_t c);
+int usb_tx_one_char(uint8_t c); // returns 0 on success, -1 if TX FIFO full (non-blocking)
 void usb_flush(void);
 
 // UART configuration functions
