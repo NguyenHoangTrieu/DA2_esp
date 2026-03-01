@@ -553,6 +553,7 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     if (src == CMD_SOURCE_UART) {
       int sent = uart_write_bytes(UART_NUM_0, (const char *)response_data, response_len);
       if (sent > 0) {
+        uart_write_bytes(UART_NUM_0, "\n", 1);  // Line terminator for App
         ESP_LOGI(TAG, "Response sent to UART: %d bytes", sent);
       } else {
         ESP_LOGE(TAG, "Failed to send response to UART");
@@ -562,6 +563,7 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
       int sent = usb_serial_jtag_write_bytes((const char *)response_data, response_len,
                                              pdMS_TO_TICKS(100));
       if (sent > 0) {
+        usb_serial_jtag_write_bytes("\n", 1, pdMS_TO_TICKS(50));  // Line terminator for App
         ESP_LOGI(TAG, "Response sent to USB: %d bytes", sent);
       } else {
         ESP_LOGW(TAG, "USB response failed (may not be connected)");

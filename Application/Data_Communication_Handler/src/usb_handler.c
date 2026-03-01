@@ -8,6 +8,7 @@
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
 #include "wifi_connect.h"
+#include "esp_log.h"
 
 #define BUF_SIZE (8192)
 const char *TAG = "USB_HANDLER";
@@ -71,11 +72,26 @@ static void usb_send_kv_ulong(const char *key, unsigned long value) {
 }
 
 /**
+ * @brief Convert TCA pin index back to label string for CFSC response
+ * 11 -> "WK", 12 -> "PE", 0..10 -> "01".."11", else ""
+ */
+static void tca_pin_to_label_usb(uint8_t pin, char *out, size_t size) {
+  if (pin == 11)      { strncpy(out, "WK", size); }
+  else if (pin == 12) { strncpy(out, "PE", size); }
+  else if (pin <= 10) { snprintf(out, size, "%02d", pin + 1); }
+  else                { strncpy(out, "", size); }
+}
+
+/**
  * @brief Handle CFSC (Config Scan) command via USB
  * Combines local WAN config + remote LAN config (via SPI)
  */
 static void handle_cfsc_command_usb(void) {
   ESP_LOGI(TAG, "Processing CFSC (scan) command via USB");
+
+  // Suppress all ESP log output for the duration of the CFSC response so that
+  // debug messages from other tasks do not interleave with the structured data.
+  esp_log_level_set("*", ESP_LOG_NONE);
 
   // Start marker
   usb_println("CFSC_RESP:START");
@@ -138,6 +154,13 @@ static void handle_cfsc_command_usb(void) {
     usb_send_kv_ulong("lte_timeout_ms", lte_cfg.reconnect_timeout_ms);
     usb_send_kv("lte_auto_reconnect",
                 lte_cfg.auto_reconnect ? "true" : "false");
+    usb_send_kv("lte_modem_name", lte_cfg.modem_name);
+    char pwr_pin_str[4] = {0};
+    char rst_pin_str[4] = {0};
+    tca_pin_to_label_usb(lte_cfg.pwr_pin, pwr_pin_str, sizeof(pwr_pin_str));
+    tca_pin_to_label_usb(lte_cfg.rst_pin, rst_pin_str, sizeof(rst_pin_str));
+    usb_send_kv("lte_pwr_pin", pwr_pin_str);
+    usb_send_kv("lte_rst_pin", rst_pin_str);
   } else {
     usb_send_kv("lte_apn", "ERROR:MUTEX_TIMEOUT");
   }
@@ -161,6 +184,9 @@ static void handle_cfsc_command_usb(void) {
   } else {
     usb_send_kv("mqtt_broker", "ERROR:MUTEX_TIMEOUT");
   }
+
+  // WAN hardware stack ID (identifies which LTE adapter is connected)
+  usb_send_kv("stack_wan_id", config_get_wan_stack_id());
 
   // ==================== LAN CONFIG (FROM LAN MCU VIA SPI) ====================
   usb_println("");
@@ -201,6 +227,8 @@ static void handle_cfsc_command_usb(void) {
   usb_println("");
   usb_println("CFSC_RESP:END");
 
+  // Restore log level before returning
+  esp_log_level_set("*", ESP_LOG_INFO);
   ESP_LOGI(TAG, "CFSC response completed via USB");
 }
 

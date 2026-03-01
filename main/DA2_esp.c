@@ -292,6 +292,10 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(10000));   /* wait for internet link        */
     mqtt_handler_task_start();
 
+    if (g_internet_type != CONFIG_INTERNET_LTE) {
+        jtag_task_start();
+    }
+
     ESP_LOGI(TAG, "System ready — NORMAL mode");
     ESP_LOGI(TAG, "  GPIO45 = toggle CONFIG/NORMAL  |  GPIO38 = toggle power rails");
 

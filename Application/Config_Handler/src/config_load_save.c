@@ -273,10 +273,13 @@ static esp_err_t load_lte_config_from_nvs(void) {
     char apn[64];
     char username[32];
     char password[32];
+    char modem_name[32];
     uint32_t max_reconnect_attempts;
     uint32_t reconnect_timeout_ms;
     bool auto_reconnect;
     lte_handler_comm_type_t comm_type;
+    uint8_t pwr_pin;
+    uint8_t rst_pin;
   } lte_config_persistent_t;
 
   lte_config_persistent_t lte_cfg;
@@ -288,10 +291,13 @@ static esp_err_t load_lte_config_from_nvs(void) {
     strncpy(g_lte_ctx.apn, lte_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
     strncpy(g_lte_ctx.username, lte_cfg.username, sizeof(g_lte_ctx.username) - 1);
     strncpy(g_lte_ctx.password, lte_cfg.password, sizeof(g_lte_ctx.password) - 1);
+    strncpy(g_lte_ctx.modem_name, lte_cfg.modem_name, sizeof(g_lte_ctx.modem_name) - 1);
     g_lte_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
     g_lte_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
     g_lte_ctx.auto_reconnect = lte_cfg.auto_reconnect;
     g_lte_ctx.comm_type = lte_cfg.comm_type;
+    g_lte_ctx.pwr_pin = lte_cfg.pwr_pin;
+    g_lte_ctx.rst_pin = lte_cfg.rst_pin;
 
     ESP_LOGI(TAG, "LTE config loaded - APN: %s", g_lte_ctx.apn);
   } else if (err == ESP_ERR_NVS_NOT_FOUND) {
@@ -324,20 +330,26 @@ esp_err_t save_lte_config_to_nvs(void) {
     char apn[64];
     char username[32];
     char password[32];
+    char modem_name[32];
     uint32_t max_reconnect_attempts;
     uint32_t reconnect_timeout_ms;
     bool auto_reconnect;
     lte_handler_comm_type_t comm_type;
+    uint8_t pwr_pin;
+    uint8_t rst_pin;
   } lte_config_persistent_t;
 
   lte_config_persistent_t lte_cfg = {
       .max_reconnect_attempts = g_lte_ctx.max_reconnect_attempts,
       .reconnect_timeout_ms = g_lte_ctx.reconnect_timeout_ms,
       .auto_reconnect = g_lte_ctx.auto_reconnect,
-      .comm_type = g_lte_ctx.comm_type};
+      .comm_type = g_lte_ctx.comm_type,
+      .pwr_pin = g_lte_ctx.pwr_pin,
+      .rst_pin = g_lte_ctx.rst_pin};
   strncpy(lte_cfg.apn, g_lte_ctx.apn, sizeof(lte_cfg.apn) - 1);
   strncpy(lte_cfg.username, g_lte_ctx.username, sizeof(lte_cfg.username) - 1);
   strncpy(lte_cfg.password, g_lte_ctx.password, sizeof(lte_cfg.password) - 1);
+  strncpy(lte_cfg.modem_name, g_lte_ctx.modem_name, sizeof(lte_cfg.modem_name) - 1);
 
   // Write LTE config blob
   err = nvs_set_blob(nvs_handle, NVS_KEY_LTE_CONFIG, &lte_cfg,

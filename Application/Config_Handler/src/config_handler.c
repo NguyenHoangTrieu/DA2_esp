@@ -766,6 +766,10 @@ static void config_handler_task(void *arg) {
                         g_lte_ctx.auto_reconnect = lte_cfg.auto_reconnect;
                         g_lte_ctx.reconnect_timeout_ms = lte_cfg.reconnect_timeout_ms;
                         g_lte_ctx.max_reconnect_attempts = lte_cfg.max_reconnect_attempts;
+                        strncpy(g_lte_ctx.modem_name, lte_cfg.modem_name, sizeof(g_lte_ctx.modem_name) - 1);
+                        g_lte_ctx.modem_name[sizeof(g_lte_ctx.modem_name) - 1] = '\0';
+                        g_lte_ctx.pwr_pin = lte_cfg.pwr_pin;
+                        g_lte_ctx.rst_pin = lte_cfg.rst_pin;
                         
                         save_lte_config_to_nvs();
                         ESP_LOGI(TAG, "LTE config saved to NVS");
