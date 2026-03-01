@@ -617,3 +617,8 @@ thêm vào chuỗi này:
 - sau khi có các phần gpio trên, thêm vào esp_modem_usb, cập nhật lại như sau, thay vì dùng gpio của esp32 thì dùng của tca.
 (chưa test)
 -  cập nhật lại app config, check lại nếu stack id nào hiện thì mối hiện config cho stack đó (miêu tả sau)
+
+### Cập nhật thêm http, coap cho gateway và app config:
+- viết thêm phần code để giao tiếp với server qua http và coap, có các trường giá trị có thể config rõ ràng, tránh hardcode.
+- Cập nhật thêm server CoAP, HTTP/HTTPS, vào phần config của app.
+- Trong config cả basic mode và advance mode các thông tin config của các kiểu server (MQTT, CoAP, HTTP/HTTPS) sẽ không hiển thị nếu người dùng kg chọn kiểu giao tiếp server đó, ví dụ khi vào giao diện, người dùng sẽ thấy một thanh tùy chọn kiểu server để kết nối (ví dụ: MQTT, CoAP, HTTP/HTTPS), nếu người dùng chọn MQTT thì chỉ có các trường thông tin config của MQTT mới hiển thị, các trường thông tin config của CoAP và HTTP/HTTPS sẽ được ẩn đi, nếu người dùng chọn CoAP thì chỉ có các trường thông tin config của CoAP mới hiển thị, các trường thông tin config của MQTT và HTTP/HTTPS sẽ được ẩn đi, nếu người dùng chọn HTTP/HTTPS thì chỉ có các trường thông tin config của HTTP/HTTPS mới hiển thị, các trường thông tin config của MQTT và CoAP sẽ được ẩn đi.
