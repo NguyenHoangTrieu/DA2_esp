@@ -31,6 +31,8 @@ typedef enum {
     CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command
     CONFIG_TYPE_MCU_LAN = 5,    // "ML" - MCU LAN configuration
     CONFIG_TYPE_SERVER = 6,     // "SV" - Server configuration
+    CONFIG_TYPE_HTTP = 7,        // "HP" - HTTP server configuration
+    CONFIG_TYPE_COAP = 8,        // "CP" - CoAP server configuration
     CONFIG_TYPE_UNKNOWN = 0xFF
 } config_type_t;
 
@@ -81,6 +83,27 @@ typedef struct {
     char publish_topic[128];
 } mqtt_config_data_t;
 
+// HTTP server configuration structure
+typedef struct {
+    char server_url[256];      // Full URL: http[s]://host:port/path
+    char auth_token[128];      // Bearer token or API key
+    uint16_t port;             // Explicit port override (0 = use from URL)
+    bool use_tls;              // Force HTTPS
+    bool verify_server;        // Verify server certificate
+    uint32_t timeout_ms;       // HTTP request timeout in ms
+} http_config_data_t;
+
+// CoAP server configuration structure
+typedef struct {
+    char host[128];            // CoAP server hostname or IP
+    char resource_path[128];   // Resource URI path e.g. /api/data
+    char device_token[65];     // Auth token (used in payload)
+    uint16_t port;             // CoAP port (5683 plain, 5684 DTLS)
+    bool use_dtls;             // Use DTLS (CoAPS)
+    uint32_t ack_timeout_ms;   // CON message ACK timeout
+    uint8_t max_retransmit;    // Max retransmission count
+} coap_config_data_t;
+
 //MCU LAN Communication configuration structure
 // Increased buffer size to match CONFIG_CMD_MAX_LEN for large JSON configs
 typedef struct {
@@ -121,6 +144,8 @@ esp_err_t save_server_config_to_nvs(void);
 esp_err_t save_mqtt_config_to_nvs(void);
 esp_err_t save_lte_config_to_nvs(void);
 esp_err_t save_wifi_config_to_nvs(void);
+esp_err_t save_http_config_to_nvs(void);
+esp_err_t save_coap_config_to_nvs(void);
 
 esp_err_t erase_all_configs_from_nvs(void);
 esp_err_t config_init(void);

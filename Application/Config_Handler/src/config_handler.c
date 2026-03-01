@@ -6,6 +6,8 @@
 
 #include "config_handler.h"
 #include "rbg_handler.h"
+#include "http_handler.h"
+#include "coap_handler.h"
 #include "esp_log.h"
 #include <ctype.h>
 
@@ -25,6 +27,10 @@ static const char *TAG = "config_handler";
 extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
+
+// HTTP and CoAP config globals (used by config_handler + http_handler/coap_handler)
+http_config_data_t g_http_cfg;
+coap_config_data_t g_coap_cfg;
 
 // Thread-safety: Mutex for config context protection
 static SemaphoreHandle_t g_config_context_mutex = NULL;
@@ -48,6 +54,9 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg);
 static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_data_t *cfg);
 static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type);
+static esp_err_t config_parse_server_type(const char *data, uint16_t len, config_server_type_t *type);
+static esp_err_t config_parse_http(const char *data, uint16_t len, http_config_data_t *cfg);
+static esp_err_t config_parse_coap(const char *data, uint16_t len, coap_config_data_t *cfg);
 
 /**
  * @brief Parse command type from 2-character prefix
@@ -76,6 +85,10 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_MCU_LAN;
     } else if (cmd[0] == 'S' && cmd[1] == 'V') {
         return CONFIG_TYPE_SERVER;
+    } else if (cmd[0] == 'H' && cmd[1] == 'P') {
+        return CONFIG_TYPE_HTTP;
+    } else if (cmd[0] == 'C' && cmd[1] == 'P') {
+        return CONFIG_TYPE_COAP;
     }
     
     ESP_LOGW(TAG, "Unknown command prefix: %c%c", cmd[0], cmd[1]);
@@ -658,6 +671,176 @@ static esp_err_t config_parse_internet(const char *data, uint16_t len, config_in
 }
 
 /**
+ * @brief Parse server type from command string
+ * Format: "SV:TYPE" where TYPE = 0 (MQTT), 1 (CoAP), 2 (HTTP)
+ */
+static esp_err_t config_parse_server_type(const char *data, uint16_t len, config_server_type_t *type) {
+    if (!data || !type || len < 4) {
+        return ESP_FAIL;
+    }
+
+    const char *ptr = data + 3; // Skip "SV:"
+    int val = atoi(ptr);
+    if (val >= 0 && val < CONFIG_SERVERTYPE_COUNT) {
+        *type = (config_server_type_t)val;
+        ESP_LOGI(TAG, "Parsed Server type: %d", *type);
+        return ESP_OK;
+    }
+    ESP_LOGE(TAG, "Invalid server type value: %d", val);
+    return ESP_FAIL;
+}
+
+/**
+ * @brief Parse HTTP configuration from command string
+ * Format: "HP:URL|AUTH_TOKEN|PORT|USE_TLS|VERIFY|TIMEOUT_MS"
+ * Example: "HP:http://server:8080/path|myToken|8080|0|0|10000"
+ */
+static esp_err_t config_parse_http(const char *data, uint16_t len, http_config_data_t *cfg) {
+    if (!data || !cfg || len < 5) {
+        return ESP_FAIL;
+    }
+
+    memset(cfg, 0, sizeof(http_config_data_t));
+    // Default values
+    cfg->port = 80;
+    cfg->timeout_ms = 10000;
+
+    const char *ptr = data + 3; // Skip "HP:"
+    const char *end = data + len;
+
+    // Field 0: URL
+    const char *sep1 = strchr(ptr, '|');
+    if (!sep1 || sep1 >= end) { sep1 = end; }
+    int url_len = sep1 - ptr;
+    if (url_len > 0 && url_len < (int)sizeof(cfg->server_url)) {
+        memcpy(cfg->server_url, ptr, url_len);
+        cfg->server_url[url_len] = '\0';
+    }
+    if (sep1 >= end) goto done;
+
+    // Field 1: auth_token
+    ptr = sep1 + 1;
+    const char *sep2 = strchr(ptr, '|');
+    if (!sep2 || sep2 >= end) { sep2 = end; }
+    int tok_len = sep2 - ptr;
+    if (tok_len > 0 && tok_len < (int)sizeof(cfg->auth_token)) {
+        memcpy(cfg->auth_token, ptr, tok_len);
+        cfg->auth_token[tok_len] = '\0';
+    }
+    if (sep2 >= end) goto done;
+
+    // Field 2: port
+    ptr = sep2 + 1;
+    const char *sep3 = strchr(ptr, '|');
+    if (!sep3 || sep3 >= end) { sep3 = end; }
+    cfg->port = (uint16_t)atoi(ptr);
+    if (sep3 >= end) goto done;
+
+    // Field 3: use_tls
+    ptr = sep3 + 1;
+    const char *sep4 = strchr(ptr, '|');
+    if (!sep4 || sep4 >= end) { sep4 = end; }
+    cfg->use_tls = (atoi(ptr) != 0);
+    if (sep4 >= end) goto done;
+
+    // Field 4: verify_server
+    ptr = sep4 + 1;
+    const char *sep5 = strchr(ptr, '|');
+    if (!sep5 || sep5 >= end) { sep5 = end; }
+    cfg->verify_server = (atoi(ptr) != 0);
+    if (sep5 >= end) goto done;
+
+    // Field 5: timeout_ms
+    ptr = sep5 + 1;
+    cfg->timeout_ms = (uint32_t)atoi(ptr);
+
+done:
+    ESP_LOGI(TAG, "Parsed HTTP config - URL: '%s', TLS: %d", cfg->server_url, cfg->use_tls);
+    return ESP_OK;
+}
+
+/**
+ * @brief Parse CoAP configuration from command string
+ * Format: "CP:HOST|RESOURCE_PATH|TOKEN|PORT|USE_DTLS|ACK_TIMEOUT|MAX_RTX"
+ * Example: "CP:server.io|/api/v1/{token}/telemetry|myToken|5683|0|2000|4"
+ */
+static esp_err_t config_parse_coap(const char *data, uint16_t len, coap_config_data_t *cfg) {
+    if (!data || !cfg || len < 5) {
+        return ESP_FAIL;
+    }
+
+    memset(cfg, 0, sizeof(coap_config_data_t));
+    // Default values
+    cfg->port = 5683;
+    cfg->ack_timeout_ms = 2000;
+    cfg->max_retransmit = 4;
+
+    const char *ptr = data + 3; // Skip "CP:"
+    const char *end = data + len;
+
+    // Field 0: host
+    const char *sep1 = strchr(ptr, '|');
+    if (!sep1 || sep1 >= end) { sep1 = end; }
+    int host_len = sep1 - ptr;
+    if (host_len > 0 && host_len < (int)sizeof(cfg->host)) {
+        memcpy(cfg->host, ptr, host_len);
+        cfg->host[host_len] = '\0';
+    }
+    if (sep1 >= end) goto done;
+
+    // Field 1: resource_path
+    ptr = sep1 + 1;
+    const char *sep2 = strchr(ptr, '|');
+    if (!sep2 || sep2 >= end) { sep2 = end; }
+    int path_len = sep2 - ptr;
+    if (path_len > 0 && path_len < (int)sizeof(cfg->resource_path)) {
+        memcpy(cfg->resource_path, ptr, path_len);
+        cfg->resource_path[path_len] = '\0';
+    }
+    if (sep2 >= end) goto done;
+
+    // Field 2: device_token
+    ptr = sep2 + 1;
+    const char *sep3 = strchr(ptr, '|');
+    if (!sep3 || sep3 >= end) { sep3 = end; }
+    int tok_len = sep3 - ptr;
+    if (tok_len > 0 && tok_len < (int)sizeof(cfg->device_token)) {
+        memcpy(cfg->device_token, ptr, tok_len);
+        cfg->device_token[tok_len] = '\0';
+    }
+    if (sep3 >= end) goto done;
+
+    // Field 3: port
+    ptr = sep3 + 1;
+    const char *sep4 = strchr(ptr, '|');
+    if (!sep4 || sep4 >= end) { sep4 = end; }
+    cfg->port = (uint16_t)atoi(ptr);
+    if (sep4 >= end) goto done;
+
+    // Field 4: use_dtls
+    ptr = sep4 + 1;
+    const char *sep5 = strchr(ptr, '|');
+    if (!sep5 || sep5 >= end) { sep5 = end; }
+    cfg->use_dtls = (atoi(ptr) != 0);
+    if (sep5 >= end) goto done;
+
+    // Field 5: ack_timeout_ms
+    ptr = sep5 + 1;
+    const char *sep6 = strchr(ptr, '|');
+    if (!sep6 || sep6 >= end) { sep6 = end; }
+    cfg->ack_timeout_ms = (uint32_t)atoi(ptr);
+    if (sep6 >= end) goto done;
+
+    // Field 6: max_retransmit
+    ptr = sep6 + 1;
+    cfg->max_retransmit = (uint8_t)atoi(ptr);
+
+done:
+    ESP_LOGI(TAG, "Parsed CoAP config - Host: '%s', Resource: '%s'", cfg->host, cfg->resource_path);
+    return ESP_OK;
+}
+
+/**
  * @brief Config handler task - receives raw commands and routes to specific queues
  * @param arg Task argument (unused)
  */
@@ -831,8 +1014,35 @@ static void config_handler_task(void *arg) {
                     break;
                 }
                 case CONFIG_TYPE_SERVER: {
-                    ESP_LOGI(TAG, "Server config command received");
-                    // Future implementation for server config parsing
+                    ESP_LOGI(TAG, "Server type config command received");
+                    config_server_type_t new_type;
+                    if (config_parse_server_type(cmd->raw_data, cmd->data_len, &new_type) == ESP_OK) {
+                        g_server_type = new_type;
+                        save_server_config_to_nvs();
+                        ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_HTTP: {
+                    ESP_LOGI(TAG, "HTTP config command received");
+                    http_config_data_t http_cfg;
+                    if (config_parse_http(cmd->raw_data, cmd->data_len, &http_cfg) == ESP_OK) {
+                        memcpy(&g_http_cfg, &http_cfg, sizeof(http_config_data_t));
+                        save_http_config_to_nvs();
+                        ESP_LOGI(TAG, "HTTP config saved - URL: %s", g_http_cfg.server_url);
+                        http_handler_update_config(&g_http_cfg);
+                    }
+                    break;
+                }
+                case CONFIG_TYPE_COAP: {
+                    ESP_LOGI(TAG, "CoAP config command received");
+                    coap_config_data_t coap_cfg;
+                    if (config_parse_coap(cmd->raw_data, cmd->data_len, &coap_cfg) == ESP_OK) {
+                        memcpy(&g_coap_cfg, &coap_cfg, sizeof(coap_config_data_t));
+                        save_coap_config_to_nvs();
+                        ESP_LOGI(TAG, "CoAP config saved - Host: %s", g_coap_cfg.host);
+                        coap_handler_update_config(&g_coap_cfg);
+                    }
                     break;
                 }
                 default:

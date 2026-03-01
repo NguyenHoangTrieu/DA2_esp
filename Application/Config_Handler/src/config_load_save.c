@@ -19,6 +19,8 @@ static const char *TAG = "CONFIG_NVS";
 #define NVS_KEY_WIFI_CONFIG "wifi_cfg"
 #define NVS_KEY_LTE_CONFIG "lte_cfg"
 #define NVS_KEY_MQTT_CONFIG "mqtt_cfg"
+#define NVS_KEY_HTTP_CONFIG "http_cfg"
+#define NVS_KEY_COAP_CONFIG "coap_cfg"
 #define NVS_NS_GATEWAY "gateway_cfg"
 #define NVS_KEY_INITIALIZED "initialized"
 #define NVS_KEY_WAN_STACK_ID "wan_stack_id"  /* tracks WAN hardware stack, clears LTE config on change */
@@ -26,12 +28,27 @@ static const char *TAG = "CONFIG_NVS";
 /* WAN stack module ID — pseudo hardware identifier (always "001" for single-stack WAN) */
 char g_stack_id_wan[8] = "000";
 
+/* Default values for HTTP/CoAP */
+#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io:8080/api/v1/{token}/telemetry"
+#define HTTP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
+#define HTTP_DEFAULT_PORT       8080
+#define HTTP_DEFAULT_TIMEOUT_MS 10000
+
+#define COAP_DEFAULT_HOST       "demo.thingsboard.io"
+#define COAP_DEFAULT_RESOURCE   "/api/v1/{token}/telemetry"
+#define COAP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
+#define COAP_DEFAULT_PORT       5683
+#define COAP_DEFAULT_ACK_TO_MS  2000
+#define COAP_DEFAULT_MAX_RTX    4
+
 /* External global variables from your modules */
 extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 extern config_internet_type_t g_internet_type;
 extern config_server_type_t g_server_type;
+extern http_config_data_t g_http_cfg;
+extern coap_config_data_t g_coap_cfg;
 
 /**
  * @brief Open NVS handle
@@ -440,6 +457,120 @@ esp_err_t save_mqtt_config_to_nvs(void) {
 }
 
 /**
+ * @brief Load HTTP configuration from NVS
+ */
+static esp_err_t load_http_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading HTTP config from NVS...");
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+
+  size_t required_size = sizeof(http_config_data_t);
+  err = nvs_get_blob(nvs_handle, NVS_KEY_HTTP_CONFIG, &g_http_cfg, &required_size);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "HTTP config loaded - URL: %s", g_http_cfg.server_url);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "HTTP config not found in NVS, using defaults");
+    err = ESP_OK;
+  } else {
+    ESP_LOGE(TAG, "Error reading HTTP config: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save HTTP configuration to NVS
+ */
+esp_err_t save_http_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving HTTP config to NVS...");
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+
+  err = nvs_set_blob(nvs_handle, NVS_KEY_HTTP_CONFIG, &g_http_cfg,
+                     sizeof(http_config_data_t));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing HTTP config: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "HTTP config saved - URL: %s", g_http_cfg.server_url);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Load CoAP configuration from NVS
+ */
+static esp_err_t load_coap_config_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Loading CoAP config from NVS...");
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+
+  size_t required_size = sizeof(coap_config_data_t);
+  err = nvs_get_blob(nvs_handle, NVS_KEY_COAP_CONFIG, &g_coap_cfg, &required_size);
+
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "CoAP config loaded - Host: %s", g_coap_cfg.host);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ESP_LOGI(TAG, "CoAP config not found in NVS, using defaults");
+    err = ESP_OK;
+  } else {
+    ESP_LOGE(TAG, "Error reading CoAP config: %s", esp_err_to_name(err));
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
+ * @brief Save CoAP configuration to NVS
+ */
+esp_err_t save_coap_config_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err;
+
+  ESP_LOGI(TAG, "Saving CoAP config to NVS...");
+  err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+
+  err = nvs_set_blob(nvs_handle, NVS_KEY_COAP_CONFIG, &g_coap_cfg,
+                     sizeof(coap_config_data_t));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error writing CoAP config: %s", esp_err_to_name(err));
+    nvs_close(nvs_handle);
+    return err;
+  }
+
+  err = nvs_commit(nvs_handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Error committing NVS: %s", esp_err_to_name(err));
+  } else {
+    ESP_LOGI(TAG, "CoAP config saved - Host: %s", g_coap_cfg.host);
+  }
+
+  nvs_close(nvs_handle);
+  return err;
+}
+
+/**
  * @brief Load all configurations from NVS (call at startup)
  */
 static esp_err_t load_all_configs_from_nvs(void) {
@@ -474,6 +605,18 @@ static esp_err_t load_all_configs_from_nvs(void) {
   err = load_mqtt_config_from_nvs();
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to load MQTT config");
+  }
+
+  // Load HTTP config
+  err = load_http_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load HTTP config");
+  }
+
+  // Load CoAP config
+  err = load_coap_config_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load CoAP config");
   }
 
   ESP_LOGI(TAG, "Configuration loading complete");
@@ -545,10 +688,31 @@ esp_err_t config_init(void) {
     if (is_first_boot()) {
         ESP_LOGI(TAG, "First boot detected - saving default configuration");
         
+        // Initialize HTTP defaults
+        memset(&g_http_cfg, 0, sizeof(g_http_cfg));
+        strncpy(g_http_cfg.server_url, HTTP_DEFAULT_URL, sizeof(g_http_cfg.server_url) - 1);
+        strncpy(g_http_cfg.auth_token, HTTP_DEFAULT_TOKEN, sizeof(g_http_cfg.auth_token) - 1);
+        g_http_cfg.port = HTTP_DEFAULT_PORT;
+        g_http_cfg.use_tls = false;
+        g_http_cfg.verify_server = false;
+        g_http_cfg.timeout_ms = HTTP_DEFAULT_TIMEOUT_MS;
+
+        // Initialize CoAP defaults
+        memset(&g_coap_cfg, 0, sizeof(g_coap_cfg));
+        strncpy(g_coap_cfg.host, COAP_DEFAULT_HOST, sizeof(g_coap_cfg.host) - 1);
+        strncpy(g_coap_cfg.resource_path, COAP_DEFAULT_RESOURCE, sizeof(g_coap_cfg.resource_path) - 1);
+        strncpy(g_coap_cfg.device_token, COAP_DEFAULT_TOKEN, sizeof(g_coap_cfg.device_token) - 1);
+        g_coap_cfg.port = COAP_DEFAULT_PORT;
+        g_coap_cfg.use_dtls = false;
+        g_coap_cfg.ack_timeout_ms = COAP_DEFAULT_ACK_TO_MS;
+        g_coap_cfg.max_retransmit = COAP_DEFAULT_MAX_RTX;
+
         // Save to NVS
         save_wifi_config_to_nvs();
         save_lte_config_to_nvs();
         save_mqtt_config_to_nvs();
+        save_http_config_to_nvs();
+        save_coap_config_to_nvs();
         save_internet_config_to_nvs();
         save_server_config_to_nvs();
         

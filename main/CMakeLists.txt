@@ -7,6 +7,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
                                 "../Application/Server_Communication_Handler/mqtt_handler/src/mqtt_handler.c"
+                                "../Application/Server_Communication_Handler/http_handler/src/http_handler.c"
+                                "../Application/Server_Communication_Handler/coap_handler/src/coap_handler.c"
                                 "../Application/Config_Handler/src/config_handler.c"
                                 "../Application/Config_Handler/src/config_load_save.c"
                                 "../Application/FOTA/src/fota_handler.c"
@@ -42,6 +44,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 mbedtls
                                 esp_driver_usb_serial_jtag
                                 esp_http_client
+                                coap3
                                 app_update
                                 esp_https_ota
                                 esp_netif
@@ -51,6 +54,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/include"
                                 "../Application/Internet_Communication_Handler/lte_handler/include"
                                 "../Application/Server_Communication_Handler/mqtt_handler/include"
+                                "../Application/Server_Communication_Handler/http_handler/include"
+                                "../Application/Server_Communication_Handler/coap_handler/include"
                                 "../Application/Config_Handler/include"
                                 "../Application/FOTA/include"
                                 "../Application/PPP_Server/include"

@@ -127,8 +127,33 @@ void server_connect_stop(config_server_type_t type)
     case CONFIG_SERVERTYPE_MQTT:
         mqtt_handler_task_stop();
         break;
+    case CONFIG_SERVERTYPE_HTTP:
+        http_handler_task_stop();
+        break;
+    case CONFIG_SERVERTYPE_COAP:
+        coap_handler_task_stop();
+        break;
     default:
         ESP_LOGW(TAG, "server_connect_stop: unhandled type %d", type);
+        break;
+    }
+}
+
+void server_connect_start(config_server_type_t type)
+{
+    switch (type) {
+    case CONFIG_SERVERTYPE_MQTT:
+        mqtt_handler_task_start();
+        break;
+    case CONFIG_SERVERTYPE_HTTP:
+        http_handler_task_start();
+        break;
+    case CONFIG_SERVERTYPE_COAP:
+        coap_handler_task_start();
+        break;
+    default:
+        ESP_LOGW(TAG, "server_connect_start: unknown type %d, defaulting to MQTT", type);
+        mqtt_handler_task_start();
         break;
     }
 }
@@ -290,7 +315,7 @@ void app_main(void)
 
     internet_connect_start(current_internet_type);
     vTaskDelay(pdMS_TO_TICKS(10000));   /* wait for internet link        */
-    mqtt_handler_task_start();
+    server_connect_start(g_server_type);
 
     if (g_internet_type != CONFIG_INTERNET_LTE) {
         jtag_task_start();

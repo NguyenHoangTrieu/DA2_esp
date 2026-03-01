@@ -17,6 +17,8 @@
 #include "lan_comm.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
+#include "http_handler.h"
+#include "coap_handler.h"
 #include "pcf8563_rtc.h"
 #include "rbg_handler.h"
 #include "ppp_server.h"
@@ -788,8 +790,9 @@ bool server_handler_enqueue_uplink(const uint8_t *data, uint16_t len) {
   case CONFIG_SERVERTYPE_MQTT:
     return mqtt_enqueue_telemetry(data, len);
   case CONFIG_SERVERTYPE_HTTP:
-    ESP_LOGW(TAG, "HTTP not implemented");
-    return false;
+    return http_enqueue_telemetry(data, len);
+  case CONFIG_SERVERTYPE_COAP:
+    return coap_enqueue_telemetry(data, len);
   default:
     return mqtt_enqueue_telemetry(data, len);
   }
