@@ -44,7 +44,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 mbedtls
                                 esp_driver_usb_serial_jtag
                                 esp_http_client
-                                coap3
+                                coap
                                 app_update
                                 esp_https_ota
                                 esp_netif

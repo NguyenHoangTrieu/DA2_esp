@@ -3003,8 +3003,6 @@ CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
 # default:
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
 # default:
-# CONFIG_MBEDTLS_DYNAMIC_BUFFER is not set
-# default:
 # CONFIG_MBEDTLS_VERSION_FEATURES is not set
 # default:
 # CONFIG_MBEDTLS_DEBUG is not set
@@ -3137,8 +3135,18 @@ CONFIG_MBEDTLS_SERVER_SSL_SESSION_TICKETS=y
 # CONFIG_MBEDTLS_SSL_KEYING_MATERIAL_EXPORT is not set
 # end of TLS Protocol Configuration
 
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
+
+#
+# DTLS-based configurations
+#
 # default:
-# CONFIG_MBEDTLS_SSL_PROTO_DTLS is not set
+CONFIG_MBEDTLS_SSL_COOKIE_C=y
+# default:
+# CONFIG_MBEDTLS_SSL_DTLS_CONNECTION_ID is not set
+# default:
+# CONFIG_MBEDTLS_SSL_DTLS_SRTP is not set
+# end of DTLS-based configurations
 
 #
 # Symmetric Ciphers
@@ -3695,6 +3703,37 @@ CONFIG_WL_SECTOR_SIZE=4096
 # end of Wear Levelling
 
 #
+# CoAP Configuration
+#
+# default:
+CONFIG_COAP_MBEDTLS_PSK=y
+# default:
+# CONFIG_COAP_MBEDTLS_PKI is not set
+# default:
+# CONFIG_COAP_DEBUGGING is not set
+# default:
+CONFIG_COAP_LOG_DEFAULT_LEVEL=0
+# default:
+CONFIG_COAP_TCP_SUPPORT=y
+# default:
+# CONFIG_COAP_OSCORE_SUPPORT is not set
+# default:
+# CONFIG_COAP_OBSERVE_PERSIST is not set
+# default:
+# CONFIG_COAP_Q_BLOCK is not set
+# default:
+CONFIG_COAP_ASYNC_SUPPORT=y
+# default:
+# CONFIG_COAP_THREAD_SAFE is not set
+# default:
+# CONFIG_COAP_WEBSOCKETS is not set
+CONFIG_COAP_CLIENT_SUPPORT=y
+CONFIG_COAP_SERVER_SUPPORT=y
+# default:
+# CONFIG_COAP_PROXY_SUPPORT is not set
+# end of CoAP Configuration
+
+#
 # eppp_link
 #
 CONFIG_EPPP_LINK_USES_PPP=y
@@ -4082,4 +4121,5 @@ CONFIG_SPI_FLASH_WRITING_DANGEROUS_REGIONS_ABORTS=y
 CONFIG_SUPPRESS_SELECT_DEBUG_OUTPUT=y
 # CONFIG_SUPPORT_TERMIOS is not set
 CONFIG_SEMIHOSTFS_MAX_MOUNT_POINTS=1
+# CONFIG_COAP_MBEDTLS_DEBUG is not set
 # End of deprecated options

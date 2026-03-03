@@ -1,14 +1,6 @@
 /**
  * @file coap_handler.c
  * @brief CoAP client telemetry publisher using ESP-IDF libcoap (coap3).
- *
- * Receives pre-serialised JSON payloads via g_coap_publish_queue and sends
- * them as CoAP PUT messages (Confirmable) to the configured server.
- *
- * Token substitution (`{token}` in resource_path) is performed at send time.
- *
- * Requirements (add to CMakeLists REQUIRES):
- *   coap, lwip, esp_netif
  */
 
 #include "coap_handler.h"
@@ -105,6 +97,31 @@ static esp_err_t resolve_host(const char *host, uint16_t port,
 }
 
 /**
+* @brief CoAP response handler
+*/
+static coap_response_t coap_response_handler(coap_session_t *s,
+                                              const coap_pdu_t *sent,
+                                              const coap_pdu_t *recv,
+                                              const int mid) {
+    coap_pdu_code_t code = coap_pdu_get_code(recv);
+    if (COAP_RESPONSE_CLASS(code) != 2)
+        ESP_LOGE(TAG, "CoAP error %d.%02d MID=%d",
+                 COAP_RESPONSE_CLASS(code), code & 0x1F, mid);
+    else
+        ESP_LOGI(TAG, "CoAP ACK %d.%02d MID=%d",
+                 COAP_RESPONSE_CLASS(code), code & 0x1F, mid);
+    return COAP_RESPONSE_OK;
+}
+
+/**
+* @brief CoAP NACK handler
+*/
+static void coap_nack_handler(coap_session_t *s, const coap_pdu_t *sent,
+                               coap_nack_reason_t reason, coap_mid_t mid) {
+    ESP_LOGE(TAG, "CoAP NACK reason=%d MID=%d", reason, mid);
+}
+
+/**
  * Send a single CoAP PUT (Confirmable) with the given payload.
  */
 static esp_err_t coap_send_payload(const uint8_t *payload, size_t len) {
@@ -124,10 +141,25 @@ static esp_err_t coap_send_payload(const uint8_t *payload, size_t len) {
         return ESP_FAIL;
     }
     coap_context_set_block_mode(ctx, COAP_BLOCK_USE_LIBCOAP);
-
+    coap_register_response_handler(ctx, coap_response_handler);
+    coap_register_nack_handler(ctx, coap_nack_handler);
     /* Create session */
-    coap_proto_t proto = g_coap_cfg.use_dtls ? COAP_PROTO_DTLS : COAP_PROTO_UDP;
-    coap_session_t *session = coap_new_client_session(ctx, NULL, &dst, proto);
+    coap_session_t *session = NULL;
+    if (g_coap_cfg.use_dtls) {
+        coap_dtls_cpsk_t psk = {
+            .version = COAP_DTLS_CPSK_SETUP_VERSION,
+            .client_sni = g_coap_cfg.host,
+            .psk_info = {
+                .identity = { .s   = (uint8_t *)g_coap_cfg.device_token,
+                            .length = strlen(g_coap_cfg.device_token) },
+                .key      = { .s   = (uint8_t *)g_coap_cfg.device_token,
+                            .length = strlen(g_coap_cfg.device_token) },
+            },
+        };
+        session = coap_new_client_session_psk2(ctx, NULL, &dst, COAP_PROTO_DTLS, &psk);
+    } else {
+        session = coap_new_client_session(ctx, NULL, &dst, COAP_PROTO_UDP);
+    }
     if (!session) {
         ESP_LOGE(TAG, "Failed to create CoAP session to %s:%u", g_coap_cfg.host, g_coap_cfg.port);
         coap_free_context(ctx);
@@ -135,7 +167,7 @@ static esp_err_t coap_send_payload(const uint8_t *payload, size_t len) {
     }
 
     /* Build URI option string: split path into path segments */
-    coap_pdu_t *pdu = coap_new_pdu(COAP_MESSAGE_CON, COAP_REQUEST_CODE_PUT, session);
+    coap_pdu_t *pdu = coap_new_pdu(COAP_MESSAGE_CON, COAP_REQUEST_CODE_POST, session);
     if (!pdu) {
         ESP_LOGE(TAG, "Failed to allocate CoAP PDU");
         coap_session_release(session);
@@ -183,7 +215,7 @@ static esp_err_t coap_send_payload(const uint8_t *payload, size_t len) {
         if (io_ms < 0) break;
     }
 
-    ESP_LOGI(TAG, "CoAP PUT sent – MID %d, path: %s, %zu bytes", mid, resource_path, len);
+    ESP_LOGI(TAG, "CoAP POST sent MID %d, path: %s, %zu bytes", mid, resource_path, len);
 
     coap_session_release(session);
     coap_free_context(ctx);
@@ -258,7 +290,7 @@ bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     item.length = data_len;
 
     if (xQueueSend(g_coap_publish_queue, &item, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGE(TAG, "CoAP publish queue full – payload dropped");
+        ESP_LOGE(TAG, "CoAP publish queue full payload dropped");
         return false;
     }
 
@@ -268,5 +300,5 @@ bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
 void coap_handler_update_config(const coap_config_data_t *cfg) {
     if (!cfg) return;
     memcpy(&g_coap_cfg, cfg, sizeof(coap_config_data_t));
-    ESP_LOGI(TAG, "CoAP config updated – Host: %s", g_coap_cfg.host);
+    ESP_LOGI(TAG, "CoAP config updated Host: %s", g_coap_cfg.host);
 }

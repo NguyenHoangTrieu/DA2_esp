@@ -16,6 +16,7 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include "esp_crt_bundle.h"
 
 static const char *TAG = "HTTP_HANDLER";
 
@@ -83,13 +84,14 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
     build_url(g_http_cfg.server_url, g_http_cfg.auth_token, url, sizeof(url));
 
     esp_http_client_config_t config = {
-        .url             = url,
-        .method          = HTTP_METHOD_POST,
-        .timeout_ms      = (int)g_http_cfg.timeout_ms,
+        .url                        = url,
+        .method                     = HTTP_METHOD_POST,
+        .timeout_ms                 = (int)g_http_cfg.timeout_ms,
+        .crt_bundle_attach          = esp_crt_bundle_attach,   // <-- thêm dòng này
         .skip_cert_common_name_check = !g_http_cfg.verify_server,
-        .transport_type  = g_http_cfg.use_tls
-                               ? HTTP_TRANSPORT_OVER_SSL
-                               : HTTP_TRANSPORT_OVER_TCP,
+        .transport_type             = g_http_cfg.use_tls
+                                    ? HTTP_TRANSPORT_OVER_SSL
+                                    : HTTP_TRANSPORT_OVER_TCP,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -99,14 +101,6 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
     }
 
     esp_http_client_set_header(client, "Content-Type", HTTP_CONTENT_TYPE);
-
-    // If URL has no {token}, use Bearer header instead
-    if (g_http_cfg.auth_token[0] != '\0' && strstr(g_http_cfg.server_url, "{token}") == NULL) {
-        char auth_hdr[150];
-        snprintf(auth_hdr, sizeof(auth_hdr), "Bearer %s", g_http_cfg.auth_token);
-        esp_http_client_set_header(client, "Authorization", auth_hdr);
-    }
-
     esp_http_client_set_post_field(client, (const char *)payload, (int)len);
 
     esp_err_t err = esp_http_client_perform(client);
@@ -168,7 +162,7 @@ void http_handler_task_start(void) {
     }
 
     s_task_running = true;
-    xTaskCreate(http_publish_task, "http_publish", 4096, NULL, 5, &s_task_handle);
+    xTaskCreate(http_publish_task, "http_publish", 8192, NULL, 5, &s_task_handle);
     ESP_LOGI(TAG, "HTTP handler task created");
 }
 
