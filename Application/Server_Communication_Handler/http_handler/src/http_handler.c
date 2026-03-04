@@ -134,7 +134,7 @@ static void http_publish_task(void *arg) {
             ESP_LOGI(TAG, "Dequeued %zu bytes for HTTP publish", item.length);
             esp_err_t rc = http_post_payload(item.data, item.length);
             if (rc != ESP_OK) {
-                ESP_LOGW(TAG, "HTTP publish failed – payload dropped");
+                ESP_LOGW(TAG, "HTTP publish failed payload dropped");
             }
         }
     }
@@ -187,7 +187,7 @@ bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     item.length = data_len;
 
     if (xQueueSend(g_http_publish_queue, &item, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGE(TAG, "HTTP publish queue full – payload dropped");
+        ESP_LOGE(TAG, "HTTP publish queue full payload dropped");
         return false;
     }
 
@@ -199,5 +199,5 @@ void http_handler_update_config(const http_config_data_t *cfg) {
     // g_http_cfg is the live global; copy in new settings.
     // Note: ongoing requests in the task will use the new config on next iteration.
     memcpy(&g_http_cfg, cfg, sizeof(http_config_data_t));
-    ESP_LOGI(TAG, "HTTP config updated – URL: %s", g_http_cfg.server_url);
+    ESP_LOGI(TAG, "HTTP config updated URL: %s", g_http_cfg.server_url);
 }

@@ -236,7 +236,7 @@ static void coap_publish_task(void *arg) {
             ESP_LOGI(TAG, "Dequeued %zu bytes for CoAP publish", item.length);
             esp_err_t rc = coap_send_payload(item.data, item.length);
             if (rc != ESP_OK) {
-                ESP_LOGW(TAG, "CoAP publish failed – payload dropped");
+                ESP_LOGW(TAG, "CoAP publish failed payload dropped");
             }
         }
     }
