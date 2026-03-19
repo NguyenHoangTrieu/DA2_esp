@@ -18,6 +18,7 @@ extern "C" {
 // Connection status
 extern bool g_oled_wifi_connected;
 extern bool g_oled_lte_connected;
+extern bool g_oled_eth_connected;
 
 // RTC time string
 extern char g_oled_rtc_string[32];
@@ -45,6 +46,11 @@ void oled_monitor_update_wifi(bool connected);
  * @brief Update LTE connection status
  */
 void oled_monitor_update_lte(bool connected);
+
+/**
+ * @brief Update Ethernet connection status
+ */
+void oled_monitor_update_eth(bool connected);
 
 /**
  * @brief Update internet connection type

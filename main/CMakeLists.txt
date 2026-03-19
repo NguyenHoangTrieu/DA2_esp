@@ -5,6 +5,7 @@ file(GLOB I2C_DEVICES "../BSP/i2c_dev_support/src/*.c")
 idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
                                 "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
+                                "../Application/Internet_Communication_Handler/ethernet_handler/src/eth_connect.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
                                 "../Application/Server_Communication_Handler/mqtt_handler/src/mqtt_handler.c"
                                 "../Application/Server_Communication_Handler/http_handler/src/http_handler.c"
@@ -48,11 +49,13 @@ idf_component_register(SRCS "DA2_esp.c"
                                 app_update
                                 esp_https_ota
                                 esp_netif
+                                esp_eth
                                 esp_psram
                                 esp_ringbuf
                     INCLUDE_DIRS "." 
                                 "../Application/Internet_Communication_Handler/wifi_handler/include"
                                 "../Application/Internet_Communication_Handler/lte_handler/include"
+                                "../Application/Internet_Communication_Handler/ethernet_handler/include"
                                 "../Application/Server_Communication_Handler/mqtt_handler/include"
                                 "../Application/Server_Communication_Handler/http_handler/include"
                                 "../Application/Server_Communication_Handler/coap_handler/include"

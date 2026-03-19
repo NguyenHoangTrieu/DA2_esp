@@ -11,6 +11,7 @@
 #include "coap_handler.h"
 #include "config_handler.h"
 #include "lte_connect.h"
+#include "eth_connect.h"
 #include "mcu_lan_handler.h"
 #include "ppp_server.h"
 #include "i2c_dev_support.h"

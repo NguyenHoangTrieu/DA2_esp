@@ -25,6 +25,7 @@ static const char *TAG = "OLED_MON";
 // Global Variables
 bool g_oled_wifi_connected = false;
 bool g_oled_lte_connected = false;
+bool g_oled_eth_connected = false;
 char g_oled_rtc_string[32] = "00/00/0000 00:00:00";
 bool g_oled_rtc_valid = false;
 config_internet_type_t g_oled_internet_type = CONFIG_INTERNET_WIFI;
@@ -241,7 +242,15 @@ static void draw_connection_status(uint8_t y) {
     break;
 
   case CONFIG_INTERNET_ETHERNET:
-    sh1107_draw_string(text_x, y + 2, "Ethernet", 2);
+    if (g_oled_eth_connected) {
+      sh1107_draw_string(text_x, y + 2, "Ethernet", 2);
+      if (blink_state) {
+        draw_status_dot(95, y + 3, true);
+      }
+    } else {
+      sh1107_draw_string(text_x, y + 2, "Ethernet", 1);
+      sh1107_draw_string(text_x, y + 10, "Offline", 1);
+    }
     break;
 
   default:
@@ -292,7 +301,8 @@ static void update_display(void) {
   uint8_t footer_y = 95;
   char footer[32];
   if ((g_oled_internet_type == CONFIG_INTERNET_WIFI && g_oled_wifi_connected) ||
-      (g_oled_internet_type == CONFIG_INTERNET_LTE && g_oled_lte_connected)) {
+      (g_oled_internet_type == CONFIG_INTERNET_LTE && g_oled_lte_connected) ||
+      (g_oled_internet_type == CONFIG_INTERNET_ETHERNET && g_oled_eth_connected)) {
     snprintf(footer, sizeof(footer), "Status: Online");
   } else {
     snprintf(footer, sizeof(footer), "Status: Offline");
@@ -419,6 +429,15 @@ void oled_monitor_update_lte(bool connected) {
     g_oled_lte_connected = connected;
     xSemaphoreGive(g_oled_mutex);
     ESP_LOGD(TAG, "LTE: %s", connected ? "Connected" : "Disconnected");
+  }
+}
+
+void oled_monitor_update_eth(bool connected) {
+  if (g_oled_mutex &&
+      xSemaphoreTake(g_oled_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    g_oled_eth_connected = connected;
+    xSemaphoreGive(g_oled_mutex);
+    ESP_LOGD(TAG, "ETH: %s", connected ? "Connected" : "Disconnected");
   }
 }
 

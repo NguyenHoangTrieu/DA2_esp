@@ -177,7 +177,8 @@ static void internet_connect_start(config_internet_type_t type)
         wifi_connect_task_start();
         break;
     case CONFIG_INTERNET_ETHERNET:
-        /* Not yet implemented */
+        ESP_LOGI(TAG, "Starting Ethernet (W5500) connection");
+        eth_connect_task_start();
         break;
     default:
         ESP_LOGW(TAG, "internet_connect_start: unhandled type %d", type);
@@ -226,6 +227,12 @@ static void switch_to_config_mode(config_internet_type_t *internet_type)
         ESP_LOGI(TAG, "Stopping LTE task before USB switch");
         lte_connect_task_stop();
         vTaskDelay(pdMS_TO_TICKS(10000));    /* wait for modem to release USB */
+    }
+
+    /* Stop Ethernet driver before entering CONFIG mode */
+    if (*internet_type == CONFIG_INTERNET_ETHERNET) {
+        ESP_LOGI(TAG, "Stopping Ethernet task before CONFIG mode");
+        eth_connect_task_stop();
     }
 
     usb_switch_set(true);                   /* USB -> host / config tool */
