@@ -340,16 +340,23 @@ Handler:            config_parse_rs485_baud()
 Valid baud rates:   9600, 19200, 38400, 57600, 115200
 ```
 
-#### 2.3.8 LAN Firmware Update (FOTA)
+#### 2.3.8 Firmware Update (FOTA) — Both MCUs
 ```
-Full command:
+One command sent:
   CFML:CFFW
-  CFML:CFFW:https://example.com/lan_firmware.bin
-  CFML:CFFW:https://example.com/lan_firmware.bin:FORCE
 
-LAN MCU receives:   CFFW  /  CFFW:URL  /  CFFW:URL:FORCE
-LAN type:           CONFIG_UPDATE_FIRMWARE
-Handler:            config_parse_fota() → fota_lan_handler_task_start()
+Flow:
+  WAN MCU receives: raw_data="ML:CFFW", type=CONFIG_TYPE_MCU_LAN
+    → Detects "CFFW" is a firmware update (is_fota=true)
+    → Strips "ML:" prefix
+    → Sends "CFFW" to LAN MCU via SPI
+  LAN MCU receives: "CFFW"
+    → Detects as FOTA command
+    → Triggers fota_lan_handler_task_start()
+
+Firmware URLs: hardcoded in both WAN and LAN firmware (not user-configurable)
+  → Prevents users from flashing incorrect firmware versions
+  → Both MCUs update simultaneously
 ```
 
 ---
@@ -484,7 +491,7 @@ POST /api/config body section → wire-format command string → config_type_t
 "zigbee_json"     →  "ML:CFZB:JSON:{...}"              → CONFIG_TYPE_MCU_LAN
 "zigbee_cmd"      →  "ML:CFZB:S1:FUNC_NAME[:param]"   → CONFIG_TYPE_MCU_LAN
 "rs485"           →  "ML:CFRS:BR:115200"               → CONFIG_TYPE_MCU_LAN
-"lan_fota"        →  "ML:CFFW[:url][:FORCE]"           → CONFIG_TYPE_MCU_LAN
+"fota"            →  "ML:CFFW"  (one command, both MCUs) → CONFIG_TYPE_MCU_LAN
 ```
 
 > **Note on `raw_data` content:**  

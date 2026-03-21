@@ -46,6 +46,7 @@ typedef enum {
   CMD_SOURCE_MQTT    = 0,  // From MQTT server → forward response to server
   CMD_SOURCE_UART    = 1,  // From UART PC App → forward response to UART
   CMD_SOURCE_USB     = 2,  // From USB Serial JTAG → forward response to USB
+  CMD_SOURCE_HTTP    = 3,  // From Web Config Portal → response via HTTP
   CMD_SOURCE_UNKNOWN = 0xFF
 } command_source_t;
 

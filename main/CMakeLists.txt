@@ -18,6 +18,10 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Data_Communication_Handler/src/uart_handler.c"
                                 "../Application/MCU_LAN_Handler/src/mcu_lan_handler_uplink.c"
                                 "../Application/MCU_LAN_Handler/src/mcu_lan_handler_downlink.c"
+                                "../Application/Web_Config_Handler/src/web_server.c"
+                                "../Application/Web_Config_Handler/src/api_config.c"
+                                "../Application/Web_Config_Handler/src/api_status.c"
+                                "../Application/Web_Config_Handler/src/captive_dns.c"
                                 "../BSP/rbg_led_ws_handler/rbg_handler.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
@@ -45,6 +49,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 mbedtls
                                 esp_driver_usb_serial_jtag
                                 esp_http_client
+                                esp_http_server
+                                cjson
                                 coap
                                 app_update
                                 esp_https_ota
@@ -64,6 +70,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/PPP_Server/include"
                                 "../Application/Data_Communication_Handler/include"
                                 "../Application/MCU_LAN_Handler/include"
+                                "../Application/Web_Config_Handler/include"
                                 "../BSP/rbg_led_ws_handler"
                                 "../BSP/esp_modem_uart/include"
                                 "../BSP/esp_modem_usb/include"
@@ -73,4 +80,5 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/i2c_dev_support/include"
                                 "../BSP/stack_handler/include"
                                 "../Middleware/LTE_Handler/include"
-                    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)
+                    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem
+                                   ${project_dir}/Application/Web_Config_Handler/web/index.html)
