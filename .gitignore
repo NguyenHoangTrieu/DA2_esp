@@ -44,4 +44,5 @@ ENV/
 # TODO.md
 
 .cache/
-Application/Web_Config_Handler/node_modules/
+Application/Web_Config_Handler/web/node_modules/
+Application/Web_Config_Handler/web/dist/
