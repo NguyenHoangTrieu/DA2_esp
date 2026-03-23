@@ -4,8 +4,9 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 export default defineConfig({
   plugins: [viteSingleFile()],
   build: {
-    // Output to dist/ folder (Vite default location)
-    outDir: 'dist',
+    // Output to firmware/ — this file is embedded by CMake EMBED_TXTFILES
+    // web/index.html stays as the permanent dev source and is NEVER overwritten
+    outDir: 'firmware',
     emptyOutDir: true,
     // Inline everything — no separate JS/CSS chunks
     assetsInlineLimit: 100000000,

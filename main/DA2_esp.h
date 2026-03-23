@@ -14,6 +14,7 @@
 #include "eth_connect.h"
 #include "mcu_lan_handler.h"
 #include "ppp_server.h"
+#include "web_config_handler.h"
 #include "i2c_dev_support.h"
 #include "oled_monitor_task.h"
 #include "tca_handler.h"

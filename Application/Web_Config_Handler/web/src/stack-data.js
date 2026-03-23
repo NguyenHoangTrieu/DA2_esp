@@ -8,13 +8,14 @@
 // ── Stack ID Map ──────────────────────────────────────────────────────────────
 
 export const LAN_STACK_MAP = {
-  '000': { type: 'NONE', label: 'Empty' },
+  '000': { type: 'NONE',   label: 'Empty' },
   '001': { type: 'ZIGBEE', label: 'Zigbee (E180-ZG120B)', cmd_prefix: 'CFZB' },
   '002': { type: 'BLE',    label: 'BLE (STM32WB55)',      cmd_prefix: 'CFBL' },
   '003': { type: 'LORA',   label: 'LoRa (RAK3172)',       cmd_prefix: 'CFLR' },
   '004': { type: 'BLE',    label: 'BLE (Custom)',          cmd_prefix: 'CFBL' },
   '005': { type: 'ZIGBEE', label: 'Zigbee (STM32WB55)',   cmd_prefix: 'CFZB' },
   '006': { type: 'LORA',   label: 'LoRa (Wio-E5 mini)',   cmd_prefix: 'CFLR' },
+  '007': { type: 'RS485',  label: 'RS485 Module',         cmd_prefix: 'CFRS' },
 };
 
 export const WAN_STACK_MAP = {
@@ -51,6 +52,9 @@ export const FUNCTION_GROUPS = {
     { emoji: '⚡', title: 'ZCL Control', functions: ['MODULE_ZCL_READ_ATTR','MODULE_ZCL_WRITE_ATTR','MODULE_ZCL_SEND_CONTROL_CMD','MODULE_ZCL_RECV_CONTROL_CMD','MODULE_ZCL_RECV_ATTR_REPORT','MODULE_ZCL_SET_REPORT_RULE'] },
     { emoji: '📨', title: 'Data Transfer', functions: ['MODULE_SEND_UNICAST','MODULE_SEND_BROADCAST'] },
   ],
+  RS485: [
+    { emoji: '🔌', title: 'GPIO Mode', functions: ['RS485_SEND_MODE', 'RS485_RECEIVE_MODE'] },
+  ],
 };
 
 // ── Preset Definitions ────────────────────────────────────────────────────────
@@ -67,6 +71,9 @@ export const PRESETS = {
   ZIGBEE: [
     { label: 'Zigbee (E180-ZG120B)', module_id: '001', module_name: 'E180_Zigbee_Gateway' },
     { label: 'Zigbee (STM32WB55)',   module_id: '005', module_name: 'STM32WB_Zigbee_Gateway' },
+  ],
+  RS485: [
+    { label: 'RS485 Module', module_id: '007', module_name: 'RS485_GPIO_Module' },
   ],
 };
 
@@ -93,6 +100,32 @@ function defaultCfg(id, type, name, fns) {
 export function getDefaultConfig(moduleType, presetIndex = 0) {
   const preset = (PRESETS[moduleType] || [])[presetIndex];
   if (!preset) return null;
+
+  // RS485 uses GPIO-only functions (no AT command fields, no module_communication)
+  if (moduleType === 'RS485') {
+    return structuredClone({
+      module_id: preset.module_id,
+      module_type: 'RS485',
+      stack_id: 0,
+      functions: [
+        {
+          function_name: 'RS485_SEND_MODE',
+          gpio_start_control: [{ pin: '03', state: 'HIGH' }, { pin: '02', state: 'HIGH' }],
+          delay_start: 1,
+          gpio_end_control: [],
+          delay_end: 0,
+        },
+        {
+          function_name: 'RS485_RECEIVE_MODE',
+          gpio_start_control: [{ pin: '03', state: 'LOW' }, { pin: '02', state: 'LOW' }],
+          delay_start: 1,
+          gpio_end_control: [],
+          delay_end: 0,
+        },
+      ],
+    });
+  }
+
   const allFns = (FUNCTION_GROUPS[moduleType] || []).flatMap(g => g.functions);
   return structuredClone(defaultCfg(preset.module_id, moduleType, preset.module_name, allFns));
 }

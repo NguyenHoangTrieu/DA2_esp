@@ -8,7 +8,12 @@
 async function request(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
-  const res = await fetch(path, opts);
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch {
+    throw new Error('Network error — gateway may be offline or switching networks');
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`HTTP ${res.status}: ${text}`);
@@ -28,7 +33,7 @@ export const fetchStatus   = () => request('GET', '/api/status');
 /** GET /api/lan_config — LAN module configs */
 export const fetchLanConfig = () => request('GET', '/api/lan_config');
 
-/** POST /api/lan_config — update a LAN module */
+/** POST /api/lan_config — update a LAN module (BLE/LoRa/Zigbee/RS485) */
 export const postLanConfig  = (type, data) => request('POST', '/api/lan_config', { type, data });
 
 /** POST /api/reboot */

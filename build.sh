@@ -10,7 +10,7 @@ source ~/esp-idf/export.sh
 
 # 3. Build the Web Config UI (Vite → single-file index.html for EMBED_TXTFILES)
 #    - Requires Node.js >= 18 and dependencies installed once with: npm install
-#    - Output: Application/Web_Config_Handler/web/index.html (all JS+CSS inlined)
+#    - Output: Application/Web_Config_Handler/web/firmware/index.html (all JS+CSS inlined)
 #    - This file is picked up by CMake EMBED_TXTFILES and linked into the firmware
 echo ""
 echo "============================================"
@@ -26,13 +26,12 @@ fi
 echo "[build.sh] Building web UI with Vite..."
 npm --prefix "$WEB_DIR" run build || { echo "ERROR: npm build failed"; exit 1; }
 
-# Copy built index.html from dist/ to web/ root for CMake EMBED_TXTFILES
-cp "$WEB_DIR/dist/index.html" "$WEB_DIR/index.html" || { echo "ERROR: Failed to copy built index.html"; exit 1; }
-
-if [ -f "$WEB_DIR/index.html" ]; then
-    echo "[build.sh] ✓ Web UI build successful → $WEB_DIR/index.html"
+# Output goes to web/firmware/index.html — embedded directly by CMake EMBED_TXTFILES
+# web/index.html is the permanent dev source (never overwritten)
+if [ -f "$WEB_DIR/firmware/index.html" ]; then
+    echo "[build.sh] ✓ Web UI build successful → $WEB_DIR/firmware/index.html"
 else
-    echo "ERROR: Web UI build failed - index.html not found"
+    echo "ERROR: Web UI build failed - firmware/index.html not found"
     exit 1
 fi
 

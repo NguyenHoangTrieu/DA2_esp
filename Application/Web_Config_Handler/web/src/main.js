@@ -6,8 +6,8 @@
  */
 
 import './style.css';
-import { fetchConfig, fetchStatus, postConfig, saveJsonFile, loadJsonFile } from './api.js';
-import { WAN_STACK_MAP } from './stack-data.js';
+import { fetchConfig, fetchStatus, fetchLanConfig, postConfig, saveJsonFile, loadJsonFile } from './api.js';
+import { WAN_STACK_MAP, LAN_STACK_MAP } from './stack-data.js';
 
 import { renderWifi }       from './tabs/wifi.js';
 import { renderLte }        from './tabs/lte.js';
@@ -17,6 +17,7 @@ import { renderBle }        from './tabs/ble.js';
 import { renderLora }       from './tabs/lora.js';
 import { renderZigbee }     from './tabs/zigbee.js';
 import { renderFirmware }   from './tabs/firmware.js';
+import { renderRs485 }      from './tabs/rs485.js';
 
 // ── Toast helper (exported for use by tabs) ───────────────────────────────────
 let _toastTimer = null;
@@ -61,6 +62,7 @@ const ADVANCED_TABS = [
   { id: 'ble',      icon: '🔷', label: 'BLE',      render: renderBle },
   { id: 'lora',     icon: '🟩', label: 'LoRa',     render: renderLora },
   { id: 'zigbee',   icon: '🔶', label: 'Zigbee',   render: renderZigbee },
+  { id: 'rs485',    icon: '🔌', label: 'RS485',    render: renderRs485 },
   { id: 'firmware', icon: '🔄', label: 'FW',       render: renderFirmware },
 ];
 
@@ -207,9 +209,60 @@ async function pollStatus() {
       parts.push(`Up: ${h}h${m}m`);
     }
     statusText.textContent = parts.join(' | ') || 'Connected';
+    statusText.style.color = '';
   } catch {
     statusDot.classList.add('offline');
     statusText.textContent = 'Offline';
+  }
+}
+
+// ── LAN config auto-detect ───────────────────────────────────────────────────
+
+/**
+ * Parse a raw CFSC text block into a key→value map.
+ * Each data line has the form "CF:key=value".
+ */
+function parseCfscFields(raw) {
+  const fields = {};
+  for (const line of raw.split('\n')) {
+    const m = line.trim().match(/^CF:(\w+)=(.*)$/);
+    if (m) fields[m[1]] = m[2].trim();
+  }
+  return fields;
+}
+
+/**
+ * Check if LAN MCU has JSON config loaded for each stack.
+ * Shows a warning in statusText if any configured stack is missing JSON config.
+ */
+async function checkLanJsonConfig() {
+  try {
+    const resp = await fetchLanConfig();
+    if (!resp.ok || !resp.data) return;
+
+    const fields = parseCfscFields(resp.data);
+    const missing = [];
+
+    for (const [slotKey, idKey, lenKey] of [
+      ['Stack 1', 'stack1_id', 'stack1_json_len'],
+      ['Stack 2', 'stack2_id', 'stack2_json_len'],
+    ]) {
+      const sid = fields[idKey] || '000';
+      const jlen = parseInt(fields[lenKey] || '0', 10);
+      if (sid && sid !== '000' && jlen === 0) {
+        const info = LAN_STACK_MAP[sid];
+        const label = info ? info.label : `id=${sid}`;
+        missing.push(`${slotKey} (${label})`);
+      }
+    }
+
+    if (missing.length > 0) {
+      statusText.textContent =
+        `⚠ No JSON config: ${missing.join(', ')} — open the module tab to send config`;
+      statusText.style.color = '#E65100';
+    }
+  } catch {
+    // Ignore — not all gateways support the LAN config endpoint yet
   }
 }
 
@@ -228,6 +281,9 @@ async function init() {
   }
 
   rebuildUI();
+
+  // Check for missing LAN JSON configs and warn user
+  checkLanJsonConfig();
 
   // Status polling
   pollStatus();

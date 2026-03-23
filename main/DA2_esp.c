@@ -239,6 +239,15 @@ static void switch_to_config_mode(config_internet_type_t *internet_type)
     vTaskDelay(pdMS_TO_TICKS(100));
     jtag_task_start();
 
+    /* Start WiFi AP + web portal + captive DNS for browser-based config
+     * Connect to SSID "DA2-Gateway-Config" (pass: datn1234) then open
+     * any URL or go directly to http://192.168.4.1/               */
+    wifi_ap_start();
+    web_config_handler_start(WEB_MODE_AP);
+    captive_dns_start();
+    ESP_LOGI(TAG, "Web portal: connect to \"DA2-Gateway-Config\" "
+             "then open http://192.168.4.1/");
+
     led_show_yellow();
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
@@ -323,6 +332,10 @@ void app_main(void)
     internet_connect_start(current_internet_type);
     vTaskDelay(pdMS_TO_TICKS(10000));   /* wait for internet link        */
     server_connect_start(g_server_type);
+
+    /* Start web config portal — browser-accessible at http://gateway.local/
+     * (STA: user's browser on same LAN; LTE/Ethernet: binds to that IP)   */
+    web_config_handler_start(WEB_MODE_STA);
 
     if (g_internet_type != CONFIG_INTERNET_LTE) {
         jtag_task_start();

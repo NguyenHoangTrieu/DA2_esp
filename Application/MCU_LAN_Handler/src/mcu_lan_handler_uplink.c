@@ -533,7 +533,8 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   command_source_t src = mcu_lan_handler_get_config_source();
   ESP_LOGI(TAG, "Response source: %s",
            (src == CMD_SOURCE_UART) ? "UART" :
-           (src == CMD_SOURCE_USB)  ? "USB"  : "SERVER/MQTT");
+           (src == CMD_SOURCE_USB)  ? "USB"  :
+           (src == CMD_SOURCE_HTTP) ? "HTTP/WebApp" : "SERVER/MQTT");
 
   if (src == CMD_SOURCE_UART || src == CMD_SOURCE_USB) {
     // Local app command → extract and send back to the originating interface
@@ -579,8 +580,36 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     return;
   }
 
+  if (src == CMD_SOURCE_HTTP) {
+    /* HTTP/WebApp config response — log it locally, don't send to MQTT.
+     * The HTTP endpoint already returned OK to the web app. */
+    const uint8_t *response_data = &payload[DATA_PACKET_HEADER_SIZE];
+    uint16_t response_len = data_length;
 
-  // Forward to server (MQTT/HTTP) only if from server command
+    // Search for status marker (CFBL:/CFLR:/CFZB:/CFRS: prefix)
+    const uint8_t *marker = (const uint8_t *)strstr((const char *)response_data, "CFBL:");
+    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFLR:");
+    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFZB:");
+    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFRS:");
+    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
+
+    if (marker != NULL) {
+      size_t offset = marker - response_data;
+      response_data = marker;
+      response_len  = data_length - (uint16_t)offset;
+    }
+
+    ESP_LOGI(TAG, "HTTP WebApp config response (local only): %*s",
+             response_len > 64 ? 64 : response_len, (char *)response_data);
+
+    // ACK to LAN MCU
+    downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
+                             g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+    ESP_LOGI(TAG, "HTTP response handled locally, ACK sent to LAN");
+    return;
+  }
+
+  // Forward to server (MQTT) only if from server command
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
     // Build uplink buffer: [handler_type(3)] + [data]
     uint16_t uplink_len = data_length + 3;

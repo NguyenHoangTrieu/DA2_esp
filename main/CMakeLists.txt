@@ -58,6 +58,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 esp_eth
                                 esp_psram
                                 esp_ringbuf
+                                mdns
                     INCLUDE_DIRS "." 
                                 "../Application/Internet_Communication_Handler/wifi_handler/include"
                                 "../Application/Internet_Communication_Handler/lte_handler/include"
@@ -81,4 +82,4 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/stack_handler/include"
                                 "../Middleware/LTE_Handler/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem
-                                   ${project_dir}/Application/Web_Config_Handler/web/index.html)
+                                   ${project_dir}/Application/Web_Config_Handler/web/firmware/index.html)

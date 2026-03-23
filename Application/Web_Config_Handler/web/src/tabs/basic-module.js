@@ -5,7 +5,7 @@
  * Layout: JSON Config panel, Quick Controls, Connection section, Response area
  */
 
-import { postConfig, loadJsonFile } from '../api.js';
+import { postLanConfig, loadJsonFile } from '../api.js';
 import { toast } from '../main.js';
 import { LAN_STACK_MAP, BLE_QUICK_COMMANDS, getDefaultConfig } from '../stack-data.js';
 
@@ -104,9 +104,11 @@ export function renderBasicModule(container, config, slot, stackId) {
     if (!loadedJson) return;
     try {
       const key = moduleType.toLowerCase() + '_json';
+      loadedJson.stack_id = slot;
       const jsonStr = JSON.stringify(loadedJson);
-      appendResp(`→ Sending ${moduleType} JSON config (${jsonStr.length} bytes)…`, 'info');
-      await postConfig({ [key]: jsonStr, slot: String(slot) });
+      appendResp(`→ Sending ${moduleType} JSON config slot=${slot} (${jsonStr.length} bytes)…`, 'info');
+      /* Format: "<slot>:<minified_json>" → api builds ML:CF??:JSON:<slot>:<json> */
+      await postLanConfig(key, `${slot}:${jsonStr}`);
       appendResp(`✓ JSON config sent successfully`, 'ok');
       toast('JSON config sent');
     } catch (e) {
@@ -128,7 +130,8 @@ export function renderBasicModule(container, config, slot, stackId) {
       try {
         const key = moduleType.toLowerCase() + '_cmd';
         appendResp(`→ ${cmd.fn}`, 'info');
-        await postConfig({ [key]: { slot: String(slot), function: cmd.fn } });
+        /* Format: "<slot>:<function>" → api builds ML:CF??:<slot>:<function> */
+        await postLanConfig(key, `${slot}:${cmd.fn}`);
         appendResp(`✓ ${cmd.fn} sent`, 'ok');
       } catch (e) {
         appendResp(`✗ ${cmd.fn} failed: ${e.message}`, 'error');
@@ -144,7 +147,8 @@ export function renderBasicModule(container, config, slot, stackId) {
     try {
       appendResp(`→ Connect: ${addr}`, 'info');
       const key = moduleType.toLowerCase() + '_cmd';
-      await postConfig({ [key]: { slot: String(slot), function: 'MODULE_CONNECT', param: addr } });
+      /* Format: "<slot>:MODULE_CONNECT:<addr>" */
+      await postLanConfig(key, `${slot}:MODULE_CONNECT:${addr}`);
       appendResp(`✓ Connect command sent`, 'ok');
     } catch (e) {
       appendResp(`✗ Connect failed: ${e.message}`, 'error');
@@ -157,7 +161,8 @@ export function renderBasicModule(container, config, slot, stackId) {
     try {
       appendResp(`→ Disconnect: ${addr}`, 'info');
       const key = moduleType.toLowerCase() + '_cmd';
-      await postConfig({ [key]: { slot: String(slot), function: 'MODULE_DISCONNECT', param: addr } });
+      /* Format: "<slot>:MODULE_DISCONNECT:<addr>" */
+      await postLanConfig(key, `${slot}:MODULE_DISCONNECT:${addr}`);
       appendResp(`✓ Disconnect command sent`, 'ok');
     } catch (e) {
       appendResp(`✗ Disconnect failed: ${e.message}`, 'error');

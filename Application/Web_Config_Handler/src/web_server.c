@@ -6,6 +6,7 @@
 #include "web_config_handler.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "mdns.h"
 #include <string.h>
 
 static const char *TAG = "web_server";
@@ -102,7 +103,29 @@ static const httpd_uri_t s_routes[] = {
     },
 };
 
-/* mDNS support disabled — install espressif/mdns component to enable gateway.local */
+/* mDNS support — advertises the gateway as "gateway.local" on the LAN */
+
+static void mdns_start_service(void)
+{
+    esp_err_t ret = mdns_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "mdns_init failed: %s (mDNS unavailable)", esp_err_to_name(ret));
+        return;
+    }
+    mdns_hostname_set("gateway");
+    mdns_instance_name_set("DA2 Gateway Config Portal");
+
+    mdns_txt_item_t txt[] = { { "path", "/" } };
+    mdns_service_add("DA2 Gateway", "_http", "_tcp", 80, txt, 1);
+
+    ESP_LOGI(TAG, "mDNS started — open http://gateway.local/ in your browser");
+}
+
+static void mdns_stop_service(void)
+{
+    mdns_service_remove_all();
+    mdns_free();
+}
 
 /* ===== Public API ===== */
 
@@ -132,6 +155,11 @@ esp_err_t web_config_handler_start(web_server_mode_t mode)
         httpd_register_uri_handler(s_server, &s_routes[i]);
     }
 
+    /* Advertise via mDNS so browsers can reach http://gateway.local/ */
+    if (mode == WEB_MODE_STA) {
+        mdns_start_service();
+    }
+
     ESP_LOGI(TAG, "Web config server started (mode=%s)",
              mode == WEB_MODE_AP ? "AP" : "STA");
     return ESP_OK;
@@ -145,6 +173,8 @@ esp_err_t web_config_handler_stop(void)
 
     httpd_stop(s_server);
     s_server = NULL;
+
+    mdns_stop_service();
 
     ESP_LOGI(TAG, "Web config server stopped");
     return ESP_OK;

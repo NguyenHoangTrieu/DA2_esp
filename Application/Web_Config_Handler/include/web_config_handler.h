@@ -48,4 +48,17 @@ esp_err_t api_reboot_post_handler(void *req);
 esp_err_t api_lan_config_get_handler(void *req);
 esp_err_t api_lan_config_post_handler(void *req);
 
+/* ---- Captive DNS (AP mode) implemented in captive_dns.c ---- */
+/**
+ * @brief Start the captive DNS server (AP mode only).
+ *        Responds to every DNS query with 192.168.4.1 to trigger the
+ *        "Sign in to network" popup on phones and desktops.
+ */
+void captive_dns_start(void);
+
+/**
+ * @brief Stop the captive DNS server.
+ */
+void captive_dns_stop(void);
+
 #endif /* WEB_CONFIG_HANDLER_H */

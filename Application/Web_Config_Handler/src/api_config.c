@@ -13,6 +13,7 @@
 #include "web_config_handler.h"
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
+#include "stack_handler.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -119,6 +120,45 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON_AddBoolToObject(jc,   "use_dtls",       g_coap_cfg.use_dtls);
     cJSON_AddNumberToObject(jc, "ack_timeout_ms", (double)g_coap_cfg.ack_timeout_ms);
     cJSON_AddNumberToObject(jc, "max_retransmit", g_coap_cfg.max_retransmit);
+
+    /* WAN stack ID (local read — no SPI needed) */
+    const char *wan_stack_id = stack_handler_get_module_id(0);
+    cJSON *jwan = cJSON_AddObjectToObject(root, "wan");
+    cJSON_AddStringToObject(jwan, "stack_wan_id",
+                            (wan_stack_id && wan_stack_id[0]) ? wan_stack_id : "100");
+
+    /* LAN stack IDs — query LAN MCU via SPI (2 s timeout) */
+    char lan_s1[4] = "000";
+    char lan_s2[4] = "000";
+    {
+        uint8_t *lan_buf = malloc(256);
+        if (lan_buf) {
+            uint16_t lan_len = 0;
+            esp_err_t lan_ret = mcu_lan_handler_request_config_async(
+                lan_buf, &lan_len, 255, 2000);
+            if (lan_ret == ESP_OK && lan_len > 0) {
+                lan_buf[lan_len] = '\0';
+                char *p1 = strstr((char *)lan_buf, "stack1_id=");
+                if (p1) {
+                    p1 += 10;
+                    int i = 0;
+                    while (i < 3 && p1[i] && p1[i] != '|') { lan_s1[i] = p1[i]; i++; }
+                    lan_s1[i] = '\0';
+                }
+                char *p2 = strstr((char *)lan_buf, "stack2_id=");
+                if (p2) {
+                    p2 += 10;
+                    int i = 0;
+                    while (i < 3 && p2[i] && p2[i] != '|') { lan_s2[i] = p2[i]; i++; }
+                    lan_s2[i] = '\0';
+                }
+            }
+            free(lan_buf);
+        }
+    }
+    cJSON *jlan = cJSON_AddObjectToObject(root, "lan");
+    cJSON_AddStringToObject(jlan, "stack1_id", lan_s1);
+    cJSON_AddStringToObject(jlan, "stack2_id", lan_s2);
 
     /* Serialise */
     const char *json_str = cJSON_PrintUnformatted(root);
@@ -537,9 +577,18 @@ esp_err_t api_lan_config_post_handler(void *arg)
     const char *data_str = data_item->valuestring;
     int data_len = (int)strlen(data_str);
 
-    /* Build the MCU LAN command: "ML:CF<LAN_TYPE_PREFIX><data>"
-     * The config_handler routes CONFIG_TYPE_MCU_LAN which strips "ML:"
-     * and forwards to mcu_lan_handler_update_config(). */
+    /* Build the MCU LAN command forwarded to LAN MCU via SPI.
+     * WAN MCU strips "ML:" (3 bytes) before forwarding, so LAN MCU
+     * receives the part after "ML:".  LAN MCU config_parse_type() maps:
+     *   CFBL:JSON:{slot}:{json}   → CONFIG_UPDATE_BLE_JSON
+     *   CFLR:JSON:{slot}:{json}   → CONFIG_UPDATE_LORA_JSON
+     *   CFZB:JSON:{slot}:{json}   → CONFIG_UPDATE_ZIGBEE_JSON
+     *   CFRS:JSON:{slot}:{json}   → CONFIG_UPDATE_RS485_JSON
+     *   CFRS:BR:{baud}            → CONFIG_UPDATE_RS485
+     *   CFBL:{slot}:{at_cmd}      → CONFIG_UPDATE_BLE_CMD
+     *   CFLR:{slot}:{at_cmd}      → CONFIG_UPDATE_LORA_CMD
+     *   CFZB:{slot}:{at_cmd}      → CONFIG_UPDATE_ZIGBEE_CMD
+     */
     char *wire = malloc((size_t)data_len + 32);
     if (!wire) {
         cJSON_Delete(root);
@@ -547,20 +596,26 @@ esp_err_t api_lan_config_post_handler(void *arg)
     }
 
     int wire_len;
-    /* Map type string to the LAN command prefix used by the Python app */
     if (strcmp(type_str, "ble_json") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFBJ%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFBL:JSON:%s", data_str);
     } else if (strcmp(type_str, "ble_cmd") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFBC%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFBL:%s", data_str);
     } else if (strcmp(type_str, "lora_json") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFLJ%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFLR:JSON:%s", data_str);
     } else if (strcmp(type_str, "lora_cmd") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFLC%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFLR:%s", data_str);
     } else if (strcmp(type_str, "zigbee_json") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFZJ%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFZB:JSON:%s", data_str);
     } else if (strcmp(type_str, "zigbee_cmd") == 0) {
-        wire_len = snprintf(wire, data_len + 32, "ML:CFZC%s", data_str);
+        wire_len = snprintf(wire, data_len + 32, "ML:CFZB:%s", data_str);
+    } else if (strcmp(type_str, "rs485_json") == 0) {
+        /* data_str format: "<slot>:<minified_json>" e.g. "0:{...}" */
+        wire_len = snprintf(wire, data_len + 32, "ML:CFRS:JSON:%s", data_str);
+    } else if (strcmp(type_str, "rs485_baud") == 0) {
+        /* data_str: baud rate value, e.g. "115200" */
+        wire_len = snprintf(wire, data_len + 32, "ML:CFRS:BR:%s", data_str);
     } else if (strcmp(type_str, "rs485") == 0) {
+        /* Legacy: data_str already includes colon-prefixed subcommand */
         wire_len = snprintf(wire, data_len + 32, "ML:CFRS%s", data_str);
     } else {
         free(wire);

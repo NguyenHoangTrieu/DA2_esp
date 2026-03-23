@@ -7,7 +7,7 @@
  */
 
 import { FUNCTION_GROUPS, PRESETS, PIN_OPTIONS, getDefaultConfig } from './stack-data.js';
-import { postConfig, saveJsonFile, loadJsonFile } from './api.js';
+import { postLanConfig, saveJsonFile, loadJsonFile } from './api.js';
 import { toast } from './main.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,11 +55,21 @@ export function renderConfigForm(container, config, moduleType) {
   let presetIdx = 0;
   let cfgData = getDefaultConfig(moduleType, 0) || {};
 
-  // Merge from loaded config if available
+  // Restore last-saved config from localStorage (remembered across page reloads)
+  const storageKey = moduleType.toLowerCase() + '_config';
+  const saved = localStorage.getItem(storageKey);
+  if (saved) {
+    try { cfgData = JSON.parse(saved); } catch {}
+  }
+
+  // Merge from server config if available (overrides localStorage)
   const lanKey = moduleType.toLowerCase() + '_config';
   if (config?.[lanKey]) {
     try { cfgData = structuredClone(config[lanKey]); } catch {}
   }
+
+  // Always ensure module_type is set to the correct type
+  if (!cfgData.module_type) cfgData.module_type = moduleType;
 
   // ── Header ────────────────────────────────────────────────────────────────
   const headerCard = el('div', { className: 'card' });
@@ -357,6 +367,7 @@ export function renderConfigForm(container, config, moduleType) {
   actRow1.appendChild(el('button', { className: 'btn', textContent: '📂 Load JSON', onClick: async () => {
     try {
       const data = await loadJsonFile();
+      if (!data.module_type) data.module_type = moduleType;
       cfgData = data;
       modIdInput.value = data.module_id || '';
       modNameInput.value = data.module_name || '';
@@ -371,9 +382,11 @@ export function renderConfigForm(container, config, moduleType) {
   actRow2.appendChild(el('button', { className: 'btn btn-set', textContent: '📤 Send JSON Config', onClick: async () => {
     try {
       const slot = container.querySelector(`#slot-${moduleType}`)?.value || '0';
+      if (!cfgData.module_type) cfgData.module_type = moduleType;
       const jsonStr = JSON.stringify(cfgData);
       const key = moduleType.toLowerCase() + '_json';
-      await postConfig({ [key]: jsonStr, slot });
+      localStorage.setItem(storageKey, jsonStr);
+      await postLanConfig(key, `${slot}:${jsonStr}`);
       setStatus(`JSON sent (${jsonStr.length} bytes)`, false);
       toast('JSON config sent');
     } catch (e) {
@@ -382,31 +395,7 @@ export function renderConfigForm(container, config, moduleType) {
     }
   }}));
 
-  // Quick CMD dropdown + Run
-  const quickSelect = el('select', { style: 'flex:1' });
-  quickSelect.appendChild(el('option', { value: '', textContent: '-- Select Function --' }));
-  groups.forEach(g => {
-    g.functions.forEach(f => quickSelect.appendChild(el('option', { value: f, textContent: f })));
-  });
-  const runBtn = el('button', { className: 'btn btn-accent', textContent: '▶ Run', onClick: async () => {
-    const fnName = quickSelect.value;
-    if (!fnName) { toast('Select a function first', 'warn'); return; }
-    try {
-      const slot = container.querySelector(`#slot-${moduleType}`)?.value || '0';
-      const key = moduleType.toLowerCase() + '_cmd';
-      await postConfig({ [key]: { slot, function: fnName } });
-      setStatus(`Command sent: ${fnName}`, false);
-      toast(`Sent: ${fnName}`);
-    } catch (e) {
-      setStatus('Command failed: ' + e.message, true);
-      toast('Command failed', 'err');
-    }
-  }});
-
-  const actRow3 = el('div', { className: 'btn-row' });
-  actRow3.append(el('span', { textContent: '⚡ Quick CMD:', style: 'font-size:12px;font-weight:600;align-self:center' }), quickSelect, runBtn);
-
-  actionsCard.append(actRow1, actRow2, actRow3);
+  actionsCard.append(actRow1, actRow2);
 
   // ── Status panel ──────────────────────────────────────────────────────────
   const statusCard = el('div', { className: 'card' });

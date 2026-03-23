@@ -475,3 +475,59 @@ void wifi_connect_task_stop(void) {
     s_wifi_event_group = NULL;
   }
 }
+
+/* ==========================================================================
+ * CONFIG MODE — WiFi Access Point
+ *
+ * SSID:     DA2-Gateway-Config
+ * Password: datn1234
+ * IP:       192.168.4.1  (ESP32 default AP address)
+ *
+ * Called by switch_to_config_mode() in DA2_esp.c before starting the web
+ * config portal (WEB_MODE_AP) and captive DNS.  If WiFi was running in STA
+ * mode the stack is fully torn down first via wifi_connect_task_stop().
+ * ========================================================================== */
+
+#define CONFIG_AP_SSID        "DA2-Gateway-Config"
+#define CONFIG_AP_PASSWORD    "datn1234"
+#define CONFIG_AP_CHANNEL     1
+#define CONFIG_AP_MAX_CONN    4
+
+static esp_netif_t *s_ap_netif = NULL;
+
+void wifi_ap_start(void)
+{
+    /* Tear down STA stack if it was running */
+    if (g_wifi_netif != NULL) {
+        ESP_LOGI(TAG, "wifi_ap_start: stopping STA...");
+        wifi_connect_task_stop();
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+
+    /* Create AP netif once */
+    if (!s_ap_netif) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
+
+    /* Fresh WiFi stack init */
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid           = CONFIG_AP_SSID,
+            .ssid_len       = (uint8_t)strlen(CONFIG_AP_SSID),
+            .channel        = CONFIG_AP_CHANNEL,
+            .password       = CONFIG_AP_PASSWORD,
+            .max_connection = CONFIG_AP_MAX_CONN,
+            .authmode       = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Config AP: SSID=" CONFIG_AP_SSID
+             "  Pass=" CONFIG_AP_PASSWORD "  IP=192.168.4.1");
+}
