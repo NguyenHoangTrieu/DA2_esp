@@ -14,6 +14,7 @@ import { renderLte }        from './tabs/lte.js';
 import { renderServer }     from './tabs/server.js';
 import { renderInterfaces } from './tabs/interfaces.js';
 import { renderBle }        from './tabs/ble.js';
+import { renderBleNative }  from './tabs/ble_native.js';
 import { renderLora }       from './tabs/lora.js';
 import { renderZigbee }     from './tabs/zigbee.js';
 import { renderFirmware }   from './tabs/firmware.js';
@@ -59,8 +60,9 @@ const ADVANCED_TABS = [
   { id: 'wifi',     icon: '📶', label: 'WiFi',     render: renderWifi },
   { id: 'lte',      icon: '📱', label: 'LTE',      render: renderLte },
   { id: 'server',   icon: '☁️', label: 'Server',    render: renderServer },
-  { id: 'ble',      icon: '🔷', label: 'BLE',      render: renderBle },
-  { id: 'lora',     icon: '🟩', label: 'LoRa',     render: renderLora },
+  { id: 'ble',        icon: '🔷', label: 'BLE',        render: renderBle },
+  { id: 'ble_native', icon: '🔵', label: 'BLE Native', render: renderBleNative },
+  { id: 'lora',       icon: '🟩', label: 'LoRa',       render: renderLora },
   { id: 'zigbee',   icon: '🔶', label: 'Zigbee',   render: renderZigbee },
   { id: 'rs485',    icon: '🔌', label: 'RS485',    render: renderRs485 },
   { id: 'firmware', icon: '🔄', label: 'FW',       render: renderFirmware },
