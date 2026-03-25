@@ -1,12 +1,10 @@
 /**
  * @file stack_handler.c
- * @brief WAN Communication Stack GPIO Manager Implementation
+ * @brief WAN Communication Stack GPIO Manager Implementation (TCA6416A)
  *
- * Single stack, 13 pins: GPIO1-11 mapped to TCA ports 0-1,
- * WAKE# and PERST# on port 1.
- *
- * NOTE: Update stack1_gpio_map[] entries to match the actual hardware
- * schematic if the default sequential mapping does not match.
+ * Single stack, 16 pins: direct flat mapping.
+ *   pin 0-7  → TCA PORT_0, bits 0-7  (P00-P07)
+ *   pin 8-15 → TCA PORT_1, bits 0-7  (P10-P17)
  */
 
 #include "stack_handler.h"
@@ -17,36 +15,6 @@
 #include <string.h>
 
 static const char *TAG = "STACK_HANDLER";
-
-/* ===== GPIO Pin Mapping Table ===== */
-
-/*
- * WAN Stack (single stack, 13 pins):
- *   GPIO 1  - 8  : TCA Port 0, pins 0-7  (P00 - P07)
- *   GPIO 9  - 11 : TCA Port 1, pins 0-2  (P10 - P12)
- *   WAKE#        : TCA Port 1, pin  3    (P13)
- *   PERST#       : TCA Port 1, pin  4    (P14)
- *
- * Update these entries to match the actual board schematic.
- */
-static const struct {
-  tca_port_t port;
-  uint8_t    pin;
-} stack1_gpio_map[STACK_GPIO_PIN_COUNT] = {
-    {TCA_PORT_0, 0},  /* GPIO  1  -> P00 */
-    {TCA_PORT_0, 1},  /* GPIO  2  -> P01 */
-    {TCA_PORT_0, 2},  /* GPIO  3  -> P02 */
-    {TCA_PORT_0, 3},  /* GPIO  4  -> P03 */
-    {TCA_PORT_0, 4},  /* GPIO  5  -> P04 */
-    {TCA_PORT_0, 5},  /* GPIO  6  -> P05 */
-    {TCA_PORT_0, 6},  /* GPIO  7  -> P06 */
-    {TCA_PORT_0, 7},  /* GPIO  8  -> P07 */
-    {TCA_PORT_1, 0},  /* GPIO  9  -> P10 */
-    {TCA_PORT_1, 1},  /* GPIO 10  -> P11 */
-    {TCA_PORT_1, 2},  /* GPIO 11  -> P12 */
-    {TCA_PORT_1, 3},  /* WAKE#    -> P13 */
-    {TCA_PORT_1, 4},  /* PERST#   -> P14 */
-};
 
 /* ===== Internal State ===== */
 
@@ -65,9 +33,9 @@ static inline bool is_valid_pin(stack_gpio_pin_num_t pin) {
 
 static void get_tca_mapping(uint8_t stack_id, stack_gpio_pin_num_t pin,
                             tca_port_t *port, uint8_t *pin_num) {
-  (void)stack_id; /* WAN: only one stack, ignore stack_id */
-  *port    = stack1_gpio_map[pin].port;
-  *pin_num = stack1_gpio_map[pin].pin;
+  (void)stack_id; /* WAN: only one stack */
+  *port    = (pin < 8) ? TCA_PORT_0 : TCA_PORT_1;
+  *pin_num = (uint8_t)(pin % 8);
 }
 
 /* ===== API Implementation ===== */
@@ -81,11 +49,11 @@ esp_err_t stack_handler_init(void) {
   ESP_LOGI(TAG, "Initializing stack handler");
 
   if (tca_test_connection() != ESP_OK) {
-    ESP_LOGE(TAG, "TCA6424A not available");
+    ESP_LOGE(TAG, "TCA6416A not available");
     return ESP_ERR_INVALID_STATE;
   }
 
-  // Configure all TCA ports as inputs by default
+  // Configure both TCA ports as inputs by default (TCA6416A: 2 ports)
   esp_err_t ret;
 
   ret = tca_configure_port(TCA_PORT_0, 0xFF);
@@ -97,12 +65,6 @@ esp_err_t stack_handler_init(void) {
   ret = tca_configure_port(TCA_PORT_1, 0xFF);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to configure TCA Port 1");
-    return ret;
-  }
-
-  ret = tca_configure_port(TCA_PORT_2, 0xFF);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to configure TCA Port 2");
     return ret;
   }
 
@@ -121,9 +83,8 @@ esp_err_t stack_handler_init(void) {
 
   g_initialized = true;
 
-  ESP_LOGI(TAG, "WAN Stack initialized (single stack, 13 pins)");
-  ESP_LOGI(TAG, "  GPIO1-8  : P00-P07  |  GPIO9-11 : P10-P12");
-  ESP_LOGI(TAG, "  WAKE#    : P13      |  PERST#   : P14");
+  ESP_LOGI(TAG, "WAN Stack initialized (single stack, 16 pins, TCA6416A)");
+  ESP_LOGI(TAG, "  P00-P07 → PORT_0 | P10-P17 → PORT_1");
 
   return ESP_OK;
 }
@@ -223,7 +184,7 @@ esp_err_t stack_handler_gpio_set_direction(uint8_t stack_id,
   ESP_LOGI(TAG, "Before: Stack%d GPIO%d (P%d.%d) config=0x%02X", stack_id + 1,
            pin + 1, port, pin_num, port_cfg);
 
-  // Modify pin direction (TCA6424A: 1=input, 0=output)
+  // Modify pin direction (TCA6416A: 1=input, 0=output)
   if (is_output) {
     port_cfg &= ~(1 << pin_num); // Clear bit = output
   } else {
@@ -266,8 +227,8 @@ esp_err_t stack_handler_gpio_write_multi(uint8_t stack_id,
   }
 
   // Group actions by TCA port to minimize I2C transactions
-  uint8_t port_masks[3] = {0};  // Bitmask of which pins to modify on each port
-  uint8_t port_states[3] = {0}; // Desired state for modified pins
+  uint8_t port_masks[2]  = {0};
+  uint8_t port_states[2] = {0};
 
   // Build port masks and states
   for (size_t i = 0; i < count; i++) {
@@ -288,7 +249,7 @@ esp_err_t stack_handler_gpio_write_multi(uint8_t stack_id,
 
   // Write to each port once (batched operation)
   esp_err_t ret = ESP_OK;
-  for (int port = 0; port < 3; port++) {
+  for (int port = 0; port < 2; port++) {
     if (port_masks[port] != 0) {
       // Step 1: Set affected pins as OUTPUT in CONFIG register (0=output, 1=input)
       uint8_t cfg;

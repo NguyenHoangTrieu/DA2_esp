@@ -1,6 +1,6 @@
 /**
  * @file tca_handler.c
- * @brief TCA6424A I/O Expander Handler Implementation
+ * @brief TCA6416A I/O Expander Handler Implementation (WAN MCU)
  */
 
 #include "tca_handler.h"
@@ -9,10 +9,11 @@
 #include "freertos/task.h"
 #include "i2c_dev_support.h"
 
-static const char *TAG = "TCA6424A";
+static const char *TAG = "TCA6416A";
 
 static i2c_master_dev_handle_t tca_handle = NULL;
 static tca_interrupt_callback_t interrupt_callback = NULL;
+static uint8_t g_i2c_addr = TCA6416A_I2C_ADDR_0; /* address found at boot */
 
 static esp_err_t tca_write_register(uint8_t reg, uint8_t value) {
   uint8_t data[2] = {reg, value};
@@ -36,12 +37,12 @@ esp_err_t tca_test_connection(void) {
   }
 
   uint8_t test_val;
-  esp_err_t ret = tca_read_register(TCA6424A_CONFIG_PORT0, &test_val);
+  esp_err_t ret = tca_read_register(TCA6416A_CONFIG_PORT0, &test_val);
 
   if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "TCA6424A responding OK - Config0: 0x%02X", test_val);
+    ESP_LOGI(TAG, "TCA6416A responding OK - Config0: 0x%02X", test_val);
   } else {
-    ESP_LOGE(TAG, "TCA6424A not responding: %s", esp_err_to_name(ret));
+    ESP_LOGE(TAG, "TCA6416A not responding: %s", esp_err_to_name(ret));
   }
 
   return ret;
@@ -53,11 +54,11 @@ esp_err_t tca_init(void) {
     return ESP_ERR_INVALID_STATE;
   }
 
-  ESP_LOGI(TAG, "Initializing TCA6424A at address 0x%02X", TCA6424A_I2C_ADDR);
+  ESP_LOGI(TAG, "Initializing TCA6416A (scanning 0x20, 0x21)");
 
-  // Configure GPIO pins
+  // Configure RESET GPIO
   gpio_config_t io_conf = {
-      .pin_bit_mask = (1ULL << TCA6424A_RESET_PIN),
+      .pin_bit_mask = (1ULL << TCA6416A_RESET_PIN),
       .mode = GPIO_MODE_OUTPUT,
       .pull_up_en = GPIO_PULLUP_DISABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -65,55 +66,80 @@ esp_err_t tca_init(void) {
   };
   gpio_config(&io_conf);
 
-  io_conf.pin_bit_mask = (1ULL << TCA6424A_INT_PIN);
+  io_conf.pin_bit_mask = (1ULL << TCA6416A_INT_PIN);
   io_conf.mode = GPIO_MODE_INPUT;
   io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
   io_conf.intr_type = GPIO_INTR_NEGEDGE;
   gpio_config(&io_conf);
 
-  // Install GPIO ISR service if not already installed, then add handler
   esp_err_t isr_ret = gpio_install_isr_service(0);
   if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE) {
     ESP_LOGW(TAG, "gpio_install_isr_service: %s (non-fatal)", esp_err_to_name(isr_ret));
   }
-  gpio_isr_handler_add(TCA6424A_INT_PIN, tca_interrupt_handler, NULL);
+  gpio_isr_handler_add(TCA6416A_INT_PIN, tca_interrupt_handler, NULL);
 
-  // Add TCA6424A device to bus
-  esp_err_t ret = i2c_dev_support_add_device(TCA6424A_I2C_ADDR,
-                                             TCA6424A_I2C_FREQ_HZ, &tca_handle);
+  // Scan I2C bus: try 0x20 first, then 0x21
+  uint8_t addrs[2] = {TCA6416A_I2C_ADDR_0, TCA6416A_I2C_ADDR_1};
+  esp_err_t ret = ESP_ERR_NOT_FOUND;
+  for (int i = 0; i < 2; i++) {
+    ret = i2c_dev_support_add_device(addrs[i], TCA6416A_I2C_FREQ_HZ, &tca_handle);
+    if (ret == ESP_OK) {
+      g_i2c_addr = addrs[i];
+      ret = tca_test_connection();
+      if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "TCA6416A found at 0x%02X", addrs[i]);
+        break;
+      }
+      i2c_dev_support_remove_device(tca_handle);
+      tca_handle = NULL;
+    }
+  }
 
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to add TCA6424A device: %s", esp_err_to_name(ret));
+  if (ret != ESP_OK || !tca_handle) {
+    ESP_LOGE(TAG, "No TCA6416A found on I2C bus (tried 0x20, 0x21)");
     return ret;
   }
 
-  // Hardware reset
-  tca_reset();
-
-  // Test connection
-  ret = tca_test_connection();
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Device not responding at 0x%02X!", TCA6424A_I2C_ADDR);
-    ESP_LOGE(TAG, "Check: 1) Wiring, 2) ADDR pin, 3) Power supply");
-    return ret;
-  }
-
-  // Configure all ports as inputs by default
+  // Configure both ports as inputs by default (TCA6416A: 2 ports only)
   tca_configure_port(TCA_PORT_0, 0xFF);
   tca_configure_port(TCA_PORT_1, 0xFF);
-  tca_configure_port(TCA_PORT_2, 0xFF);
 
-  ESP_LOGI(TAG, "TCA6424A initialized successfully (INT=%d, RESET=%d)",
-           TCA6424A_INT_PIN, TCA6424A_RESET_PIN);
+  ESP_LOGI(TAG, "TCA6416A initialized at 0x%02X (INT=%d, RESET=%d)",
+           g_i2c_addr, TCA6416A_INT_PIN, TCA6416A_RESET_PIN);
+  return ESP_OK;
+}
+
+esp_err_t tca_init_with_addr(uint8_t i2c_addr) {
+  if (!i2c_dev_support_is_initialized()) {
+    ESP_LOGE(TAG, "I2C not initialized");
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (tca_handle) {
+    ESP_LOGW(TAG, "Already initialized");
+    return ESP_OK;
+  }
+  esp_err_t ret = i2c_dev_support_add_device(i2c_addr, TCA6416A_I2C_FREQ_HZ, &tca_handle);
+  if (ret != ESP_OK) return ret;
+  g_i2c_addr = i2c_addr;
+  tca_reset();
+  ret = tca_test_connection();
+  if (ret != ESP_OK) {
+    i2c_dev_support_remove_device(tca_handle);
+    tca_handle = NULL;
+    return ret;
+  }
+  tca_configure_port(TCA_PORT_0, 0xFF);
+  tca_configure_port(TCA_PORT_1, 0xFF);
+  ESP_LOGI(TAG, "TCA6416A initialized at 0x%02X", i2c_addr);
   return ESP_OK;
 }
 
 esp_err_t tca_deinit(void) {
   if (tca_handle) {
-    gpio_isr_handler_remove(TCA6424A_INT_PIN);
+    gpio_isr_handler_remove(TCA6416A_INT_PIN);
     esp_err_t ret = i2c_dev_support_remove_device(tca_handle);
     tca_handle = NULL;
-    ESP_LOGI(TAG, "TCA6424A deinitialized");
+    ESP_LOGI(TAG, "TCA6416A deinitialized");
     return ret;
   }
   return ESP_OK;
@@ -121,19 +147,20 @@ esp_err_t tca_deinit(void) {
 
 esp_err_t tca_reset(void) {
   ESP_LOGI(TAG, "Performing hardware reset");
-  gpio_set_level(TCA6424A_RESET_PIN, 1);
-  vTaskDelay(pdMS_TO_TICKS(100));
-  gpio_set_level(TCA6424A_RESET_PIN, 0);
-  vTaskDelay(pdMS_TO_TICKS(100));
+  gpio_set_level(TCA6416A_RESET_PIN, 1);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  gpio_set_level(TCA6416A_RESET_PIN, 0);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  gpio_set_level(TCA6416A_RESET_PIN, 1);
+  vTaskDelay(pdMS_TO_TICKS(10));
   return ESP_OK;
 }
 
 esp_err_t tca_configure_port(tca_port_t port, uint8_t config) {
-  if (!tca_handle || port > TCA_PORT_2) {
+  if (!tca_handle || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  uint8_t reg = TCA6424A_CONFIG_PORT0 + port;
+  uint8_t reg = TCA6416A_CONFIG_PORT0 + port;
   esp_err_t ret = tca_write_register(reg, config);
 
   if (ret == ESP_OK) {
@@ -148,20 +175,18 @@ esp_err_t tca_configure_port(tca_port_t port, uint8_t config) {
 }
 
 esp_err_t tca_read_port(tca_port_t port, uint8_t *value) {
-  if (!tca_handle || port > TCA_PORT_2 || !value) {
+  if (!tca_handle || port > TCA_PORT_1 || !value) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  uint8_t reg = TCA6424A_INPUT_PORT0 + port;
+  uint8_t reg = TCA6416A_INPUT_PORT0 + port;
   return tca_read_register(reg, value);
 }
 
 esp_err_t tca_write_port(tca_port_t port, uint8_t value) {
-  if (!tca_handle || port > TCA_PORT_2) {
+  if (!tca_handle || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  uint8_t reg = TCA6424A_OUTPUT_PORT0 + port;
+  uint8_t reg = TCA6416A_OUTPUT_PORT0 + port;
   esp_err_t ret = tca_write_register(reg, value);
 
   if (ret != ESP_OK) {
@@ -172,26 +197,24 @@ esp_err_t tca_write_port(tca_port_t port, uint8_t value) {
 }
 
 esp_err_t tca_read_output_port(tca_port_t port, uint8_t *value) {
-  if (!tca_handle || port > TCA_PORT_2 || !value) {
+  if (!tca_handle || port > TCA_PORT_1 || !value) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  uint8_t reg = TCA6424A_OUTPUT_PORT0 + port;
+  uint8_t reg = TCA6416A_OUTPUT_PORT0 + port;
   return tca_read_register(reg, value);
 }
 
 esp_err_t tca_set_polarity(tca_port_t port, uint8_t polarity) {
-  if (!tca_handle || port > TCA_PORT_2) {
+  if (!tca_handle || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
-
-  uint8_t reg = TCA6424A_POLARITY_PORT0 + port;
+  uint8_t reg = TCA6416A_POLARITY_PORT0 + port;
   return tca_write_register(reg, polarity);
 }
 
 esp_err_t tca_set_pin_verified(tca_port_t port, uint8_t pin, bool level,
                                bool verify) {
-  if (pin > 7 || port > TCA_PORT_2) {
+  if (pin > 7 || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -247,7 +270,7 @@ esp_err_t tca_set_pin_verified(tca_port_t port, uint8_t pin, bool level,
 }
 
 esp_err_t tca_read_pin(tca_port_t port, uint8_t pin, bool *level) {
-  if (pin > 7 || !level || port > TCA_PORT_2) {
+  if (pin > 7 || !level || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -267,25 +290,25 @@ esp_err_t tca_register_interrupt_callback(tca_interrupt_callback_t callback) {
 }
 
 esp_err_t tca_read_config_register(tca_port_t port, uint8_t *value) {
-  if (!tca_handle || port > TCA_PORT_2 || !value) {
+  if (!tca_handle || port > TCA_PORT_1 || !value) {
     return ESP_ERR_INVALID_ARG;
   }
-  uint8_t reg = TCA6424A_CONFIG_PORT0 + port;
+  uint8_t reg = TCA6416A_CONFIG_PORT0 + port;
   return tca_read_register(reg, value);
 }
 
 esp_err_t tca_read_output_register(tca_port_t port, uint8_t *value) {
-  if (!tca_handle || port > TCA_PORT_2 || !value) {
+  if (!tca_handle || port > TCA_PORT_1 || !value) {
     return ESP_ERR_INVALID_ARG;
   }
-  uint8_t reg = TCA6424A_OUTPUT_PORT0 + port;
+  uint8_t reg = TCA6416A_OUTPUT_PORT0 + port;
   return tca_read_register(reg, value);
 }
 
 esp_err_t tca_write_output_register(tca_port_t port, uint8_t value) {
-  if (!tca_handle || port > TCA_PORT_2) {
+  if (!tca_handle || port > TCA_PORT_1) {
     return ESP_ERR_INVALID_ARG;
   }
-  uint8_t reg = TCA6424A_OUTPUT_PORT0 + port;
+  uint8_t reg = TCA6416A_OUTPUT_PORT0 + port;
   return tca_write_register(reg, value);
 }

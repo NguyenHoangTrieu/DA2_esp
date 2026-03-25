@@ -42,7 +42,7 @@ export const FUNCTION_GROUPS = {
     { emoji: '🌍', title: 'Region & Class', functions: ['MODULE_SET_REGION','MODULE_SET_CLASS'] },
     { emoji: '🔑', title: 'OTAA Provisioning', functions: ['MODULE_SET_JOIN_MODE','MODULE_SET_DEVEUI','MODULE_GET_DEVEUI','MODULE_SET_APPEUI','MODULE_SET_APPKEY','MODULE_JOIN','MODULE_GET_JOIN_STATUS'] },
     { emoji: '🔒', title: 'ABP Provisioning', functions: ['MODULE_SET_DEVADDR','MODULE_SET_NWKSKEY','MODULE_SET_APPSKEY'] },
-    { emoji: '📶', title: 'MAC & RF Settings', functions: ['MODULE_SET_DR','MODULE_SET_ADR','MODULE_SET_TXP','MODULE_SET_CHANNEL','MODULE_SET_CONFIRM','MODULE_SET_PUBLIC_NET'] },
+    { emoji: '📶', title: 'MAC & RF Settings', functions: ['MODULE_SET_DR','MODULE_SET_ADR','MODULE_SET_TXP','MODULE_SET_CHANNEL','MODULE_SET_PORT','MODULE_SET_CONFIRM','MODULE_SET_PUBLIC_NET'] },
     { emoji: '📨', title: 'Data', functions: ['MODULE_SEND_UNCONFIRMED','MODULE_SEND_CONFIRMED','MODULE_READ_RECV'] },
   ],
   ZIGBEE: [
