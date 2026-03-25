@@ -5,15 +5,17 @@
  * WAN MCU has one stack connector with 16 GPIO signals (P00-P07, P10-P17)
  * controlled via TCA6416A I2C GPIO expander on the adapter board.
  *
- * JSON pin label convention (WAN single stack, stack_id always 0):
- *   "00" - "07"  ->  P00 - P07  (Port 0)
- *   "10" - "17"  ->  P10 - P17  (Port 1)
+ * Flat GPIO pin mapping (numeric pin IDs):
+ *   00-07  →  P00-P07 (TCA PORT_0, pins 0-7)
+ *   10-17  →  P10-P17 (TCA PORT_1, pins 0-7)
  *
- * Special pins:
+ * Special pins (by function, not hardware):
  *   P00-P03  : 4-bit adapter ID (input, factory-set)
- *   P05      : LTE WAKE#  (active-low, was STACK_GPIO_PIN_WAKE)
- *   P06      : LTE PERST# (active-low, was STACK_GPIO_PIN_PERST)
+ *   P05, P06 : Typically used for modem power/reset (configurable in JSON/config)
  *   P17      : IOX_SLOTDET (input)
+ *
+ * Note: All pins are flat-mapped with no predefined purposes. Modem power/reset
+ * pins are configured in LTE config, not hardcoded.
  */
 
 #ifndef STACK_HANDLER_H
@@ -48,8 +50,8 @@ typedef enum {
   STACK_GPIO_PIN_02 = 2,   /* P02 — adapter ID bit 2 (input)   */
   STACK_GPIO_PIN_03 = 3,   /* P03 — adapter ID bit 3 (input)   */
   STACK_GPIO_PIN_04 = 4,   /* P04                               */
-  STACK_GPIO_PIN_05 = 5,   /* P05 — LTE WAKE#  (active-low)    */
-  STACK_GPIO_PIN_06 = 6,   /* P06 — LTE PERST# (active-low)    */
+  STACK_GPIO_PIN_05 = 5,   /* P05 (typically modem power)       */
+  STACK_GPIO_PIN_06 = 6,   /* P06 (typically modem reset)       */
   STACK_GPIO_PIN_07 = 7,   /* P07                               */
   STACK_GPIO_PIN_10 = 8,   /* P10                               */
   STACK_GPIO_PIN_11 = 9,   /* P11                               */
@@ -80,7 +82,7 @@ esp_err_t stack_handler_init(void);
 /**
  * @brief Write a GPIO pin level.
  * @param stack_id Must be 0 (WAN has one stack).
- * @param pin      Pin identifier (STACK_GPIO_PIN_1 .. STACK_GPIO_PIN_PERST).
+ * @param pin      Pin identifier (STACK_GPIO_PIN_04 .. STACK_GPIO_PIN_17).
  * @param level    true = HIGH, false = LOW.
  */
 esp_err_t stack_handler_gpio_write(uint8_t stack_id, stack_gpio_pin_num_t pin,

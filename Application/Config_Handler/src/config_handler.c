@@ -363,26 +363,30 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 /**
  * @brief Parse LTE configuration from command string
  * Format: "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
- * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE"
+ * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:05:06"
  * Note: USERNAME and PASSWORD can be empty (consecutive colons allowed).
- *       PWR_PIN / RST_PIN are TCA pin labels: "WK"="WAKE#"(11), "PE"="PERST#"(12),
- *       or "01".."11" for numbered GPIO pins (0-10).  Omit or use "" to keep default.
+ *       PWR_PIN / RST_PIN are numeric GPIO pin IDs (00-17) for flat TCA6416A mapping.
+ *       Examples: "05"=P05, "06"=P06, etc. Omit or use "" to keep defaults (05 for PWR, 06 for RST).
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output LTE config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
 static uint8_t parse_tca_pin_label(const char *s, int len) {
-    if (len == 2) {
-        if ((s[0] == 'W' || s[0] == 'w') && (s[1] == 'K' || s[1] == 'k')) return 11; /* STACK_GPIO_PIN_WAKE  */
-        if ((s[0] == 'P' || s[0] == 'p') && (s[1] == 'E' || s[1] == 'e')) return 12; /* STACK_GPIO_PIN_PERST */
-        /* "01" - "11" -> index 0-10 */
-        if (s[0] == '0' || s[0] == '1') {
-            int num = (s[0] - '0') * 10 + (s[1] - '0');
-            if (num >= 1 && num <= 11) return (uint8_t)(num - 1);
+    /* New architecture: Parse numeric GPIO pin IDs directly (04-17, flat TCA mapping)
+     * Pins 00-03 reserved for adapter ID detection. Use numeric pins P04-P17 */
+    if (len >= 1 && len <= 2) {
+        int num = 0;
+        if (len == 1) {
+            num = s[0] - '0';  /* 4-9 (single digit) */
+        } else if (len == 2) {
+            num = (s[0] - '0') * 10 + (s[1] - '0');  /* 04-17 (two digits) */
+        }
+        if (num >= 4 && num <= 17) {
+            return (uint8_t)num;
         }
     }
-    return 0xFF; /* STACK_GPIO_PIN_NONE */
+    return 0xFF; /* STACK_GPIO_PIN_NONE — invalid pin */
 }
 
 static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
@@ -391,9 +395,9 @@ static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_dat
     }
 
     memset(cfg, 0, sizeof(lte_config_data_t));
-    /* Default TCA pins if not supplied in command */
-    cfg->pwr_pin = 11; /* STACK_GPIO_PIN_WAKE  */
-    cfg->rst_pin = 12; /* STACK_GPIO_PIN_PERST */
+    /* Default TCA pins: P05 for power, P06 for reset (configurable per use case) */
+    cfg->pwr_pin = 5;   /* STACK_GPIO_PIN_05 (P05) */
+    cfg->rst_pin = 6;   /* STACK_GPIO_PIN_06 (P06) */
 
     /* Parse format:
      * "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"

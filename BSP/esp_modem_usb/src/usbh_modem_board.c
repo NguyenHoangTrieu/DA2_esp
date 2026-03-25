@@ -64,10 +64,10 @@ static esp_ip_addr_t s_dns_ip_main = ESP_IP4ADDR_INIT(8, 8, 8, 8);
 static esp_ip_addr_t s_dns_ip_backup = ESP_IP4ADDR_INIT(114, 114, 114, 114);
 
 /* ===== TCA GPIO configuration for modem POWER / RESET ===== */
-/* Defaults map to the WAN stack WAKE# (power) and PERST# (reset) pins.
+/* Defaults: P05 for modem power, P06 for modem reset (flat GPIO mapping).
  * Call modem_board_set_tca_pins() before modem_board_init() to override. */
-static uint8_t  s_modem_pwr_pin           = STACK_GPIO_PIN_WAKE;   /* 11 */
-static uint8_t  s_modem_rst_pin           = STACK_GPIO_PIN_PERST;  /* 12 */
+static uint8_t  s_modem_pwr_pin           = 5;   /* P05 (numeric GPIO ID in flat map) */
+static uint8_t  s_modem_rst_pin           = 6;   /* P06 (numeric GPIO ID in flat map) */
 static const int s_modem_pwr_inactive_lvl = 1;  /* active-low power key */
 static const int s_modem_rst_inactive_lvl = 1;  /* active-low reset     */
 

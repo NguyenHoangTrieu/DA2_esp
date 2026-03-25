@@ -70,8 +70,8 @@ typedef struct {
     bool auto_reconnect;
     uint32_t reconnect_timeout_ms;
     uint32_t max_reconnect_attempts;
-    uint8_t pwr_pin;        // TCA GPIO pin for modem POWER  (STACK_GPIO_PIN_WAKE=11 by default)
-    uint8_t rst_pin;        // TCA GPIO pin for modem RESET  (STACK_GPIO_PIN_PERST=12 by default)
+    uint8_t pwr_pin;        // TCA GPIO pin for modem POWER (numeric ID 00-17, default=5 for P05)
+    uint8_t rst_pin;        // TCA GPIO pin for modem RESET (numeric ID 00-17, default=6 for P06)
 } lte_config_data_t;
 
 // MQTT configuration structure

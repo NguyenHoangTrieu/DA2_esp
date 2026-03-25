@@ -100,8 +100,8 @@ esp_err_t modem_board_force_reset(void);
  * @brief Configure which TCA GPIO pins to use for modem POWER and RESET.
  *
  * Must be called before modem_board_init(). The values correspond to
- * stack_gpio_pin_num_t entries (e.g. STACK_GPIO_PIN_WAKE = 11 for POWER,
- * STACK_GPIO_PIN_PERST = 12 for RESET).  Pass STACK_GPIO_PIN_NONE (0xFF)
+ * stack_gpio_pin_num_t entries (e.g. numeric GPIO pin IDs 5 for P05 power,
+ * 6 for P06 reset using flat TCA6416A mapping).  Pass 0xFF
  * to disable a signal.
  *
  * @param pwr_pin TCA pin enum value for modem POWER signal.
