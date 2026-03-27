@@ -79,7 +79,7 @@ export function renderServer(container, config) {
         <div class="form-grid">
           <div class="form-group full">
             <label>Server URL</label>
-            <input type="text" id="hpUrl" value="${esc(http.url)}" placeholder="http://demo.thingsboard.io:8080/api/v1/{token}/telemetry">
+            <input type="text" id="hpUrl" value="${esc(http.url)}" placeholder="http://demo.thingsboard.io/api/v1/{token}/telemetry">
           </div>
           <div class="form-group full">
             <label>Auth Token</label>
@@ -88,7 +88,7 @@ export function renderServer(container, config) {
           ${isAdvanced ? `
           <div class="form-group">
             <label>Port</label>
-            <input type="number" id="hpPort" value="${http.port||8080}" min="1" max="65535">
+            <input type="number" id="hpPort" value="${http.port||80}" min="1" max="65535">
           </div>
           <div class="form-group">
             <label>Timeout (ms)</label>
@@ -209,7 +209,7 @@ export function renderServer(container, config) {
         use_tls: container.querySelector('#hpTls')?.checked || false,
       };
       if (isAdvanced) {
-        payload.server.http.port = Number(container.querySelector('#hpPort')?.value || 8080);
+        payload.server.http.port = Number(container.querySelector('#hpPort')?.value || 80);
         payload.server.http.timeout = Number(container.querySelector('#hpTimeout')?.value || 10000);
         payload.server.http.verify = container.querySelector('#hpVerify')?.checked || false;
       }

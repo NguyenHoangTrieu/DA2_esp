@@ -37,6 +37,13 @@ static TaskHandle_t  s_polling_task_handle = NULL;
 static bool          s_task_running       = false;
 static bool          s_polling_running    = false;
 static int           s_last_rpc_id        = -1;
+// In-flight guard: set when a command is forwarded, cleared on successful POST response.
+static int           s_processing_rpc_id  = -1;
+// Cooldown guard: after a response is accepted (200/406), the same id is suppressed for
+// RPC_ID_COOLDOWN_TICKS ticks so that async ThingsBoard lag doesn't cause re-forwarding.
+static int           s_cooldown_rpc_id    = -1;
+static uint32_t      s_cooldown_rpc_ts    =  0;  // xTaskGetTickCount() snapshot
+#define RPC_ID_COOLDOWN_TICKS pdMS_TO_TICKS(15000)  // 15-second cooldown after completion
 
 #define HTTP_QUEUE_SIZE 8
 #define HTTP_CONTENT_TYPE "application/json"
@@ -83,6 +90,17 @@ static void build_url(const char *url_template, const char *token,
 }
 
 /**
+ * Detect URL scheme and return appropriate transport type.
+ * Returns HTTP_TRANSPORT_OVER_SSL for https://, HTTP_TRANSPORT_OVER_TCP for http://
+ */
+static esp_http_client_transport_t detect_transport_from_url(const char *url) {
+    if (strncmp(url, "https://", 8) == 0) {
+        return HTTP_TRANSPORT_OVER_SSL;
+    }
+    return HTTP_TRANSPORT_OVER_TCP;
+}
+
+/**
  * Perform a single HTTP POST of `payload` to the currently configured endpoint.
  * Returns ESP_OK on 2xx response, ESP_FAIL otherwise.
  */
@@ -94,11 +112,9 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
         .url                        = url,
         .method                     = HTTP_METHOD_POST,
         .timeout_ms                 = (int)g_http_cfg.timeout_ms,
-        .crt_bundle_attach          = esp_crt_bundle_attach,   // <-- thêm dòng này
-        .skip_cert_common_name_check = !g_http_cfg.verify_server,
-        .transport_type             = g_http_cfg.use_tls
-                                    ? HTTP_TRANSPORT_OVER_SSL
-                                    : HTTP_TRANSPORT_OVER_TCP,
+        .crt_bundle_attach          = NULL,  // Disable certificate verification for demo.thingsboard.io
+        .skip_cert_common_name_check = true,  // Disable CN check
+        .transport_type             = detect_transport_from_url(url),  // Detect from URL scheme
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -133,164 +149,251 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Extract JSON params from HTTP RPC response and convert hex to binary
+ * @brief Extract JSON params from HTTP RPC response and convert hex to binary.
+ *
+ * JSON from ThingsBoard: {"id":1,"method":"sendCommand","params":"4346..."}
+ * We need to skip past "params": to reach the VALUE string.
  */
 static esp_err_t http_extract_rpc_params(const char *json_response, char *hex_out, size_t hex_out_size) {
     if (!json_response || !hex_out) return ESP_ERR_INVALID_ARG;
-    
-    // Look for "params" field in JSON: "params":"CF..." or "params":"hex_string"
-    const char *params_start = strstr(json_response, "\"params\"");
-    if (!params_start) {
+
+    // Step 1: find the key
+    const char *p = strstr(json_response, "\"params\"");
+    if (!p) {
         ESP_LOGW(TAG, "No params field in RPC response");
         return ESP_FAIL;
     }
-    
-    // Find opening quote after "params":
-    params_start = strchr(params_start, '\"');
-    if (!params_start) return ESP_FAIL;
-    params_start++;  // Move past opening quote
-    
-    // Find closing quote
-    const char *params_end = strchr(params_start, '\"');
+
+    // Step 2: skip the 8-char key literal "params" to reach ':'
+    p += 8;  // now pointing at '"' that CLOSES the key, i.e. '":...'
+    p = strchr(p, ':');
+    if (!p) return ESP_FAIL;
+    p++;  // skip ':'
+
+    // Step 3: skip optional whitespace, then the opening '"' of the VALUE
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '"') {
+        ESP_LOGW(TAG, "params value is not a string (got '%c')", *p);
+        return ESP_FAIL;
+    }
+    p++;  // skip opening '"'
+
+    // Step 4: extract until the closing '"'
+    const char *params_end = strchr(p, '"');
     if (!params_end) return ESP_FAIL;
-    
-    size_t params_len = params_end - params_start;
+
+    size_t params_len = params_end - p;
     if (params_len >= hex_out_size) {
         ESP_LOGE(TAG, "RPC params too long (%zu > %zu)", params_len, hex_out_size);
         return ESP_FAIL;
     }
-    
-    memcpy(hex_out, params_start, params_len);
+
+    memcpy(hex_out, p, params_len);
     hex_out[params_len] = '\0';
+    ESP_LOGI(TAG, "Extracted params (%zu chars): %.40s%s", params_len, hex_out, params_len > 40 ? "..." : "");
+    return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP response capture context (used by event handler during perform())
+// ---------------------------------------------------------------------------
+typedef struct {
+    char *buf;
+    int   buf_size;
+    int   offset;
+} http_resp_ctx_t;
+
+static esp_err_t rpc_http_event_handler(esp_http_client_event_t *evt) {
+    http_resp_ctx_t *ctx = (http_resp_ctx_t *)evt->user_data;
+    if (evt->event_id == HTTP_EVENT_ON_DATA && ctx && evt->data && evt->data_len > 0) {
+        if (!esp_http_client_is_chunked_response(evt->client)) {
+            int available = ctx->buf_size - ctx->offset - 1;
+            int to_copy   = (evt->data_len < available) ? evt->data_len : available;
+            if (to_copy > 0) {
+                memcpy(ctx->buf + ctx->offset, evt->data, to_copy);
+                ctx->offset += to_copy;
+            }
+        }
+    }
     return ESP_OK;
 }
 
 /**
- * @brief Poll for pending RPC commands from ThingsBoard
+ * @brief Poll for pending RPC commands from ThingsBoard.
+ *        Uses long-polling: server holds the connection open for up to 20 s.
  */
 static esp_err_t http_poll_rpc(void) {
-    // Build polling URL: http://server:port/api/v1/{token}/rpc
     char url[512];
     build_url(g_http_cfg.server_url, g_http_cfg.auth_token, url, sizeof(url));
-    
-    // Replace /telemetry with /rpc for polling endpoint
+
+    // Replace /telemetry with /rpc?timeout=20000 for polling endpoint
     char *telemetry_pos = strstr(url, "/telemetry");
     if (telemetry_pos) {
-        strcpy(telemetry_pos, "/rpc");
+        strcpy(telemetry_pos, "/rpc?timeout=20000");
     } else {
-        // If not /telemetry pattern, append /rpc
-        strncat(url, "/rpc", sizeof(url) - strlen(url) - 1);
+        strncat(url, "/rpc?timeout=20000", sizeof(url) - strlen(url) - 1);
     }
-    
-    ESP_LOGI(TAG, "Polling RPC from: %s", url);
-    
-    esp_http_client_config_t config = {
-        .url        = url,
-        .method     = HTTP_METHOD_GET,
-        .timeout_ms = (int)g_http_cfg.timeout_ms,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-        .skip_cert_common_name_check = !g_http_cfg.verify_server,
-        .transport_type = g_http_cfg.use_tls ? HTTP_TRANSPORT_OVER_SSL : HTTP_TRANSPORT_OVER_TCP,
+
+    // Allocate response capture buffer
+    char *http_response = (char *)calloc(2048, 1);
+    if (!http_response) {
+        ESP_LOGE(TAG, "Failed to allocate RPC response buffer");
+        return ESP_FAIL;
+    }
+
+    http_resp_ctx_t resp_ctx = {
+        .buf      = http_response,
+        .buf_size = 2048,
+        .offset   = 0,
     };
-    
+
+    esp_http_client_config_t config = {
+        .url                       = url,
+        .method                    = HTTP_METHOD_GET,
+        .timeout_ms                = 22000,  // > server long-poll (20 000 ms)
+        .crt_bundle_attach         = NULL,
+        .skip_cert_common_name_check = true,
+        .transport_type            = detect_transport_from_url(url),
+        .buffer_size               = 2048,
+        .buffer_size_tx            = 512,
+        .event_handler             = rpc_http_event_handler,  // capture body here
+        .user_data                 = &resp_ctx,
+    };
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         ESP_LOGE(TAG, "Failed to init HTTP RPC poll client");
+        free(http_response);
         return ESP_FAIL;
     }
-    
-    // Allocate buffer for response
-    char *http_response = (char *)malloc(2048);
-    if (!http_response) {
-        ESP_LOGE(TAG, "Failed to allocate RPC response buffer");
-        esp_http_client_cleanup(client);
-        return ESP_FAIL;
-    }
-    
-    memset(http_response, 0, 2048);
-    esp_http_client_set_header(client, "Content-Type", "application/json");
-    
-    int content_read = 0;
-    esp_err_t err = esp_http_client_open(client, 0);
+
+    esp_err_t err = esp_http_client_perform(client);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open HTTP RPC connection: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to perform HTTP RPC GET: %s", esp_err_to_name(err));
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);  // Server unreachable
         goto cleanup;
     }
-    
-    int content_length = esp_http_client_fetch_headers(client);
-    if (content_length > 2048) {
-        ESP_LOGW(TAG, "RPC response too large (%d > 2048)", content_length);
-        content_length = 2048;
+
+    // Response body was captured by event handler into http_response
+    http_response[resp_ctx.offset] = '\0';
+    int bytes_read = resp_ctx.offset;
+
+    int status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "HTTP RPC: status=%d, body_len=%d", status, bytes_read);
+    if (bytes_read > 0) {
+        ESP_LOGI(TAG, "RPC Body: %.*s", bytes_read > 120 ? 120 : bytes_read, http_response);
     }
-    
-    if (content_length > 0) {
-        content_read = esp_http_client_read_response(client, http_response, content_length);
-        
-        int status = esp_http_client_get_status_code(client);
-        ESP_LOGI(TAG, "HTTP GET RPC response: status=%d, len=%d", status, content_read);
-        
-        if (status == 200 && content_read > 0) {
-            ESP_LOGI(TAG, "RPC Response: %.*s", content_read > 100 ? 100 : content_read, (char *)http_response);
-            
-            // Extract RPC ID from response if present
-            int rpc_id = -1;
-            if (sscanf((const char *)http_response, "{\"id\":%d", &rpc_id) == 1) {
-                s_last_rpc_id = rpc_id;
-                ESP_LOGI(TAG, "Stored HTTP RPC ID: %d", s_last_rpc_id);
+
+    if (status == 200 && bytes_read > 0) {
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
+
+        // Extract RPC ID from response
+        int rpc_id = -1;
+        if (sscanf(http_response, "{\"id\":%d", &rpc_id) == 1) {
+            ESP_LOGI(TAG, "Poll: RPC id=%d (in-flight=%d, cooldown=%d)",
+                     rpc_id, s_processing_rpc_id, s_cooldown_rpc_id);
+
+            if (rpc_id == s_processing_rpc_id) {
+                // Still being processed downstream — don't forward again.
+                ESP_LOGI(TAG, "RPC id=%d in-flight, skipping duplicate poll", rpc_id);
+                err = ESP_OK;
+                goto cleanup;
             }
-            
-            // Extract and parse command parameters
+
+            if (rpc_id == s_cooldown_rpc_id) {
+                uint32_t elapsed = xTaskGetTickCount() - s_cooldown_rpc_ts;
+                if (elapsed < RPC_ID_COOLDOWN_TICKS) {
+                    ESP_LOGI(TAG, "RPC id=%d in cooldown (%lu ms / %lu ms window), skipping",
+                             rpc_id,
+                             (unsigned long)(elapsed * portTICK_PERIOD_MS),
+                             (unsigned long)(RPC_ID_COOLDOWN_TICKS * portTICK_PERIOD_MS));
+                    err = ESP_OK;
+                    goto cleanup;
+                } else {
+                    ESP_LOGI(TAG, "RPC id=%d cooldown expired, treating as new", rpc_id);
+                    s_cooldown_rpc_id = -1;
+                }
+            }
+
+            // New command: mark as in-flight and store for response routing.
+            s_processing_rpc_id = rpc_id;
+            s_last_rpc_id       = rpc_id;
+
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // Extract and forward ONLY for genuinely new commands.
+            // Everything below MUST stay inside this if(sscanf) block so
+            // that dedup goto-cleanup above correctly short-circuits it.
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             char hex_string[512];
-            if (http_extract_rpc_params((const char *)http_response, hex_string, sizeof(hex_string)) == ESP_OK) {
-                ESP_LOGI(TAG, "Extracted RPC params: %s", hex_string);
-                
-                // Convert hex string to binary and enqueue to config handler
+            if (http_extract_rpc_params(http_response, hex_string, sizeof(hex_string)) == ESP_OK) {
+
+                // Convert hex string to binary
                 uint8_t binary_cmd[256];
                 size_t binary_len = 0;
-                
-                // Hex string to binary conversion
                 for (size_t i = 0; i < strlen(hex_string) && binary_len < sizeof(binary_cmd); i += 2) {
                     if (sscanf(&hex_string[i], "%2hhx", &binary_cmd[binary_len]) == 1) {
                         binary_len++;
                     }
                 }
-                
-                if (binary_len >= 2 && binary_cmd[0] == 'C' && binary_cmd[1] == 'F') {
-                    ESP_LOGI(TAG, "Valid config command received via HTTP RPC");
-                    
-                    // Allocate command structure
-                    config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
-                    if (cmd) {
-                        cmd->type = config_parse_type((const char *)binary_cmd, binary_len);
-                        cmd->data_len = binary_len;
-                        cmd->source = CMD_SOURCE_HTTP_RPC;
-                        memcpy(cmd->raw_data, binary_cmd, binary_len);
-                        cmd->raw_data[binary_len] = '\0';
-                        
-                        if (g_config_handler_queue) {
-                            if (xQueueSend(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
-                                ESP_LOGI(TAG, "HTTP RPC command enqueued to config handler");
-                            } else {
-                                ESP_LOGW(TAG, "Config queue full, dropping HTTP RPC");
-                                free(cmd);
-                            }
+
+                // Remap CFML:... → ML:... so config_parse_type() recognises it
+                uint8_t *enqueue_cmd = binary_cmd;
+                size_t   enqueue_len = binary_len;
+                uint8_t  remapped[256];
+
+                if (binary_len >= 4 &&
+                    binary_cmd[0] == 'C' && binary_cmd[1] == 'F' &&
+                    binary_cmd[2] == 'M' && binary_cmd[3] == 'L') {
+                    enqueue_len = binary_len - 2;
+                    memcpy(remapped, binary_cmd + 2, enqueue_len);
+                    remapped[enqueue_len] = '\0';
+                    enqueue_cmd = remapped;
+                    ESP_LOGI(TAG, "Remapped CFML→ML: %.*s", (int)enqueue_len, enqueue_cmd);
+                }
+
+                config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+                if (cmd) {
+                    cmd->type     = config_parse_type((const char *)enqueue_cmd, enqueue_len);
+                    cmd->data_len = enqueue_len;
+                    cmd->source   = CMD_SOURCE_HTTP_RPC;
+                    memcpy(cmd->raw_data, enqueue_cmd, enqueue_len);
+                    cmd->raw_data[enqueue_len] = '\0';
+
+                    if (cmd->type == CONFIG_TYPE_UNKNOWN) {
+                        ESP_LOGW(TAG, "HTTP RPC: unrecognised command type after remap, dropping");
+                        free(cmd);
+                    } else if (g_config_handler_queue) {
+                        if (xQueueSend(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+                            ESP_LOGI(TAG, "HTTP RPC command enqueued (type=%d, len=%zu)", cmd->type, enqueue_len);
                         } else {
-                            ESP_LOGW(TAG, "Config handler queue not initialized");
+                            ESP_LOGW(TAG, "Config queue full, dropping HTTP RPC");
                             free(cmd);
                         }
+                    } else {
+                        ESP_LOGW(TAG, "Config handler queue not initialized");
+                        free(cmd);
                     }
                 }
             }
-        } else if (status == 204) {
-            // 204 No Content - no pending RPC commands
-            // This is normal
+        } else {
+            ESP_LOGW(TAG, "HTTP RPC body has no parseable id field");
         }
+    } else if (status == 200 && bytes_read == 0) {
+        // Server returned 200 but body was empty — unusual, still mark online
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
+        ESP_LOGW(TAG, "HTTP RPC status 200 but empty body");
+    } else if (status == 204) {
+        // 204 No Content — no pending RPC commands (normal heartbeat)
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
+        ESP_LOGD(TAG, "No pending RPC commands (status 204)");
+    } else {
+        ESP_LOGW(TAG, "HTTP RPC unexpected status: %d", status);
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
     }
-    
+
     err = ESP_OK;
-    
+
 cleanup:
-    esp_http_client_close(client);
     esp_http_client_cleanup(client);
     free(http_response);
     return err;
@@ -300,14 +403,16 @@ cleanup:
  * @brief HTTP RPC polling task - periodically checks for pending commands
  */
 static void http_polling_task(void *arg) {
-    ESP_LOGI(TAG, "HTTP RPC polling task started, interval=%dms", HTTP_RPC_POLL_INTERVAL_MS);
-    
-    // Wait for first poll interval
-    vTaskDelay(pdMS_TO_TICKS(HTTP_RPC_POLL_INTERVAL_MS));
-    
+    ESP_LOGI(TAG, "HTTP RPC polling task started (continuous long-poll mode)");
+
+    // Small initial delay to let WiFi/IP stack stabilize
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     while (s_polling_running) {
         http_poll_rpc();
-        vTaskDelay(pdMS_TO_TICKS(HTTP_RPC_POLL_INTERVAL_MS));
+        // Minimal gap (100ms) just to yield to other tasks between polls.
+        // The 20s long-poll itself is the rate limiter, not this delay.
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
     
     ESP_LOGI(TAG, "HTTP RPC polling task exiting");
@@ -354,38 +459,112 @@ static void http_publish_task(void *arg) {
             
             // Check if this is an RPC response
             if (s_last_rpc_id >= 0) {
-                // Route to RPC response endpoint
+                // -------------------------------------------------------
+                // ThingsBoard HTTP device-side RPC response endpoint:
+                //   POST /api/v1/{token}/rpc/{requestId}      ✅ correct
+                //   POST /api/v1/{token}/rpc/response/{id}    ❌ wrong → 404
+                // -------------------------------------------------------
                 char rpc_url[512];
                 build_url(g_http_cfg.server_url, g_http_cfg.auth_token, rpc_url, sizeof(rpc_url));
-                
-                // Replace /telemetry with /rpc/response/{id}
+
                 char *tel_pos = strstr(rpc_url, "/telemetry");
                 if (tel_pos) {
                     snprintf(tel_pos, sizeof(rpc_url) - (tel_pos - rpc_url),
-                             "/rpc/response/%d", s_last_rpc_id);
+                             "/rpc/%d", s_last_rpc_id);   // ✅ /rpc/{id}
                 }
-                
-                ESP_LOGI(TAG, "HTTP RPC response → %s", rpc_url);
-                s_last_rpc_id = -1;  // Consume RPC ID
-                
-                // Send via HTTP POST to RPC response endpoint
+
+                // Build a human-readable result from the raw uplink bytes.
+                // Format: "BLE"(3) + "DD/MM/YYYY-HH:MM:SS"(19) + <payload>
+                // Strip the 22-byte prefix so widget gets the payload directly.
+                char result_str[1024];  // must hold full 1024-byte data_buffer
+                size_t rs_len = (copy_len < sizeof(result_str) - 1)
+                                ? copy_len : sizeof(result_str) - 1;
+                memcpy(result_str, data_buffer, rs_len);
+                result_str[rs_len] = '\0';
+
+                const char *payload_start = result_str;
+                size_t payload_len = rs_len;
+                if (rs_len > 22 &&
+                    result_str[0] == 'B' && result_str[1] == 'L' && result_str[2] == 'E' &&
+                    result_str[5] == '/' && result_str[13] == '-') {
+                    payload_start = result_str + 22;
+                    payload_len   = rs_len - 22;
+                }
+
+                // JSON-escape the payload so the full content (including 0x1E-delimited
+                // +SCAN lines) is delivered to the widget.
+                //   0x1E record separator → \n  (valid JSON; widget splits on \n)
+                //   '"'  →  \"              (valid JSON escape)
+                //   '\'  →  \\             (valid JSON escape)
+                //   other control chars (<0x20) → skipped (invalid in JSON strings)
+                char *esc = (char *)malloc(payload_len * 2 + 4);  // worst-case expansion
+                if (!esc) {
+                    ESP_LOGE(TAG, "malloc for JSON escape buffer failed");
+                    goto cleanup;
+                }
+                size_t esc_len = 0;
+                for (size_t ci = 0; ci < payload_len; ci++) {
+                    unsigned char c = (unsigned char)payload_start[ci];
+                    if (c == 0x1E) {
+                        esc[esc_len++] = '\\';
+                        esc[esc_len++] = 'n';   // \n — widget splitResp splits on \n
+                    } else if (c == '"') {
+                        esc[esc_len++] = '\\';
+                        esc[esc_len++] = '"';
+                    } else if (c == '\\') {
+                        esc[esc_len++] = '\\';
+                        esc[esc_len++] = '\\';
+                    } else if (c >= 0x20) {
+                        esc[esc_len++] = (char)c;
+                    }
+                    // else: skip other control characters
+                }
+                esc[esc_len] = '\0';
+
+                char resp_json[2300];
+                int resp_json_len = snprintf(resp_json, sizeof(resp_json),
+                                             "{\"result\":\"%s\"}", esc);
+                free(esc);
+
+                ESP_LOGI(TAG, "HTTP RPC response → %s  body=%s", rpc_url, resp_json);
+                s_last_rpc_id = -1;  // Consume RPC ID before the HTTP call
+
                 esp_http_client_config_t config = {
-                    .url = rpc_url,
-                    .method = HTTP_METHOD_POST,
-                    .timeout_ms = (int)g_http_cfg.timeout_ms,
-                    .crt_bundle_attach = esp_crt_bundle_attach,
-                    .skip_cert_common_name_check = !g_http_cfg.verify_server,
-                    .transport_type = g_http_cfg.use_tls ? HTTP_TRANSPORT_OVER_SSL : HTTP_TRANSPORT_OVER_TCP,
+                    .url            = rpc_url,
+                    .method         = HTTP_METHOD_POST,
+                    .timeout_ms     = 10000,
+                    .crt_bundle_attach         = NULL,
+                    .skip_cert_common_name_check = true,
+                    .transport_type = detect_transport_from_url(rpc_url),
                 };
-                
+
                 esp_http_client_handle_t client = esp_http_client_init(&config);
                 if (client) {
-                    esp_http_client_set_header(client, "Content-Type", HTTP_CONTENT_TYPE);
-                    esp_http_client_set_post_field(client, (const char *)json_buffer, json_len);
+                    esp_http_client_set_header(client, "Content-Type", "application/json");
+                    esp_http_client_set_post_field(client, resp_json, resp_json_len);
                     esp_err_t rc = esp_http_client_perform(client);
                     if (rc == ESP_OK) {
-                        int status = esp_http_client_get_status_code(client);
-                        ESP_LOGI(TAG, "HTTP RPC response sent: status=%d", status);
+                        int status_resp = esp_http_client_get_status_code(client);
+                        ESP_LOGI(TAG, "HTTP RPC response sent: status=%d", status_resp);
+                        if (status_resp == 200 || status_resp == 406) {
+                            // 200 = accepted,  406 = ThingsBoard already has a response
+                            // (can happen on race-condition retry). Both mean we're done.
+                            if (status_resp == 406) {
+                                ESP_LOGW(TAG, "ThingsBoard 406: RPC already has a response (race)");
+                            } else {
+                                ESP_LOGI(TAG, "ThingsBoard acknowledged RPC response \u2713");
+                            }
+                            // Enter cooldown so that stale polls for this id are dropped.
+                            s_cooldown_rpc_id = s_processing_rpc_id >= 0
+                                                ? s_processing_rpc_id
+                                                : (int)s_last_rpc_id;
+                            s_cooldown_rpc_ts = xTaskGetTickCount();
+                            s_processing_rpc_id = -1;  // Release in-flight guard
+                        } else {
+                            ESP_LOGW(TAG, "ThingsBoard unexpected RPC response status: %d", status_resp);
+                        }
+                    } else {
+                        ESP_LOGE(TAG, "HTTP RPC response POST failed: %s", esp_err_to_name(rc));
                     }
                     esp_http_client_cleanup(client);
                 }

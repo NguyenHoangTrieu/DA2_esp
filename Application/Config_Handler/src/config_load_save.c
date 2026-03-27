@@ -29,9 +29,9 @@ static const char *TAG = "CONFIG_NVS";
 char g_stack_id_wan[8] = "000";
 
 /* Default values for HTTP/CoAP */
-#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io:8080/api/v1/{token}/telemetry"
+#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io/api/v1/{token}/telemetry"
 #define HTTP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
-#define HTTP_DEFAULT_PORT       8080
+#define HTTP_DEFAULT_PORT       80
 #define HTTP_DEFAULT_TIMEOUT_MS 10000
 
 #define COAP_DEFAULT_HOST       "demo.thingsboard.io"
