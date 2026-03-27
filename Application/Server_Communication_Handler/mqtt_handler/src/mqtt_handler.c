@@ -440,9 +440,15 @@ static void mqtt_publish_task(void *arg) {
 
         int msg_id;
         if (g_last_rpc_id >= 0) {
-          char rpc_topic[128];
-          snprintf(rpc_topic, sizeof(rpc_topic),
-                   "v1/devices/me/rpc/response/%d", g_last_rpc_id);
+          /* Derive response topic from subscribe topic: strip "/request/+" → append "/response/{id}" */
+          char base_topic[128];
+          strncpy(base_topic, g_mqtt_ctx.subscribe_topic, sizeof(base_topic) - 1);
+          base_topic[sizeof(base_topic) - 1] = '\0';
+          char *req_pos = strstr(base_topic, "/request");
+          if (req_pos) *req_pos = '\0';
+          /* rpc_topic must fit: base(≤127) + "/response/" (10) + int(≤11) + NUL = 149 max */
+          char rpc_topic[160];
+          snprintf(rpc_topic, sizeof(rpc_topic), "%s/response/%d", base_topic, g_last_rpc_id);
           g_last_rpc_id = -1; // Consume the RPC ID
           msg_id = esp_mqtt_client_publish(m_client, rpc_topic,
                                            (const char *)json_tx_buffer,

@@ -19,6 +19,7 @@ export const LAN_STACK_MAP = {
 };
 
 export const WAN_STACK_MAP = {
+  '001': { type: 'QUECTEL', label: 'Quectel (AC76001) / LTE', modem: 'AC76001', comm_type: 'UART', pwr_pin: 'WK', rst_pin: 'PE' },
   '100': { type: 'NONE',    label: 'No WAN adapter',   modem: '',        comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },
   '101': { type: 'QUECTEL', label: 'Quectel (A7600)',   modem: 'A7600C1', comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },
   '102': { type: 'SIMCOM',  label: 'SIMCom (SIM7600)',  modem: 'SIM7600', comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },

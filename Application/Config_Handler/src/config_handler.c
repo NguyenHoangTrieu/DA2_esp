@@ -42,8 +42,8 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
-config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;  
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_COAP;
 bool is_internet_connected = false;
 
 static bool config_handler_running = false;
@@ -1017,9 +1017,55 @@ static void config_handler_task(void *arg) {
                     ESP_LOGI(TAG, "Server type config command received");
                     config_server_type_t new_type;
                     if (config_parse_server_type(cmd->raw_data, cmd->data_len, &new_type) == ESP_OK) {
-                        g_server_type = new_type;
-                        save_server_config_to_nvs();
-                        ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
+                        if (new_type != g_server_type) {
+                            ESP_LOGI(TAG, "Server type changing from %d to %d, restarting handlers", g_server_type, new_type);
+                            
+                            // Stop current handler
+                            switch(g_server_type) {
+                                case CONFIG_SERVERTYPE_MQTT:
+                                    mqtt_handler_task_stop();
+                                    break;
+                                case CONFIG_SERVERTYPE_HTTP:
+                                    http_handler_task_stop();
+                                    break;
+                                case CONFIG_SERVERTYPE_COAP:
+                                    coap_handler_task_stop();
+                                    break;
+                                default:
+                                    break;
+                            }
+                            
+                            // Update and save
+                            g_server_type = new_type;
+                            save_server_config_to_nvs();
+                            
+                            // Wait for handler to fully stop
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                            
+                            // Start new handler
+                            switch(g_server_type) {
+                                case CONFIG_SERVERTYPE_MQTT:
+                                    mqtt_handler_task_start();
+                                    ESP_LOGI(TAG, "MQTT handler started");
+                                    break;
+                                case CONFIG_SERVERTYPE_HTTP:
+                                    http_handler_task_start();
+                                    ESP_LOGI(TAG, "HTTP handler started");
+                                    break;
+                                case CONFIG_SERVERTYPE_COAP:
+                                    coap_handler_task_start();
+                                    ESP_LOGI(TAG, "CoAP handler started");
+                                    break;
+                                default:
+                                    mqtt_handler_task_start(); // Fallback to MQTT
+                                    ESP_LOGW(TAG, "Unknown server type, defaulting to MQTT");
+                                    break;
+                            }
+                            
+                            ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
+                        } else {
+                            ESP_LOGI(TAG, "Server type already set to %d, no change", g_server_type);
+                        }
                     }
                     break;
                 }

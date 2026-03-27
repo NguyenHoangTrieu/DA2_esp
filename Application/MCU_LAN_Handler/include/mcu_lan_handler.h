@@ -43,11 +43,13 @@ typedef struct {
 
 // ===== Command Source (for ACK/response routing) =====
 typedef enum {
-  CMD_SOURCE_MQTT    = 0,  // From MQTT server → forward response to server
-  CMD_SOURCE_UART    = 1,  // From UART PC App → forward response to UART
-  CMD_SOURCE_USB     = 2,  // From USB Serial JTAG → forward response to USB
-  CMD_SOURCE_HTTP    = 3,  // From Web Config Portal → response via HTTP
-  CMD_SOURCE_UNKNOWN = 0xFF
+  CMD_SOURCE_MQTT     = 0,  // From MQTT server → forward response to server
+  CMD_SOURCE_UART     = 1,  // From UART PC App → forward response to UART
+  CMD_SOURCE_USB      = 2,  // From USB Serial JTAG → forward response to USB
+  CMD_SOURCE_HTTP     = 3,  // From Web Config Portal → response via HTTP
+  CMD_SOURCE_COAP     = 4,  // From CoAP server (via polling/OBSERVE) → response via CoAP
+  CMD_SOURCE_HTTP_RPC = 5,  // From HTTP RPC polling → response via HTTP RPC endpoint
+  CMD_SOURCE_UNKNOWN  = 0xFF
 } command_source_t;
 
 // ===== Public API =====

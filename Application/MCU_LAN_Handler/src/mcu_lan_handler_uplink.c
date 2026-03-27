@@ -534,7 +534,9 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   ESP_LOGI(TAG, "Response source: %s",
            (src == CMD_SOURCE_UART) ? "UART" :
            (src == CMD_SOURCE_USB)  ? "USB"  :
-           (src == CMD_SOURCE_HTTP) ? "HTTP/WebApp" : "SERVER/MQTT");
+           (src == CMD_SOURCE_HTTP) ? "HTTP/WebApp" :
+           (src == CMD_SOURCE_HTTP_RPC) ? "HTTP/RPC" :
+           (src == CMD_SOURCE_COAP) ? "CoAP" : "SERVER/MQTT");
 
   if (src == CMD_SOURCE_UART || src == CMD_SOURCE_USB) {
     // Local app command → extract and send back to the originating interface
