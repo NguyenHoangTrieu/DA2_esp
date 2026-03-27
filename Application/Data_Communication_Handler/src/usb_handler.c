@@ -16,6 +16,7 @@ const char *TAG = "USB_HANDLER";
 static TaskHandle_t jtag_task_hdl = NULL;
 static usb_serial_jtag_driver_config_t usb_serial_jtag_config;
 static bool close_jtag_task = false;
+static bool usb_driver_installed = false;
 
 // External global variables
 extern wifi_config_context_t g_wifi_ctx;
@@ -236,10 +237,22 @@ static void handle_cfsc_command_usb(void) {
  * @brief JTAG handler task
  */
 static void jtag_task(void *arg) {
-  usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
-  usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
-  ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
-  ESP_LOGI(TAG, "USB_SERIAL_JTAG init done");
+  if (!usb_driver_installed) {
+    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
+    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
+    esp_err_t ret = usb_serial_jtag_driver_install(&usb_serial_jtag_config);
+    if (ret == ESP_OK) {
+      usb_driver_installed = true;
+      ESP_LOGI(TAG, "USB_SERIAL_JTAG driver installed");
+    } else if (ret == ESP_ERR_INVALID_STATE) {
+      usb_driver_installed = true;
+      ESP_LOGW(TAG, "USB_SERIAL_JTAG driver already installed");
+    } else {
+      ESP_ERROR_CHECK(ret);
+    }
+  } else {
+    ESP_LOGI(TAG, "USB_SERIAL_JTAG already initialized");
+  }
 
   uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
   if (data == NULL) {
@@ -334,6 +347,14 @@ static void jtag_task(void *arg) {
 }
 
 void jtag_task_start(void) {
+  /* Check if task is already running */
+  if (jtag_task_hdl != NULL) {
+    /* Task exists, just resume if needed */
+    close_jtag_task = false;
+    ESP_LOGW(TAG, "JTAG handler task already running, skipping creation");
+    return;
+  }
+
   close_jtag_task = false;
   BaseType_t task_created;
 

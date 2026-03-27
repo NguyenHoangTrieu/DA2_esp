@@ -25,6 +25,8 @@ static volatile uint8_t m_mqtt_connected = false;
 
 QueueHandle_t g_mqtt_publish_queue = NULL;
 static bool mqtt_task_close = false;
+static int g_last_rpc_id = -1;
+
 
 // Global MQTT config
 mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
@@ -165,12 +167,16 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
     config_type_t type = config_parse_type(cmd_data, cmd_len);
 
     if (type != CONFIG_TYPE_UNKNOWN) {
-      config_command_t cmd;
-      cmd.type = type;
-      cmd.data_len = cmd_len;
-      cmd.source = CMD_SOURCE_MQTT;  // MQTT commands → route response to server
-      memcpy(cmd.raw_data, cmd_data, cmd_len);
-      cmd.raw_data[cmd_len] = '\0';
+      config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+      if (cmd == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate config command buffer");
+        return;
+      }
+      cmd->type = type;
+      cmd->data_len = cmd_len;
+      cmd->source = CMD_SOURCE_MQTT;  // MQTT commands → route response to server
+      memcpy(cmd->raw_data, cmd_data, cmd_len);
+      cmd->raw_data[cmd_len] = '\0';
 
       extern QueueHandle_t g_config_handler_queue;
       if (g_config_handler_queue && xQueueSend(g_config_handler_queue, &cmd,
@@ -178,6 +184,7 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
         ESP_LOGI(TAG, "Config forwarded to config handler");
       } else {
         ESP_LOGW(TAG, "Failed to send to config handler");
+        free(cmd);
       }
     } else {
       ESP_LOGW(TAG, "Unknown config type");
@@ -323,6 +330,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
     ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
 
+    // Extract RPC Request ID from topic if it is an RPC request
+    char topic_buf[128];
+    snprintf(topic_buf, sizeof(topic_buf), "%.*s",
+             event->topic_len < 127 ? event->topic_len : 127, event->topic);
+    int rpc_id = -1;
+    if (sscanf(topic_buf, "v1/devices/me/rpc/request/%d", &rpc_id) == 1) {
+      g_last_rpc_id = rpc_id;
+      ESP_LOGI(TAG, "Stored RPC request ID: %d", g_last_rpc_id);
+    }
+
     // Check if data is JSON (starts with '{')
     if (event->data_len > 0 && event->data[0] == '{') {
       // Try to extract params from JSON
@@ -421,9 +438,21 @@ static void mqtt_publish_task(void *arg) {
                  "Publishing %d bytes JSON (raw: %d bytes → hex: %d chars)",
                  json_len, copy_len, strlen(hex_string_buffer));
 
-        int msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.publish_topic,
-                                             (const char *)json_tx_buffer,
-                                             json_len, 1, 0);
+        int msg_id;
+        if (g_last_rpc_id >= 0) {
+          char rpc_topic[128];
+          snprintf(rpc_topic, sizeof(rpc_topic),
+                   "v1/devices/me/rpc/response/%d", g_last_rpc_id);
+          g_last_rpc_id = -1; // Consume the RPC ID
+          msg_id = esp_mqtt_client_publish(m_client, rpc_topic,
+                                           (const char *)json_tx_buffer,
+                                           json_len, 1, 0);
+          ESP_LOGI(TAG, "Routed to RPC response topic: %s", rpc_topic);
+        } else {
+          msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.publish_topic,
+                                           (const char *)json_tx_buffer,
+                                           json_len, 1, 0);
+        }
 
         if (msg_id >= 0) {
           ESP_LOGI(TAG, "✓ Published, msg_id=%d", msg_id);
