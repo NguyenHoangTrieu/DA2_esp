@@ -12,7 +12,8 @@ static const char *TAG = "MAIN";
 TaskHandle_t main_task_handle = NULL;
 
 /* ===== GPIO =========================================================== */
-#define USB_SWITCH_PIN      GPIO_NUM_3
+#define USB_SWITCH_PIN          GPIO_NUM_3
+#define UART_SWITCH_SEL_GPIO    GPIO_NUM_46  // UART_SEL: LOW=LAN MCU (SW1), HIGH=HMI LCD (SW2)
 
 /* ===== Task Notification Values ======================================= */
 /* Each must be a unique value — eSetValueWithOverwrite overwrites        */
@@ -115,6 +116,38 @@ static void usb_switch_set(bool high)
 {
     gpio_set_level(USB_SWITCH_PIN, high ? 1 : 0);
     ESP_LOGI(TAG, "USB switch -> %s", high ? "HOST" : "MODEM");
+}
+
+/* =====================================================================
+ *  UART Switch (FSUSB42UMX-TP, Sel = GPIO46)
+ *  LOW  (Sel=0) → UART_SW1 → LAN MCU  (normal / PPP / OTA path)
+ *  HIGH (Sel=1) → UART_SW2 → HMI LCD  (display config mode)
+ * ===================================================================== */
+
+void uart_switch_init(void)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << UART_SWITCH_SEL_GPIO),
+        .mode         = GPIO_MODE_OUTPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&cfg));
+    gpio_set_level(UART_SWITCH_SEL_GPIO, 0);  // Default: route to LAN MCU
+    ESP_LOGI(TAG, "UART switch initialized (GPIO%d) -> LAN MCU", UART_SWITCH_SEL_GPIO);
+}
+
+void uart_switch_route_to_lan_mcu(void)
+{
+    gpio_set_level(UART_SWITCH_SEL_GPIO, 0);
+    ESP_LOGI(TAG, "UART switch -> LAN MCU");
+}
+
+void uart_switch_route_to_hmi(void)
+{
+    gpio_set_level(UART_SWITCH_SEL_GPIO, 1);
+    ESP_LOGI(TAG, "UART switch -> HMI LCD");
 }
 
 /* =====================================================================
@@ -290,6 +323,7 @@ void app_main(void)
 
     /* --- Core peripherals ----------------------------------------------- */
     ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
+    uart_switch_init();             /* UART_SEL GPIO46: default to LAN MCU   */
     ESP_ERROR_CHECK(config_init());
     ESP_ERROR_CHECK(i2c_dev_support_init());
 
@@ -303,6 +337,8 @@ void app_main(void)
 
     init_led_strip();
     pwr_source_init();
+    pwr_monitor_task_start();       /* Battery monitor + HMI updates (5s interval) */
+    hmi_handler_init();             /* HMI display: init state only  */
     led_on();
     pcf8563_init();
     pcf8563_clear_voltage_low_flag();
@@ -326,8 +362,7 @@ void app_main(void)
     config_internet_type_t current_internet_type = g_internet_type;
     bool                   power_rails_on         = false;
 
-    oled_monitor_task_start();
-    oled_monitor_update_internet_type(current_internet_type);
+    hmi_enter_mode();
 
     internet_connect_start(current_internet_type);
     vTaskDelay(pdMS_TO_TICKS(10000));   /* wait for internet link        */
@@ -361,10 +396,10 @@ void app_main(void)
         /* GPIO38 — toggle power rails */
         if (notif == NOTIFY_POWER_MODE) {
             power_rails_on = !power_rails_on;
-            ESP_LOGI(TAG, "Power rails -> %s", power_rails_on ? "ON" : "OFF");
-            pwr_source_set_1v8(power_rails_on);
-            pwr_source_set_3v3(power_rails_on);
-            pwr_source_set_5v0(power_rails_on);
+            ESP_LOGI(TAG, "Power rails -> %s (managed by battery charger)", power_rails_on ? "ON" : "OFF");
+            /* NOTE: New pwr_source_handler manages battery charging via BQ25892.
+             * External rail control (1V8/3V3/5V0) has been deprecated in the new architecture.
+             * If external rail GPIO control is needed, implement separately. */
         }
 
         /* UART command — CONFIG or NORMAL */

@@ -4,7 +4,7 @@
  *
  * Follows the same structure as wifi_connect.c / lte_connect.c:
  *  - Initialises hardware once on task start
- *  - Reports status via is_internet_connected and oled_monitor_update_eth()
+ *  - Reports status via is_internet_connected and maintains eth_connected flag
  *  - Syncs time over SNTP and stores it to the PCF8563 RTC on first sync
  */
 
@@ -16,7 +16,6 @@
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "driver/spi_master.h"
-#include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -95,7 +94,6 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGW(TAG, "Ethernet link down");
             s_eth_connected  = false;
             is_internet_connected = false;
-            oled_monitor_update_eth(false);
             break;
 
         case ETHERNET_EVENT_START:
@@ -115,7 +113,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         s_eth_connected  = true;
         is_internet_connected = true;
         eth_init_sntp();
-        oled_monitor_update_eth(true);
+        /* HMI display will be updated on next hmi_refresh_status() call */
     }
 }
 
@@ -330,7 +328,7 @@ void eth_connect_task_stop(void)
 
     s_eth_connected = false;
     is_internet_connected = false;
-    oled_monitor_update_eth(false);
+    /* HMI display will be updated on next hmi_refresh_status() call */
 
     ESP_LOGI(TAG, "Ethernet connection stopped");
 }

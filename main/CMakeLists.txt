@@ -31,8 +31,9 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
                                 "../BSP/stack_handler/src/stack_handler.c"
                                 "../Middleware/LTE_Handler/src/lte_handler.c"
-                                "oled_monitor_task.c"
                                 "pwr_source_handler.c"
+                                "pwr_monitor_task.c"
+                                "../BSP/hmi_handler/src/hmi_handler.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash
@@ -80,6 +81,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/MCU_LAN_Communication/include"
                                 "../BSP/i2c_dev_support/include"
                                 "../BSP/stack_handler/include"
+                                "../BSP/hmi_handler/include"
                                 "../Middleware/LTE_Handler/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem
                                    ${project_dir}/Application/Web_Config_Handler/web/firmware/index.html)

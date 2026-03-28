@@ -11,7 +11,6 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "lte_handler.h"
-#include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
 #include "usbh_modem_board.h"
 #include "stack_handler.h"
@@ -186,12 +185,10 @@ static void lte_task(void *arg) {
         if (lte_handler_is_connected()) {
           is_internet_connected = true;
           lte_init_sntp_once();
-          oled_monitor_update_lte(true);
           reconnect_count = 0; // Reset on successful connection
         } else {
           // Active recovery
           ESP_LOGW(TAG, "Not connected - State: %d", lte_handler_get_state());
-          oled_monitor_update_lte(false);
 
           // Check if auto-reconnect is enabled
           if (g_lte_ctx.auto_reconnect) {

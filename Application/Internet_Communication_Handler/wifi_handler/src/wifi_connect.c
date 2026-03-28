@@ -7,7 +7,6 @@
 #include "wifi_connect.h"
 #include "config_handler.h"
 #include "esp_sntp.h"
-#include "oled_monitor_task.h"
 #include "pcf8563_rtc.h"
 
 // WiFi credentials should be configured via UART/USB config handler
@@ -155,12 +154,10 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     } else {
       xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
       ESP_LOGI(TAG, "Connect to the AP failed");
-      oled_monitor_update_wifi(false);
     }
 
     ESP_LOGI(TAG, "Disconnected from WiFi");
     s_wifi_connected = 0;
-    oled_monitor_update_wifi(false);
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -169,7 +166,6 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     is_internet_connected = true;
     wifi_init_sntp();
-    oled_monitor_update_wifi(true);
   }
 }
 

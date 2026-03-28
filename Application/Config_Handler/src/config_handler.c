@@ -11,6 +11,9 @@
 #include "esp_log.h"
 #include <ctype.h>
 
+/* UART switch: defined in DA2_esp.c — must route to LAN MCU before PPP/OTA */
+extern void uart_switch_route_to_lan_mcu(void);
+
 static const char *TAG = "config_handler";
 
 // Configuration command constants
@@ -1041,6 +1044,10 @@ static void config_handler_task(void *arg) {
                         // Check if this is a firmware update command
                         if (lan_cmd->length >= 4 && strncmp(lan_cmd->command, "CFFW", 4) == 0) {
                             g_not_ppp_to_lan = true;
+                            /* Ensure UART2 is routed to LAN MCU before PPP server starts.
+                             * The HMI display may have taken the UART channel; switch back first. */
+                            uart_switch_route_to_lan_mcu();
+                            vTaskDelay(pdMS_TO_TICKS(50));
                             if (!ppp_server_is_initialized()) {
                                 ppp_server_init();
                                 vTaskDelay(pdMS_TO_TICKS(200));
