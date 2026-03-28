@@ -425,10 +425,7 @@ static void wifi_config_task(void *arg) {
   vTaskDelete(NULL);
 }
 
-void wifi_connect_task_start(void) {
-  wifi_connect_task_close = false;
-
-  // Determine initial mode
+static void wifi_connect_init_task(void *arg) {
   if (strlen(g_wifi_ctx.username) > 0) {
     g_wifi_ctx.auth_mode = WIFI_AUTH_MODE_ENTERPRISE;
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (Enterprise initial connection)");
@@ -442,8 +439,17 @@ void wifi_connect_task_start(void) {
   }
 
   // Start the config task to listen for WiFi credentials from queue
-  xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
-  ESP_LOGI(TAG, "WiFi config task created");
+  if (!wifi_connect_task_close) {
+    xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
+    ESP_LOGI(TAG, "WiFi config task created");
+  }
+
+  vTaskDelete(NULL);
+}
+
+void wifi_connect_task_start(void) {
+  wifi_connect_task_close = false;
+  xTaskCreate(wifi_connect_init_task, "wifi_init_task", 8192, NULL, 5, NULL);
 }
 
 void wifi_connect_task_stop(void) {

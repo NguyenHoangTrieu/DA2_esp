@@ -47,7 +47,6 @@ static uint32_t      s_cooldown_rpc_ts    =  0;  // xTaskGetTickCount() snapshot
 
 #define HTTP_QUEUE_SIZE 8
 #define HTTP_CONTENT_TYPE "application/json"
-#define HTTP_RPC_POLL_INTERVAL_MS 5000  // Poll every 5 seconds
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -112,9 +111,9 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
         .url                        = url,
         .method                     = HTTP_METHOD_POST,
         .timeout_ms                 = (int)g_http_cfg.timeout_ms,
-        .crt_bundle_attach          = NULL,  // Disable certificate verification for demo.thingsboard.io
-        .skip_cert_common_name_check = true,  // Disable CN check
-        .transport_type             = detect_transport_from_url(url),  // Detect from URL scheme
+        .crt_bundle_attach          = g_http_cfg.verify_server ? esp_crt_bundle_attach : NULL,
+        .skip_cert_common_name_check = !g_http_cfg.verify_server,
+        .transport_type             = detect_transport_from_url(url),
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -251,8 +250,8 @@ static esp_err_t http_poll_rpc(void) {
         .url                       = url,
         .method                    = HTTP_METHOD_GET,
         .timeout_ms                = 22000,  // > server long-poll (20 000 ms)
-        .crt_bundle_attach         = NULL,
-        .skip_cert_common_name_check = true,
+        .crt_bundle_attach         = g_http_cfg.verify_server ? esp_crt_bundle_attach : NULL,
+        .skip_cert_common_name_check = !g_http_cfg.verify_server,
         .transport_type            = detect_transport_from_url(url),
         .buffer_size               = 2048,
         .buffer_size_tx            = 512,
@@ -532,9 +531,9 @@ static void http_publish_task(void *arg) {
                 esp_http_client_config_t config = {
                     .url            = rpc_url,
                     .method         = HTTP_METHOD_POST,
-                    .timeout_ms     = 10000,
-                    .crt_bundle_attach         = NULL,
-                    .skip_cert_common_name_check = true,
+                    .timeout_ms     = (int)g_http_cfg.timeout_ms,
+                    .crt_bundle_attach         = g_http_cfg.verify_server ? esp_crt_bundle_attach : NULL,
+                    .skip_cert_common_name_check = !g_http_cfg.verify_server,
                     .transport_type = detect_transport_from_url(rpc_url),
                 };
 

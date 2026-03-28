@@ -40,6 +40,8 @@ typedef struct {
   char subscribe_topic[128];
   char attribute_topic[128];
   char publish_topic[128];
+  uint16_t keepalive_s;      // MQTT keepalive interval in seconds (0 = use default 120)
+  uint32_t timeout_ms;       // MQTT network timeout in ms (0 = use default 10000)
 } mqtt_config_context_t;
 
 extern char g_broker_uri[128];

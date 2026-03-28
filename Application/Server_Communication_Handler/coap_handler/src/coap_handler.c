@@ -44,7 +44,7 @@ static volatile bool s_rpc_payload_ready = false;
 #define COAP_QUEUE_SIZE 8
 #define COAP_ACK_TIMEOUT_DEFAULT_MS 2000
 #define COAP_WAIT_TICKS pdMS_TO_TICKS(5000)
-#define COAP_RPC_POLL_INTERVAL_MS 1500  // Poll every 1.5 seconds
+#define COAP_RPC_POLL_INTERVAL_DEFAULT_MS 1500  // Default poll interval if not configured
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -360,7 +360,9 @@ static esp_err_t coap_poll_rpc(void) {
     }
     
     /* Wait for response with timeout */
-    uint32_t poll_timeout_ms = 1500;
+    uint32_t poll_timeout_ms = g_coap_cfg.rpc_poll_interval_ms > 0
+                               ? g_coap_cfg.rpc_poll_interval_ms
+                               : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(poll_timeout_ms);
     
     while (xTaskGetTickCount() < deadline) {
@@ -445,14 +447,20 @@ static esp_err_t coap_poll_rpc(void) {
  * @brief CoAP RPC polling task
  */
 static void coap_polling_task(void *arg) {
-    ESP_LOGI(TAG, "CoAP RPC polling task started, interval=%dms", COAP_RPC_POLL_INTERVAL_MS);
+    uint32_t interval_ms = g_coap_cfg.rpc_poll_interval_ms > 0
+                           ? g_coap_cfg.rpc_poll_interval_ms
+                           : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
+    ESP_LOGI(TAG, "CoAP RPC polling task started, interval=%lums", (unsigned long)interval_ms);
     
     // Wait for first poll interval
-    vTaskDelay(pdMS_TO_TICKS(COAP_RPC_POLL_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(interval_ms));
     
     while (s_polling_running) {
         coap_poll_rpc();
-        vTaskDelay(pdMS_TO_TICKS(COAP_RPC_POLL_INTERVAL_MS));
+        interval_ms = g_coap_cfg.rpc_poll_interval_ms > 0
+                      ? g_coap_cfg.rpc_poll_interval_ms
+                      : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
+        vTaskDelay(pdMS_TO_TICKS(interval_ms));
     }
     
     ESP_LOGI(TAG, "CoAP RPC polling task exiting");

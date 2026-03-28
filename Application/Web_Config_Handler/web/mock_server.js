@@ -15,51 +15,53 @@ let state = {
     auth_mode: 'PERSONAL',
     username: '',
   },
+  internet_type: 0,
+  server_type: 0,
   wan: {
     stack_wan_id: '101',
   },
   lte: {
-    modem: 'A7600C1',
-    comm_type: 'USB',
+    modem_name: 'A7600C1',
+    comm_type: 0,
     apn: 'v-internet',
     username: '',
     password: '',
     auto_reconnect: true,
-    timeout: 30000,
-    max_retry: 0,
-    pwr_pin: 'WK',
-    rst_pin: 'PE',
+    reconnect_timeout_ms: 30000,
+    max_reconnect_attempts: 0,
+    pwr_pin: 11,
+    rst_pin: 12,
+  },
+  mqtt: {
+    broker_uri: 'mqtt://demo.thingsboard.io:1883',
+    device_token: '',
+    subscribe_topic: 'v1/devices/me/rpc/request/+',
+    publish_topic: 'v1/devices/me/telemetry',
+    attribute_topic: 'v1/devices/me/attributes',
+    keepalive_s: 120,
+    timeout_ms: 10000,
+  },
+  http: {
+    server_url: 'http://demo.thingsboard.io/api/v1/{token}/telemetry',
+    auth_token: '',
+    port: 80,
+    timeout_ms: 10000,
+    use_tls: false,
+    verify_server: false,
+  },
+  coap: {
+    host: 'demo.thingsboard.io',
+    resource_path: '/api/v1/{token}/telemetry',
+    device_token: '',
+    port: 5683,
+    ack_timeout_ms: 2000,
+    max_retransmit: 4,
+    rpc_poll_interval_ms: 1500,
+    use_dtls: false,
   },
   lan: {
     stack1_id: '002',
     stack2_id: '003',
-  },
-  server: {
-    type: 0,
-    mqtt: {
-      broker: 'mqtt://demo.thingsboard.io:1883',
-      token: '',
-      sub_topic: 'v1/devices/me/rpc/request/+',
-      pub_topic: 'v1/devices/me/telemetry',
-      attr_topic: 'v1/devices/me/attributes',
-    },
-    http: {
-      url: '',
-      auth_token: '',
-      port: 8080,
-      timeout: 10000,
-      use_tls: false,
-      verify: false,
-    },
-    coap: {
-      host: 'demo.thingsboard.io',
-      resource: '/api/v1/{token}/telemetry',
-      token: '',
-      port: 5683,
-      ack_timeout: 2000,
-      max_rtx: 4,
-      use_dtls: false,
-    },
   },
 };
 
@@ -79,10 +81,14 @@ app.post('/api/config', (req, res) => {
   console.log('[POST] /api/config', JSON.stringify(body, null, 2));
 
   // Merge known sections
-  for (const key of ['wifi', 'lte', 'wan', 'lan', 'server']) {
-    if (body[key]) {
-      if (typeof state[key] === 'object') Object.assign(state[key], body[key]);
-      else state[key] = body[key];
+  for (const key of ['wifi', 'lte', 'wan', 'lan', 'internet_type', 'server_type',
+                     'mqtt', 'http', 'coap']) {
+    if (body[key] !== undefined) {
+      if (typeof body[key] === 'object' && body[key] !== null && typeof state[key] === 'object') {
+        Object.assign(state[key], body[key]);
+      } else {
+        state[key] = body[key];
+      }
     }
   }
 

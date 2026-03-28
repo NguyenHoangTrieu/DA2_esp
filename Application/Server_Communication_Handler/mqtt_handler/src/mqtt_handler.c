@@ -74,7 +74,7 @@ void mqtt_publish_firmware_status(const char *status, const char *fw_version) {
     return;
   }
 
-  int msg_id = esp_mqtt_client_publish(m_client, FIRMWARE_STATUS_TOPIC, payload,
+  int msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.attribute_topic, payload,
                                        len, 1, 0);
   if (msg_id >= 0) {
     ESP_LOGI(TAG, "✓ Firmware status published: %s", status);
@@ -499,6 +499,9 @@ static void mqtt_reinit(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 120;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
+
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
           {
@@ -513,12 +516,12 @@ static void mqtt_reinit(void) {
           },
       .session =
           {
-              .keepalive = 120,
+              .keepalive = (int)ka,
               .disable_clean_session = 0,
           },
       .network =
           {
-              .timeout_ms = 10000,
+              .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
           },
@@ -534,7 +537,8 @@ static void mqtt_reinit(void) {
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID,
                                    mqtt_event_handler, NULL);
     esp_mqtt_client_start(m_client);
-    ESP_LOGI(TAG, "MQTT client reinitialized");
+    ESP_LOGI(TAG, "MQTT client reinitialized (keepalive=%us, timeout=%lums)",
+             ka, (unsigned long)tmo);
   } else {
     ESP_LOGE(TAG, "Failed to reinitialize MQTT client");
   }
@@ -580,6 +584,11 @@ static void mqtt_config_task(void *arg) {
         strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
                 sizeof(g_mqtt_ctx.publish_topic) - 1);
         g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
+
+        // Update optional session params (keep existing value if new one is 0)
+        if (mqtt_cfg.keepalive_s) g_mqtt_ctx.keepalive_s = mqtt_cfg.keepalive_s;
+        if (mqtt_cfg.timeout_ms)  g_mqtt_ctx.timeout_ms  = mqtt_cfg.timeout_ms;
+
         mqtt_reinit();
       }
     } else {
@@ -597,6 +606,9 @@ static void mqtt_config_task(void *arg) {
 void mqtt_handler_task_start(void) {
   mqtt_task_close = false;
 
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 120;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
+
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
           {
@@ -611,12 +623,12 @@ void mqtt_handler_task_start(void) {
           },
       .session =
           {
-              .keepalive = 120,
+              .keepalive = (int)ka,
               .disable_clean_session = 0,
           },
       .network =
           {
-              .timeout_ms = 10000,
+              .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
           },
