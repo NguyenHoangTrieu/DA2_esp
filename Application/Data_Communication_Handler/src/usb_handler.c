@@ -16,6 +16,7 @@ const char *TAG = "USB_HANDLER";
 static TaskHandle_t jtag_task_hdl = NULL;
 static usb_serial_jtag_driver_config_t usb_serial_jtag_config;
 static bool close_jtag_task = false;
+static bool usb_driver_installed = false;
 
 // External global variables
 extern wifi_config_context_t g_wifi_ctx;
@@ -236,17 +237,44 @@ static void handle_cfsc_command_usb(void) {
  * @brief JTAG handler task
  */
 static void jtag_task(void *arg) {
-  usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
-  usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
-  ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
-  ESP_LOGI(TAG, "USB_SERIAL_JTAG init done");
+  if (!usb_driver_installed) {
+    usb_serial_jtag_config.rx_buffer_size = BUF_SIZE;
+    usb_serial_jtag_config.tx_buffer_size = BUF_SIZE;
+    esp_err_t ret = usb_serial_jtag_driver_install(&usb_serial_jtag_config);
+    if (ret == ESP_OK) {
+      usb_driver_installed = true;
+      ESP_LOGI(TAG, "USB_SERIAL_JTAG driver installed");
+    } else if (ret == ESP_ERR_INVALID_STATE) {
+      usb_driver_installed = true;
+      ESP_LOGW(TAG, "USB_SERIAL_JTAG driver already installed");
+    } else {
+      ESP_ERROR_CHECK(ret);
+    }
+  } else {
+    ESP_LOGI(TAG, "USB_SERIAL_JTAG already initialized");
+  }
 
+  // Per-packet read buffer (one USB FS packet = 64 bytes max)
   uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
   if (data == NULL) {
     ESP_LOGE(TAG, "no memory for data");
     vTaskDelete(NULL);
     return;
   }
+
+  // Line-assembly buffer: accumulates USB packets until '\n' is received.
+  // USB sends data in 64-byte physical packets; a single large command
+  // (e.g. CFML JSON ~5 KB) arrives across many consecutive packets.
+  // Without this buffer each 64-byte fragment would be parsed as a separate
+  // command, causing ERROR:INVALID_CMD for everything after the first chunk.
+  char *line_buf = (char *)malloc(BUF_SIZE);
+  if (line_buf == NULL) {
+    ESP_LOGE(TAG, "no memory for line_buf");
+    free(data);
+    vTaskDelete(NULL);
+    return;
+  }
+  int line_len = 0;
 
   usb_println("\r\nGateway USB Interface Ready");
   usb_println("Commands: CFSC (scan config), CF... (config commands)");
@@ -255,85 +283,120 @@ static void jtag_task(void *arg) {
     int len = usb_serial_jtag_read_bytes(data, (BUF_SIZE - 1),
                                          20 / portTICK_PERIOD_MS);
 
-    if (len) {
-      data[len] = '\0';
+    if (len <= 0)
+      continue;
 
-      // Trim whitespace
-      while (len > 0 && (data[len - 1] == '\r' || data[len - 1] == '\n' ||
-                         data[len - 1] == ' ')) {
-        data[--len] = '\0';
-      }
+    // Append received bytes to the line assembly buffer
+    for (int i = 0; i < len; i++) {
+      char c = (char)data[i];
 
-      if (len == 0)
-        continue;
+      if (c == '\n') {
+        // Complete line received – null-terminate and process
+        line_buf[line_len] = '\0';
 
-      ESP_LOGI(TAG, "USB Received: %s (len=%d)", data, len);
+        // Trim trailing '\r' or spaces
+        while (line_len > 0 && (line_buf[line_len - 1] == '\r' ||
+                                 line_buf[line_len - 1] == ' ')) {
+          line_buf[--line_len] = '\0';
+        }
 
-      // Check for CFSC command (scan config)
-      if (strncasecmp((char *)data, "CFSC", 4) == 0) {
-        handle_cfsc_command_usb();
-        continue;
-      }
+        if (line_len == 0) {
+          // Empty line, ignore
+          continue;
+        }
 
-      // Check for config commands starting with "CF"
-      if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
-        ESP_LOGI(TAG, "Config command via USB: %s", (char *)data);
+        // ---- Process one complete line ----
+        {
+          char *processed = line_buf;
+          int plen = line_len;
 
-        if (len > 2) {
-          const char *cmd_data = (const char *)(data + 2);
-          int cmd_len = len - 2;
+          ESP_LOGI(TAG, "USB Received: %s (len=%d)", processed, plen);
 
-          config_type_t type = config_parse_type(cmd_data, cmd_len);
-          if (type != CONFIG_TYPE_UNKNOWN) {
-            // Allocate config_command_t on HEAP (4KB+ struct too large for stack)
-            config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
-            if (cmd == NULL) {
-              ESP_LOGE(TAG, "Failed to allocate config command buffer");
-              usb_println("ERROR:OUT_OF_MEMORY");
-              continue;
-            }
+          // Check for CFSC command (scan config)
+          if (strncasecmp(processed, "CFSC", 4) == 0) {
+            handle_cfsc_command_usb();
+          }
+          // Check for config commands starting with "CF"
+          else if (plen >= 2 && processed[0] == 'C' && processed[1] == 'F') {
+            ESP_LOGI(TAG, "Config command via USB: %s", processed);
 
-            cmd->type = type;
-            cmd->data_len = cmd_len;
-            cmd->source = CMD_SOURCE_USB;   // USB commands → route response back to USB
-            memcpy(cmd->raw_data, cmd_data, cmd_len);
-            cmd->raw_data[cmd_len] = '\0';
+            if (plen > 2) {
+              const char *cmd_data = processed + 2;
+              int cmd_len = plen - 2;
 
-            if (g_config_handler_queue) {
-              // Queue takes ownership, config_handler must free it
-              if (xQueueSend(g_config_handler_queue, &cmd,
-                             pdMS_TO_TICKS(100)) == pdTRUE) {
-                ESP_LOGI(TAG, "Command forwarded to config handler");
-                usb_println("OK:CMD_QUEUED");
+              config_type_t type = config_parse_type(cmd_data, cmd_len);
+              if (type != CONFIG_TYPE_UNKNOWN) {
+                config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+                if (cmd == NULL) {
+                  ESP_LOGE(TAG, "Failed to allocate config command buffer");
+                  usb_println("ERROR:OUT_OF_MEMORY");
+                } else {
+                  cmd->type = type;
+                  cmd->data_len = cmd_len;
+                  cmd->source = CMD_SOURCE_USB;
+                  memcpy(cmd->raw_data, cmd_data, cmd_len);
+                  cmd->raw_data[cmd_len] = '\0';
+
+                  if (g_config_handler_queue) {
+                    if (xQueueSend(g_config_handler_queue, &cmd,
+                                   pdMS_TO_TICKS(100)) == pdTRUE) {
+                      ESP_LOGI(TAG, "Command forwarded to config handler");
+                      usb_println("OK:CMD_QUEUED");
+                    } else {
+                      ESP_LOGW(TAG, "Config queue full");
+                      usb_println("ERROR:QUEUE_FULL");
+                      free(cmd);
+                    }
+                  } else {
+                    usb_println("ERROR:NO_HANDLER");
+                    free(cmd);
+                  }
+                }
               } else {
-                ESP_LOGW(TAG, "Config queue full");
-                usb_println("ERROR:QUEUE_FULL");
-                free(cmd);  // Queue full, free memory
+                ESP_LOGW(TAG, "Unknown command type");
+                usb_println("ERROR:UNKNOWN_CMD");
               }
-            } else {
-              usb_println("ERROR:NO_HANDLER");
-              free(cmd);
             }
           } else {
-            ESP_LOGW(TAG, "Unknown command type");
-            usb_println("ERROR:UNKNOWN_CMD");
+            // Unknown command
+            usb_println("ERROR:INVALID_CMD");
+            ESP_LOGW(TAG, "Invalid command: %s", processed);
           }
+        } // end process block
+
+        // Reset line buffer for next command
+        line_len = 0;
+
+      } else if (c != '\r') {
+        // Accumulate character (ignore bare '\r')
+        if (line_len < BUF_SIZE - 1) {
+          line_buf[line_len++] = c;
+        } else {
+          // Line buffer overflow → discard and reset
+          ESP_LOGE(TAG, "USB line buffer overflow, discarding %d bytes", line_len);
+          usb_println("ERROR:CMD_TOO_LARGE");
+          line_len = 0;
         }
-      } else {
-        // Unknown command
-        usb_println("ERROR:INVALID_CMD");
-        ESP_LOG_BUFFER_HEXDUMP("Unknown data: ", data, len, ESP_LOG_INFO);
       }
-    }
-  }
+    } // end for each byte
+  } // end while
 
   free(data);
+  free(line_buf);
   usb_serial_jtag_driver_uninstall();
   ESP_LOGI(TAG, "USB_SERIAL_JTAG deinit done");
   vTaskDelete(NULL);
 }
 
 void jtag_task_start(void) {
+  /* Check if task is already running */
+  if (jtag_task_hdl != NULL) {
+    /* Task exists, just resume if needed */
+    close_jtag_task = false;
+    ESP_LOGW(TAG, "JTAG handler task already running, skipping creation");
+    return;
+  }
+
   close_jtag_task = false;
   BaseType_t task_created;
 

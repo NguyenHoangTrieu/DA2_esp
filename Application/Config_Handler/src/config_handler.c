@@ -42,8 +42,8 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
-config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;  
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_HTTP;
 bool is_internet_connected = false;
 
 static bool config_handler_running = false;
@@ -626,17 +626,48 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_d
     
     // Parse attribute topic
     ptr = fourth_pipe + 1;
-    int attr_topic_len = end - ptr;
-    if (attr_topic_len <= 0 || attr_topic_len >= sizeof(cfg->attribute_topic)) {
+    const char *fifth_pipe = strchr(ptr, '|');
+    int attr_topic_len;
+    if (!fifth_pipe || fifth_pipe >= end) {
+        // No more fields — attribute topic runs to end
+        attr_topic_len = end - ptr;
+    } else {
+        attr_topic_len = fifth_pipe - ptr;
+    }
+    if (attr_topic_len <= 0 || attr_topic_len >= (int)sizeof(cfg->attribute_topic)) {
         ESP_LOGE(TAG, "MQTT attribute topic length invalid: %d", attr_topic_len);
         return ESP_FAIL;
     }
-    
     memcpy(cfg->attribute_topic, ptr, attr_topic_len);
     cfg->attribute_topic[attr_topic_len] = '\0';
-    
-    ESP_LOGI(TAG, "Parsed MQTT config - URI: '%s', Token: '%s', Sub: '%s', Pub: '%s', Attr: '%s'", 
-             cfg->broker_uri, cfg->device_token, cfg->subscribe_topic, cfg->publish_topic, cfg->attribute_topic);
+
+    // Optional field 5: keepalive_s
+    if (fifth_pipe && fifth_pipe < end) {
+        ptr = fifth_pipe + 1;
+        const char *sixth_pipe = strchr(ptr, '|');
+        int ka_len = sixth_pipe && sixth_pipe < end ? (int)(sixth_pipe - ptr) : (int)(end - ptr);
+        if (ka_len > 0 && ka_len < 8) {
+            char buf[8] = {0};
+            memcpy(buf, ptr, ka_len);
+            int ka = atoi(buf);
+            if (ka > 0) cfg->keepalive_s = (uint16_t)ka;
+        }
+        // Optional field 6: timeout_ms
+        if (sixth_pipe && sixth_pipe < end) {
+            ptr = sixth_pipe + 1;
+            int tmo_len = end - ptr;
+            if (tmo_len > 0 && tmo_len < 12) {
+                char buf[12] = {0};
+                memcpy(buf, ptr, tmo_len);
+                uint32_t tmo = (uint32_t)atoi(buf);
+                if (tmo > 0) cfg->timeout_ms = tmo;
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "Parsed MQTT config - URI: '%s', Token: '%s', Sub: '%s', Pub: '%s', Attr: '%s', keepalive=%us, timeout=%lums",
+             cfg->broker_uri, cfg->device_token, cfg->subscribe_topic, cfg->publish_topic, cfg->attribute_topic,
+             cfg->keepalive_s, (unsigned long)cfg->timeout_ms);
     return ESP_OK;
 }
 
@@ -837,10 +868,21 @@ static esp_err_t config_parse_coap(const char *data, uint16_t len, coap_config_d
 
     // Field 6: max_retransmit
     ptr = sep6 + 1;
+    const char *sep7 = strchr(ptr, '|');
+    if (!sep7 || sep7 >= end) { sep7 = end; }
     cfg->max_retransmit = (uint8_t)atoi(ptr);
+    if (sep7 >= end) goto done;
+
+    // Field 7: rpc_poll_interval_ms (optional, 0 = use firmware default)
+    ptr = sep7 + 1;
+    {
+        uint32_t poll_ms = (uint32_t)atoi(ptr);
+        if (poll_ms > 0) cfg->rpc_poll_interval_ms = poll_ms;
+    }
 
 done:
-    ESP_LOGI(TAG, "Parsed CoAP config - Host: '%s', Resource: '%s'", cfg->host, cfg->resource_path);
+    ESP_LOGI(TAG, "Parsed CoAP config - Host: '%s', Resource: '%s', poll_ms=%lu",
+             cfg->host, cfg->resource_path, (unsigned long)cfg->rpc_poll_interval_ms);
     return ESP_OK;
 }
 
@@ -1021,9 +1063,55 @@ static void config_handler_task(void *arg) {
                     ESP_LOGI(TAG, "Server type config command received");
                     config_server_type_t new_type;
                     if (config_parse_server_type(cmd->raw_data, cmd->data_len, &new_type) == ESP_OK) {
-                        g_server_type = new_type;
-                        save_server_config_to_nvs();
-                        ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
+                        if (new_type != g_server_type) {
+                            ESP_LOGI(TAG, "Server type changing from %d to %d, restarting handlers", g_server_type, new_type);
+                            
+                            // Stop current handler
+                            switch(g_server_type) {
+                                case CONFIG_SERVERTYPE_MQTT:
+                                    mqtt_handler_task_stop();
+                                    break;
+                                case CONFIG_SERVERTYPE_HTTP:
+                                    http_handler_task_stop();
+                                    break;
+                                case CONFIG_SERVERTYPE_COAP:
+                                    coap_handler_task_stop();
+                                    break;
+                                default:
+                                    break;
+                            }
+                            
+                            // Update and save
+                            g_server_type = new_type;
+                            save_server_config_to_nvs();
+                            
+                            // Wait for handler to fully stop
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                            
+                            // Start new handler
+                            switch(g_server_type) {
+                                case CONFIG_SERVERTYPE_MQTT:
+                                    mqtt_handler_task_start();
+                                    ESP_LOGI(TAG, "MQTT handler started");
+                                    break;
+                                case CONFIG_SERVERTYPE_HTTP:
+                                    http_handler_task_start();
+                                    ESP_LOGI(TAG, "HTTP handler started");
+                                    break;
+                                case CONFIG_SERVERTYPE_COAP:
+                                    coap_handler_task_start();
+                                    ESP_LOGI(TAG, "CoAP handler started");
+                                    break;
+                                default:
+                                    mqtt_handler_task_start(); // Fallback to MQTT
+                                    ESP_LOGW(TAG, "Unknown server type, defaulting to MQTT");
+                                    break;
+                            }
+                            
+                            ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
+                        } else {
+                            ESP_LOGI(TAG, "Server type already set to %d, no change", g_server_type);
+                        }
                     }
                     break;
                 }

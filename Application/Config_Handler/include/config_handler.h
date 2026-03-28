@@ -81,6 +81,8 @@ typedef struct {
     char subscribe_topic[128];
     char attribute_topic[128];
     char publish_topic[128];
+    uint16_t keepalive_s;      // MQTT keepalive interval in seconds (0 = use default 120)
+    uint32_t timeout_ms;       // MQTT network timeout in ms (0 = use default 10000)
 } mqtt_config_data_t;
 
 // HTTP server configuration structure
@@ -102,6 +104,7 @@ typedef struct {
     bool use_dtls;             // Use DTLS (CoAPS)
     uint32_t ack_timeout_ms;   // CON message ACK timeout
     uint8_t max_retransmit;    // Max retransmission count
+    uint32_t rpc_poll_interval_ms; // RPC polling interval in ms (0 = use default 1500)
 } coap_config_data_t;
 
 //MCU LAN Communication configuration structure

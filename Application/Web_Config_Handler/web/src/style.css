@@ -298,6 +298,69 @@ select option { background: var(--surface); }
 #toast.show  { opacity: 1; }
 #toast.ok    { background: var(--ok); }
 #toast.err   { background: var(--err); }
+
+/* ── BLE Native tab ─────────────────────────────────────── */
+.bn-tabbar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 12px;
+}
+.bn-tab {
+  padding: 6px 18px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.bn-tab:hover  { background: var(--accent-lt); color: var(--accent); }
+.bn-tab.active { background: var(--surface); color: var(--accent); font-weight: 600; border-bottom: 2px solid var(--surface); margin-bottom: -2px; }
+
+.bn-pane { /* visible BLE Native sub-pane */ }
+
+.bn-cmd-header {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.bn-cmd-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+.bn-cmd-row input {
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--mono);
+  background: var(--surface);
+  color: var(--text);
+}
+.bn-cmd-row input:focus { outline: none; border-color: var(--accent); }
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--text);
+}
+.btn-sm:hover  { border-color: var(--accent); background: var(--accent-lt); }
+.btn-del { color: var(--err); border-color: var(--err); }
+.btn-del:hover { background: #FFEBEE; }
 #toast.warn  { background: var(--warn); }
 
 /* ── Two-pane layout (BLE/LoRa/Zigbee advanced) ────────── */

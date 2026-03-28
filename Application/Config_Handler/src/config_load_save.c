@@ -28,10 +28,19 @@ static const char *TAG = "CONFIG_NVS";
 /* WAN stack module ID — pseudo hardware identifier (always "001" for single-stack WAN) */
 char g_stack_id_wan[8] = "000";
 
+/* Default values for MQTT */
+#define MQTT_DEFAULT_BROKER       "mqtt://demo.thingsboard.io:1883"
+#define MQTT_DEFAULT_TOKEN        "38kozd1weulcnl6ytz8f"
+#define MQTT_DEFAULT_PUB_TOPIC    "v1/devices/me/telemetry"
+#define MQTT_DEFAULT_SUB_TOPIC    "v1/devices/me/rpc/request/+"
+#define MQTT_DEFAULT_ATTR_TOPIC   "v1/devices/me/attributes"
+#define MQTT_DEFAULT_KEEPALIVE_S  120
+#define MQTT_DEFAULT_TIMEOUT_MS   10000
+
 /* Default values for HTTP/CoAP */
-#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io:8080/api/v1/{token}/telemetry"
+#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io/api/v1/{token}/telemetry"
 #define HTTP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
-#define HTTP_DEFAULT_PORT       8080
+#define HTTP_DEFAULT_PORT       80
 #define HTTP_DEFAULT_TIMEOUT_MS 10000
 
 #define COAP_DEFAULT_HOST       "demo.thingsboard.io"
@@ -40,6 +49,7 @@ char g_stack_id_wan[8] = "000";
 #define COAP_DEFAULT_PORT       5683
 #define COAP_DEFAULT_ACK_TO_MS  2000
 #define COAP_DEFAULT_MAX_RTX    4
+#define COAP_DEFAULT_RPC_POLL_MS 1500
 
 /* External global variables from your modules */
 extern wifi_config_context_t g_wifi_ctx;
@@ -688,6 +698,16 @@ esp_err_t config_init(void) {
     if (is_first_boot()) {
         ESP_LOGI(TAG, "First boot detected - saving default configuration");
         
+        // Initialize MQTT defaults
+        memset(&g_mqtt_ctx, 0, sizeof(g_mqtt_ctx));
+        strncpy(g_mqtt_ctx.broker_uri,      MQTT_DEFAULT_BROKER,    sizeof(g_mqtt_ctx.broker_uri)      - 1);
+        strncpy(g_mqtt_ctx.device_token,    MQTT_DEFAULT_TOKEN,     sizeof(g_mqtt_ctx.device_token)    - 1);
+        strncpy(g_mqtt_ctx.publish_topic,   MQTT_DEFAULT_PUB_TOPIC, sizeof(g_mqtt_ctx.publish_topic)   - 1);
+        strncpy(g_mqtt_ctx.subscribe_topic, MQTT_DEFAULT_SUB_TOPIC, sizeof(g_mqtt_ctx.subscribe_topic) - 1);
+        strncpy(g_mqtt_ctx.attribute_topic, MQTT_DEFAULT_ATTR_TOPIC,sizeof(g_mqtt_ctx.attribute_topic) - 1);
+        g_mqtt_ctx.keepalive_s = MQTT_DEFAULT_KEEPALIVE_S;
+        g_mqtt_ctx.timeout_ms  = MQTT_DEFAULT_TIMEOUT_MS;
+
         // Initialize HTTP defaults
         memset(&g_http_cfg, 0, sizeof(g_http_cfg));
         strncpy(g_http_cfg.server_url, HTTP_DEFAULT_URL, sizeof(g_http_cfg.server_url) - 1);
@@ -706,6 +726,7 @@ esp_err_t config_init(void) {
         g_coap_cfg.use_dtls = false;
         g_coap_cfg.ack_timeout_ms = COAP_DEFAULT_ACK_TO_MS;
         g_coap_cfg.max_retransmit = COAP_DEFAULT_MAX_RTX;
+        g_coap_cfg.rpc_poll_interval_ms = COAP_DEFAULT_RPC_POLL_MS;
 
         // Save to NVS
         save_wifi_config_to_nvs();

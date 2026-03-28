@@ -101,6 +101,8 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON_AddStringToObject(jm, "subscribe_topic",  mqtt.subscribe_topic);
     cJSON_AddStringToObject(jm, "publish_topic",    mqtt.publish_topic);
     cJSON_AddStringToObject(jm, "attribute_topic",  mqtt.attribute_topic);
+    cJSON_AddNumberToObject(jm, "keepalive_s",      mqtt.keepalive_s);
+    cJSON_AddNumberToObject(jm, "timeout_ms",       (double)mqtt.timeout_ms);
 
     /* HTTP */
     cJSON *jh = cJSON_AddObjectToObject(root, "http");
@@ -120,6 +122,7 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON_AddBoolToObject(jc,   "use_dtls",       g_coap_cfg.use_dtls);
     cJSON_AddNumberToObject(jc, "ack_timeout_ms", (double)g_coap_cfg.ack_timeout_ms);
     cJSON_AddNumberToObject(jc, "max_retransmit", g_coap_cfg.max_retransmit);
+    cJSON_AddNumberToObject(jc, "rpc_poll_interval_ms", (double)g_coap_cfg.rpc_poll_interval_ms);
 
     /* WAN stack ID (local read — no SPI needed) */
     const char *wan_stack_id = stack_handler_get_module_id(0);
@@ -299,18 +302,25 @@ static esp_err_t build_mqtt_cmd(const cJSON *obj)
     const cJSON *sub  = cJSON_GetObjectItem(obj, "subscribe_topic");
     const cJSON *pub  = cJSON_GetObjectItem(obj, "publish_topic");
     const cJSON *attr = cJSON_GetObjectItem(obj, "attribute_topic");
+    const cJSON *ka   = cJSON_GetObjectItem(obj, "keepalive_s");
+    const cJSON *tmo  = cJSON_GetObjectItem(obj, "timeout_ms");
 
     if (!cJSON_IsString(uri) || !cJSON_IsString(tok))
         return ESP_ERR_INVALID_ARG;
 
+    uint16_t keepalive = cJSON_IsNumber(ka)  ? (uint16_t)ka->valueint  : 0;
+    uint32_t timeout   = cJSON_IsNumber(tmo) ? (uint32_t)tmo->valuedouble : 0;
+
     char wire[1024];
     int len = snprintf(wire, sizeof(wire),
-                       "MQ:%s|%s|%s|%s|%s",
+                       "MQ:%s|%s|%s|%s|%s|%u|%lu",
                        uri->valuestring,
                        tok->valuestring,
                        cJSON_IsString(sub)  ? sub->valuestring  : "",
                        cJSON_IsString(pub)  ? pub->valuestring  : "",
-                       cJSON_IsString(attr) ? attr->valuestring : "");
+                       cJSON_IsString(attr) ? attr->valuestring : "",
+                       keepalive,
+                       (unsigned long)timeout);
     return enqueue_config_cmd(CONFIG_TYPE_MQTT, wire, (uint16_t)len);
 }
 
@@ -340,7 +350,7 @@ static esp_err_t build_http_cmd(const cJSON *obj)
 
 static esp_err_t build_coap_cmd(const cJSON *obj)
 {
-    /* CP:HOST|RESOURCE|TOKEN|PORT|DTLS|ACK_TIMEOUT|MAX_RTX */
+    /* CP:HOST|RESOURCE|TOKEN|PORT|DTLS|ACK_TIMEOUT|MAX_RTX|RPC_POLL_MS */
     const cJSON *host = cJSON_GetObjectItem(obj, "host");
     if (!cJSON_IsString(host)) return ESP_ERR_INVALID_ARG;
 
@@ -350,17 +360,19 @@ static esp_err_t build_coap_cmd(const cJSON *obj)
     const cJSON *dtls = cJSON_GetObjectItem(obj, "use_dtls");
     const cJSON *ack  = cJSON_GetObjectItem(obj, "ack_timeout_ms");
     const cJSON *rtx  = cJSON_GetObjectItem(obj, "max_retransmit");
+    const cJSON *poll = cJSON_GetObjectItem(obj, "rpc_poll_interval_ms");
 
     char wire[512];
     int len = snprintf(wire, sizeof(wire),
-                       "CP:%s|%s|%s|%d|%d|%lu|%d",
+                       "CP:%s|%s|%s|%d|%d|%lu|%d|%lu",
                        host->valuestring,
                        cJSON_IsString(res)  ? res->valuestring  : "",
                        cJSON_IsString(tok)  ? tok->valuestring  : "",
                        cJSON_IsNumber(port) ? port->valueint : 5683,
                        (cJSON_IsBool(dtls) && cJSON_IsTrue(dtls)) ? 1 : 0,
                        (unsigned long)(cJSON_IsNumber(ack) ? (uint32_t)ack->valuedouble : 2000),
-                       cJSON_IsNumber(rtx) ? rtx->valueint : 4);
+                       cJSON_IsNumber(rtx) ? rtx->valueint : 4,
+                       (unsigned long)(cJSON_IsNumber(poll) ? (uint32_t)poll->valuedouble : 1500));
     return enqueue_config_cmd(CONFIG_TYPE_COAP, wire, (uint16_t)len);
 }
 
