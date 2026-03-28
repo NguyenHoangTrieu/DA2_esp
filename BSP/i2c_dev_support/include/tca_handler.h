@@ -1,6 +1,12 @@
-/**
+﻿/**
  * @file tca_handler.h
- * @brief TCA6424A 24-bit I2C I/O Expander Handler
+ * @brief TCA6416A 16-bit I2C I/O Expander Handler (WAN MCU - single instance)
+ *
+ * Replaces TCA6424A. Key differences:
+ *   - Only 2 ports (PORT_0, PORT_1) â€” no PORT_2
+ *   - Different register map (OUTPUT at 0x02/0x03, CONFIG at 0x06/0x07)
+ *   - I2C address: 0x20 or 0x21 (scanned at boot)
+ *   - INT: GPIO47, RESET: GPIO48
  */
 
 #ifndef TCA_HANDLER_H
@@ -14,65 +20,73 @@
 extern "C" {
 #endif
 
-// TCA6424A Configuration
-#define TCA6424A_I2C_ADDR 0x22      // ADDR pin = GND
-#define TCA6424A_I2C_FREQ_HZ 100000 // 100kHz
+// TCA6416A Configuration
+// ADDR pin: GND â†’ 0x20, VCC â†’ 0x21. WAN side has one adapter; address scanned at boot.
+#define TCA6416A_I2C_ADDR_0    0x20    // ADDR = GND (default)
+#define TCA6416A_I2C_ADDR_1    0x21    // ADDR = VCC
+#define TCA6416A_I2C_FREQ_HZ   400000  // 400kHz
 
-// GPIO Pins
-#define TCA6424A_INT_PIN 21   // Interrupt pin
-#define TCA6424A_RESET_PIN 47 // Reset pin
+// GPIO control pins (new board pinout)
+#define TCA6416A_INT_PIN    47  // IO expander INT (active-low) â€” was GPIO21
+#define TCA6416A_RESET_PIN  48  // IO expander RESET (active-low) â€” was GPIO47
 
-// Port definitions
-typedef enum { TCA_PORT_0 = 0, TCA_PORT_1 = 1, TCA_PORT_2 = 2 } tca_port_t;
+// Port definitions â€” TCA6416A has 2 ports only
+typedef enum {
+    TCA_PORT_0 = 0,
+    TCA_PORT_1 = 1,
+} tca_port_t;
 
-// Register addresses
-#define TCA6424A_INPUT_PORT0 0x00
-#define TCA6424A_INPUT_PORT1 0x01
-#define TCA6424A_INPUT_PORT2 0x02
-#define TCA6424A_OUTPUT_PORT0 0x04
-#define TCA6424A_OUTPUT_PORT1 0x05
-#define TCA6424A_OUTPUT_PORT2 0x06
-#define TCA6424A_POLARITY_PORT0 0x08
-#define TCA6424A_POLARITY_PORT1 0x09
-#define TCA6424A_POLARITY_PORT2 0x0A
-#define TCA6424A_CONFIG_PORT0 0x0C
-#define TCA6424A_CONFIG_PORT1 0x0D
-#define TCA6424A_CONFIG_PORT2 0x0E
+// TCA6416A register map
+#define TCA6416A_INPUT_PORT0    0x00
+#define TCA6416A_INPUT_PORT1    0x01
+#define TCA6416A_OUTPUT_PORT0   0x02  // TCA6424A was 0x04
+#define TCA6416A_OUTPUT_PORT1   0x03  // TCA6424A was 0x05
+#define TCA6416A_POLARITY_PORT0 0x04  // TCA6424A was 0x08
+#define TCA6416A_POLARITY_PORT1 0x05  // TCA6424A was 0x09
+#define TCA6416A_CONFIG_PORT0   0x06  // TCA6424A was 0x0C
+#define TCA6416A_CONFIG_PORT1   0x07  // TCA6424A was 0x0D
 
 /**
- * @brief TCA6424A interrupt callback function type
+ * @brief TCA6416A interrupt callback function type
  * @param port Port number that triggered interrupt
  * @param pin_state Current state of port pins
  */
 typedef void (*tca_interrupt_callback_t)(tca_port_t port, uint8_t pin_state);
 
 /**
- * @brief Initialize TCA6424A (requires i2c_dev_support to be initialized first)
+ * @brief Initialize TCA6416A (requires i2c_dev_support to be initialized first)
  * @return ESP_OK on success
  */
 esp_err_t tca_init(void);
 
 /**
- * @brief Test if TCA6424A is responding
+ * @brief Initialize with a specific I2C address (for address scanning).
+ * @param i2c_addr  TCA6416A_I2C_ADDR_0 (0x20) or TCA6416A_I2C_ADDR_1 (0x21).
+ * @return ESP_OK on success, ESP_ERR_NOT_FOUND if no device at addr.
+ */
+esp_err_t tca_init_with_addr(uint8_t i2c_addr);
+
+/**
+ * @brief Test if TCA6416A is responding
  * @return ESP_OK if device responds
  */
 esp_err_t tca_test_connection(void);
 
 /**
- * @brief Deinitialize TCA6424A
+ * @brief Deinitialize TCA6416A
  * @return ESP_OK on success
  */
 esp_err_t tca_deinit(void);
 
 /**
- * @brief Hardware reset TCA6424A
+ * @brief Hardware reset TCA6416A
  * @return ESP_OK on success
  */
 esp_err_t tca_reset(void);
 
 /**
  * @brief Configure port pins as input or output
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param config Configuration byte (1=input, 0=output)
  * @return ESP_OK on success
  */
@@ -80,7 +94,7 @@ esp_err_t tca_configure_port(tca_port_t port, uint8_t config);
 
 /**
  * @brief Read input port
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Pointer to store port value
  * @return ESP_OK on success
  */
@@ -88,7 +102,7 @@ esp_err_t tca_read_port(tca_port_t port, uint8_t *value);
 
 /**
  * @brief Write output port
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Value to write
  * @return ESP_OK on success
  */
@@ -96,7 +110,7 @@ esp_err_t tca_write_port(tca_port_t port, uint8_t value);
 
 /**
  * @brief Read output port current state
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Pointer to store value
  * @return ESP_OK on success
  */
@@ -104,7 +118,7 @@ esp_err_t tca_read_output_port(tca_port_t port, uint8_t *value);
 
 /**
  * @brief Set polarity inversion
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param polarity Polarity byte (1=inverted, 0=normal)
  * @return ESP_OK on success
  */
@@ -112,7 +126,7 @@ esp_err_t tca_set_polarity(tca_port_t port, uint8_t polarity);
 
 /**
  * @brief Set pin with verification
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param pin Pin number (0-7)
  * @param level Pin level (true=high, false=low)
  * @param verify Enable verification (true=verify, false=no verify)
@@ -123,7 +137,7 @@ esp_err_t tca_set_pin_verified(tca_port_t port, uint8_t pin, bool level,
 
 /**
  * @brief Read single pin
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param pin Pin number (0-7)
  * @param level Pointer to store pin level
  * @return ESP_OK on success
@@ -139,7 +153,7 @@ esp_err_t tca_register_interrupt_callback(tca_interrupt_callback_t callback);
 
 /**
  * @brief Read configuration register of a port
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Output value pointer
  * @return esp_err_t ESP_OK on success
  */
@@ -147,7 +161,7 @@ esp_err_t tca_read_config_register(tca_port_t port, uint8_t *value);
 
 /**
  * @brief Read output register of a port
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Output value pointer
  * @return esp_err_t ESP_OK on success
  */
@@ -155,7 +169,7 @@ esp_err_t tca_read_output_register(tca_port_t port, uint8_t *value);
 
 /**
  * @brief Write output register of a port
- * @param port Port number (0-2)
+ * @param port Port number (0-1)
  * @param value Value to write
  * @return esp_err_t ESP_OK on success
  */

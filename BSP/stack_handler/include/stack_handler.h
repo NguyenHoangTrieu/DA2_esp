@@ -1,14 +1,21 @@
 /**
  * @file stack_handler.h
- * @brief WAN Communication Stack GPIO Manager - Single Stack
+ * @brief WAN Communication Stack GPIO Manager - Single Stack (TCA6416A)
  *
- * WAN MCU has one stack connector with 11 GPIO + WAKE# + PERST# signals
- * controlled via TCA6424ARGJR I2C GPIO expander.
+ * WAN MCU has one stack connector with 16 GPIO signals (P00-P07, P10-P17)
+ * controlled via TCA6416A I2C GPIO expander on the adapter board.
  *
- * JSON pin label convention (WAN single stack, stack_id always 0):
- *   "01" - "11"  ->  GPIO 1-11
- *   "WK"         ->  WAKE# (active-low wake signal)
- *   "PE"         ->  PERST# (active-low reset)
+ * Flat GPIO pin mapping (numeric pin IDs):
+ *   00-07  →  P00-P07 (TCA PORT_0, pins 0-7)
+ *   10-17  →  P10-P17 (TCA PORT_1, pins 0-7)
+ *
+ * Special pins (by function, not hardware):
+ *   P00-P03  : 4-bit adapter ID (input, factory-set)
+ *   P05, P06 : Typically used for modem power/reset (configurable in JSON/config)
+ *   P17      : IOX_SLOTDET (input)
+ *
+ * Note: All pins are flat-mapped with no predefined purposes. Modem power/reset
+ * pins are configured in LTE config, not hardcoded.
  */
 
 #ifndef STACK_HANDLER_H
@@ -25,32 +32,35 @@ extern "C" {
 
 /* ===== Constants ===== */
 #define STACK_HANDLER_MAX_STACKS  1     /**< WAN has exactly one stack              */
-#define STACK_GPIO_PIN_COUNT      13    /**< 11 GPIO + WAKE# + PERST#               */
+#define STACK_GPIO_PIN_COUNT      16    /**< TCA6416A 16-pin direct mapping          */
 #define STACK_GPIO_PIN_NONE       0xFF  /**< Sentinel: no pin assigned              */
 
 /* ===== GPIO Pin Identifiers ===== */
 /**
- * @brief GPIO pin enum — also used as index into the TCA mapping table.
+ * @brief GPIO pin enum — index 0-15 maps directly to TCA6416A P00-P07, P10-P17.
  *
- * Relationship to JSON label (WAN, stack_id = 0):
- *   STACK_GPIO_PIN_1  ..  STACK_GPIO_PIN_11  <->  "01" .. "11"
- *   STACK_GPIO_PIN_WAKE                      <->  "WK"
- *   STACK_GPIO_PIN_PERST                     <->  "PE"
+ * Mapping: enum value 0-7 → PORT_0 pins 0-7 (P00-P07)
+ *          enum value 8-15 → PORT_1 pins 0-7 (P10-P17)
+ *
+ * JSON label: "00"-"07" for P00-P07, "10"-"17" for P10-P17
  */
 typedef enum {
-  STACK_GPIO_PIN_1    = 0,
-  STACK_GPIO_PIN_2    = 1,
-  STACK_GPIO_PIN_3    = 2,
-  STACK_GPIO_PIN_4    = 3,
-  STACK_GPIO_PIN_5    = 4,
-  STACK_GPIO_PIN_6    = 5,
-  STACK_GPIO_PIN_7    = 6,
-  STACK_GPIO_PIN_8    = 7,
-  STACK_GPIO_PIN_9    = 8,
-  STACK_GPIO_PIN_10   = 9,
-  STACK_GPIO_PIN_11   = 10,
-  STACK_GPIO_PIN_WAKE  = 11,  /**< WAKE#  – active-low wake signal  ("WK")  */
-  STACK_GPIO_PIN_PERST = 12   /**< PERST# – active-low reset signal ("PE")  */
+  STACK_GPIO_PIN_00 = 0,   /* P00 — adapter ID bit 0 (input)   */
+  STACK_GPIO_PIN_01 = 1,   /* P01 — adapter ID bit 1 (input)   */
+  STACK_GPIO_PIN_02 = 2,   /* P02 — adapter ID bit 2 (input)   */
+  STACK_GPIO_PIN_03 = 3,   /* P03 — adapter ID bit 3 (input)   */
+  STACK_GPIO_PIN_04 = 4,   /* P04                               */
+  STACK_GPIO_PIN_05 = 5,   /* P05 (typically modem power)       */
+  STACK_GPIO_PIN_06 = 6,   /* P06 (typically modem reset)       */
+  STACK_GPIO_PIN_07 = 7,   /* P07                               */
+  STACK_GPIO_PIN_10 = 8,   /* P10                               */
+  STACK_GPIO_PIN_11 = 9,   /* P11                               */
+  STACK_GPIO_PIN_12 = 10,  /* P12                               */
+  STACK_GPIO_PIN_13 = 11,  /* P13                               */
+  STACK_GPIO_PIN_14 = 12,  /* P14                               */
+  STACK_GPIO_PIN_15 = 13,  /* P15                               */
+  STACK_GPIO_PIN_16 = 14,  /* P16                               */
+  STACK_GPIO_PIN_17 = 15,  /* P17 — IOX_SLOTDET (input)        */
 } stack_gpio_pin_num_t;
 
 /* ===== API Functions ===== */
@@ -72,7 +82,7 @@ esp_err_t stack_handler_init(void);
 /**
  * @brief Write a GPIO pin level.
  * @param stack_id Must be 0 (WAN has one stack).
- * @param pin      Pin identifier (STACK_GPIO_PIN_1 .. STACK_GPIO_PIN_PERST).
+ * @param pin      Pin identifier (STACK_GPIO_PIN_04 .. STACK_GPIO_PIN_17).
  * @param level    true = HIGH, false = LOW.
  */
 esp_err_t stack_handler_gpio_write(uint8_t stack_id, stack_gpio_pin_num_t pin,

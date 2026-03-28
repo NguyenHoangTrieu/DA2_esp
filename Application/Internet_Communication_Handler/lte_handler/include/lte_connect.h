@@ -20,8 +20,8 @@ typedef struct {
   uint32_t reconnect_timeout_ms;
   bool auto_reconnect;
   lte_handler_comm_type_t comm_type;
-  uint8_t pwr_pin;  /**< TCA pin for modem POWER (STACK_GPIO_PIN_WAKE  = 11 default) */
-  uint8_t rst_pin;  /**< TCA pin for modem RESET (STACK_GPIO_PIN_PERST = 12 default) */
+  uint8_t pwr_pin;  /**< TCA GPIO pin for modem POWER (numeric ID 00-17, default=5 for P05) */
+  uint8_t rst_pin;  /**< TCA GPIO pin for modem RESET (numeric ID 00-17, default=6 for P06) */
 } lte_config_context_t;
 
 extern lte_config_context_t g_lte_ctx;

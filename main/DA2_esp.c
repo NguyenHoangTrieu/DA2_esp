@@ -294,7 +294,7 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_dev_support_init());
 
     tca_init();
-    gpio_set_level(TCA6424A_RESET_PIN, 0);
+    gpio_set_level(TCA6416A_RESET_PIN, 0);
     vTaskDelay(pdMS_TO_TICKS(100));
     i2c_dev_support_scan();
 
