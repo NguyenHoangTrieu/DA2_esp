@@ -34,7 +34,7 @@ export const FUNCTION_GROUPS = {
     { emoji: '🔄', title: 'System', functions: ['MODULE_HW_RESET','MODULE_SW_RESET','MODULE_FACTORY_RESET','MODULE_ENTER_CMD_MODE','MODULE_ENTER_SLEEP','MODULE_WAKEUP','MODULE_START_BROADCAST'] },
     { emoji: 'ℹ️', title: 'Info', functions: ['MODULE_GET_INFO','MODULE_GET_CONNECTION_STATUS','MODULE_GET_DIAGNOSTICS'] },
     { emoji: '⚙️', title: 'Config', functions: ['MODULE_SET_NAME','MODULE_SET_COMM_CONFIG','MODULE_SET_RF_PARAMS'] },
-    { emoji: '🔍', title: 'Discovery', functions: ['MODULE_START_DISCOVERY','MODULE_DISCOVER_SERVICES','MODULE_DISCOVER_CHARACTERISTICS'] },
+    { emoji: '🔍', title: 'Discovery', functions: ['MODULE_START_DISCOVERY','MODULE_DISCOVER_SERVICES','MODULE_DISCOVER_CHARACTERISTICS','MODULE_NOTIFY'] },
     { emoji: '🔗', title: 'Connection', functions: ['MODULE_CONNECT','MODULE_DISCONNECT','MODULE_ENTER_DATA_MODE'] },
     { emoji: '📨', title: 'Data', functions: ['MODULE_SEND_DATA'] },
   ],
