@@ -303,14 +303,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
   switch (event->event_id) {
   case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    // Set flags IMMEDIATELY — never call vTaskDelay inside an event handler:
+    // blocking the MQTT task prevents SUBACK/PUBACK from being processed,
+    // causing the broker to reset the TCP connection (errno=128 ECONNRESET).
+    m_mqtt_connected = true;
+    mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.attribute_topic, 1);
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.subscribe_topic, 1);
     esp_mqtt_client_publish(event->client, g_mqtt_ctx.attribute_topic,
                             "{\"chip_type\":\"esp32s3\", \"fw\":\"1.0.1\"}", 0,
                             1, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    m_mqtt_connected = true;
-    mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
     break;
 
   case MQTT_EVENT_DISCONNECTED:
@@ -402,11 +404,19 @@ static void mqtt_publish_task(void *arg) {
       if (xQueueReceive(g_mqtt_publish_queue, &incoming_data,
                         pdMS_TO_TICKS(500)) == pdTRUE) {
 
-        // Check MQTT connection
+        // Wait for MQTT reconnection instead of dropping — esp-mqtt auto-reconnects
         if (!m_mqtt_connected) {
-          ESP_LOGW(TAG, "MQTT not connected, dropping data");
-          vTaskDelay(pdMS_TO_TICKS(100));
-          continue;
+          ESP_LOGW(TAG, "MQTT not connected, waiting up to 10s for reconnect...");
+          int wait_ms = 0;
+          while (!m_mqtt_connected && wait_ms < 10000) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            wait_ms += 200;
+          }
+          if (!m_mqtt_connected) {
+            ESP_LOGE(TAG, "MQTT reconnect timeout (10s), discarding queued item");
+            continue;
+          }
+          ESP_LOGI(TAG, "MQTT reconnected after %d ms, retrying publish", wait_ms);
         }
 
         if (!incoming_data.data || incoming_data.length == 0) {
@@ -706,11 +716,9 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     return false;
   }
 
-  if (!m_mqtt_connected) {
-    ESP_LOGW(TAG, "MQTT not connected, dropping data");
-    return false;
-  }
-
+  // Do NOT gate on m_mqtt_connected — esp-mqtt auto-reconnects and the publish
+  // task will wait for reconnection before sending.  Dropping here causes permanent
+  // data loss during transient (1-2s) disconnects.
   mqtt_publish_data_t queue_data = {.data = (uint8_t *)data,
                                     .length = data_len};
 

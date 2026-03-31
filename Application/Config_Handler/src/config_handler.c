@@ -43,7 +43,7 @@ QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;  
-config_server_type_t g_server_type = CONFIG_SERVERTYPE_HTTP;
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_COAP;
 bool is_internet_connected = false;
 
 static bool config_handler_running = false;

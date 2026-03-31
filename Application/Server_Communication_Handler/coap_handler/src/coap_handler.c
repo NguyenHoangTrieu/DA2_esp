@@ -44,7 +44,7 @@ static volatile bool s_rpc_payload_ready = false;
 #define COAP_QUEUE_SIZE 8
 #define COAP_ACK_TIMEOUT_DEFAULT_MS 2000
 #define COAP_WAIT_TICKS pdMS_TO_TICKS(5000)
-#define COAP_RPC_POLL_INTERVAL_DEFAULT_MS 1500  // Default poll interval if not configured
+#define COAP_RPC_POLL_INTERVAL_DEFAULT_MS 200  // Default poll interval (reduced from 1500ms)
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -359,11 +359,9 @@ static esp_err_t coap_poll_rpc(void) {
         return ESP_FAIL;
     }
     
-    /* Wait for response with timeout */
-    uint32_t poll_timeout_ms = g_coap_cfg.rpc_poll_interval_ms > 0
-                               ? g_coap_cfg.rpc_poll_interval_ms
-                               : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(poll_timeout_ms);
+    /* Wait for response with FIXED 2s timeout — separate from poll interval.
+       Poll interval controls repeat rate; this only waits for the ACK. */
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
     
     while (xTaskGetTickCount() < deadline) {
         int io_ms = coap_io_process(ctx, 100);
@@ -447,19 +445,17 @@ static esp_err_t coap_poll_rpc(void) {
  * @brief CoAP RPC polling task
  */
 static void coap_polling_task(void *arg) {
-    uint32_t interval_ms = g_coap_cfg.rpc_poll_interval_ms > 0
-                           ? g_coap_cfg.rpc_poll_interval_ms
-                           : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
-    ESP_LOGI(TAG, "CoAP RPC polling task started, interval=%lums", (unsigned long)interval_ms);
+    ESP_LOGI(TAG, "CoAP RPC polling task started, interval=%dms", COAP_RPC_POLL_INTERVAL_DEFAULT_MS);
     
-    // Wait for first poll interval
-    vTaskDelay(pdMS_TO_TICKS(interval_ms));
+    // Wait for first poll before starting
+    vTaskDelay(pdMS_TO_TICKS(COAP_RPC_POLL_INTERVAL_DEFAULT_MS));
     
     while (s_polling_running) {
         coap_poll_rpc();
-        interval_ms = g_coap_cfg.rpc_poll_interval_ms > 0
-                      ? g_coap_cfg.rpc_poll_interval_ms
-                      : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
+        // Use config value if set, otherwise use default (200ms)
+        uint32_t interval_ms = g_coap_cfg.rpc_poll_interval_ms > 0
+                               ? g_coap_cfg.rpc_poll_interval_ms
+                               : COAP_RPC_POLL_INTERVAL_DEFAULT_MS;
         vTaskDelay(pdMS_TO_TICKS(interval_ms));
     }
     
