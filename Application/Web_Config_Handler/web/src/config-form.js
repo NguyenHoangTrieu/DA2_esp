@@ -229,7 +229,7 @@ export function renderConfigForm(container, config, moduleType) {
       arrow,
       el('span', { className: 'fn-name', textContent: fn.function_name }),
     ]);
-    if (zigbee && fn.is_async_event) {
+    if (fn.is_async_event) {
       header.appendChild(el('span', { className: 'fn-async-badge', textContent: '⚡ async' }));
     }
     const body = el('div', { className: 'fn-body collapsed' });
@@ -256,6 +256,14 @@ export function renderConfigForm(container, config, moduleType) {
       el('div', { className: 'checkbox-row' }, [pfxCb, el('label', { textContent: 'Is Prefix' })]),
     ]));
 
+    // Is hex
+    const hexCb = el('input', { type: 'checkbox' });
+    hexCb.checked = !!fn.is_hex;
+    hexCb.addEventListener('change', () => { fn.is_hex = hexCb.checked; updatePreview(); });
+    grid.appendChild(el('div', { className: 'form-group' }, [
+      el('div', { className: 'checkbox-row' }, [hexCb, el('label', { textContent: 'Is Hex' })]),
+    ]));
+
     // Delay start
     const dsIn = el('input', { type: 'number', value: String(fn.delay_start || 0), min: '0', step: '50' });
     dsIn.addEventListener('input', () => { fn.delay_start = Number(dsIn.value); updatePreview(); });
@@ -269,7 +277,7 @@ export function renderConfigForm(container, config, moduleType) {
     // Timeout
     const toIn = el('input', { type: 'number', value: String(fn.timeout || 0), min: '0', step: '100' });
     toIn.addEventListener('input', () => { fn.timeout = Number(toIn.value); updatePreview(); });
-    if (zigbee && fn.is_async_event) toIn.disabled = true;
+    if (fn.is_async_event) toIn.disabled = true;
     grid.appendChild(el('div', { className: 'form-group' }, [el('label', { textContent: 'Timeout (ms)' }), toIn]));
 
     // Delay end
