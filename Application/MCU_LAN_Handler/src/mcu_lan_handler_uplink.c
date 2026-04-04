@@ -262,7 +262,7 @@ static void uplink_processor_task(void *pvParameters) {
 
     // Extract header (big-endian)
     uint16_t header = (packet.payload[0] << 8) | packet.payload[1];
-    ESP_LOGI(TAG, "SPI RX: header=0x%04X, len=%u", header,
+    ESP_LOGD(TAG, "SPI RX: header=0x%04X, len=%u", header,
              packet.payload_length);
 
     // ===== Dispatch Frame =====
@@ -401,10 +401,10 @@ static esp_err_t perform_handshake_slave(void) {
   }
 
   // Debug: Log received packet
-  ESP_LOGI(TAG, "RX packet: len=%u", packet.payload_length);
-  ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
-                         packet.payload_length > 32 ? 32 : packet.payload_length, 
-                         ESP_LOG_INFO);
+  ESP_LOGD(TAG, "RX packet: len=%u", packet.payload_length);
+  // ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
+  //                        packet.payload_length > 32 ? 32 : packet.payload_length, 
+  //                        ESP_LOG_INFO);
 
   // Check for handshake request: [CF][0x01][fw_version(4)]
   if (packet.payload_length >= 7 && packet.payload[0] == 0x43 &&
