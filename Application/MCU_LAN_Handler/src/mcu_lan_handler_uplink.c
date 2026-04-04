@@ -275,11 +275,11 @@ static void uplink_processor_task(void *pvParameters) {
           process_handshake(packet.payload, packet.payload_length);
         } else if (packet.payload[2] == 'R' && packet.payload[3] == 'T') {
           // RTC request
-          ESP_LOGI(TAG, "RTC request received");
+          ESP_LOGD(TAG, "RTC request received");
           // Avoid overwriting TX buffer while config/downlink is pending.
           if (g_config_cache_has_config || g_active_config_request_valid ||
               g_pending_downlink_valid) {
-            ESP_LOGI(TAG, "RTC response deferred (pending TX payload)");
+            ESP_LOGD(TAG, "RTC response deferred (pending TX payload)");
           } else {
             downlink_send_rtc_response();
           }
@@ -303,7 +303,7 @@ static void uplink_processor_task(void *pvParameters) {
       break;
 
     case WAN_COMM_HEADER_DQ: // Data Query from LAN
-      ESP_LOGI(TAG, "DQ request received from LAN MCU");
+      ESP_LOGD(TAG, "DQ request received from LAN MCU");
       process_data_query();
       break;
 
@@ -691,7 +691,7 @@ static void process_data_query(void) {
     // Clear GPIO handshake once something has been served
     clear_data_ready();
   } else {
-    ESP_LOGI(TAG, "DQ received but nothing pending to send");
+    ESP_LOGD(TAG, "DQ received but nothing pending to send");
   }
 }
 
