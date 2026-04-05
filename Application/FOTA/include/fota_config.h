@@ -33,7 +33,11 @@
 #define FOTA_CONFIG_CONNECT_ETHERNET 0
 
 /* OTA Receive Timeout in milliseconds */
-#define FOTA_CONFIG_OTA_RECV_TIMEOUT 5000
+/* GitHub release download has 2-3 TCP connection hops (github.com → CDN redirects).
+ * Each hop = TCP connect (~1-3s) + TLS handshake (~2-4s).
+ * 5s was too short — third TCP connect timed out.
+ * 120s gives 40s per hop with margin for WiFi/NAPT slowdown and SYN retries. */
+#define FOTA_CONFIG_OTA_RECV_TIMEOUT 120000
 
 /* Enable partial HTTP download (for large firmware images) */
 #define FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD 0
@@ -58,4 +62,4 @@
 /* Enable dynamic buffer support in mbedTLS */
 #define MBEDTLS_DYNAMIC_BUFFER 1
 
-#endif /* CONFIG_H */
+#endif /* FOTA_CONFIG_H */

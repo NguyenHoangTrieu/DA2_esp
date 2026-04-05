@@ -5,6 +5,8 @@
 * and optional OTA resumption using NVS.
 */
 #include "fota_handler.h"
+#include "esp_heap_caps.h"
+#include "web_config_handler.h"
 
 #if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
 /* The interface name value can refer to if_desc in esp_netif_defaults.h */
@@ -322,32 +324,22 @@ void advanced_ota_task(void *pvParameter)
     esp_https_ota_handle_t https_ota_handle = NULL;
     err = esp_https_ota_begin(&ota_config, &https_ota_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ESP HTTPS OTA Begin failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "ESP HTTPS OTA Begin failed");
         fota_handler_task_stop();
-        ESP_LOGI(TAG, "FOTA error - restarting device");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_restart();
+        vTaskDelete(NULL);
     }
 
     esp_app_desc_t app_desc = {};
     err = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed: %s", esp_err_to_name(err));
-        esp_https_ota_abort(https_ota_handle);
-        fota_handler_task_stop();
-        ESP_LOGI(TAG, "FOTA error - restarting device");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_restart();
+        ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed");
+        goto ota_end;
     }
     
     err = validate_image_header(&app_desc);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "image header verification failed");
-        esp_https_ota_abort(https_ota_handle);
-        fota_handler_task_stop();
-        ESP_LOGI(TAG, "FOTA error - restarting device");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        esp_restart();
+        goto ota_end;
     }
 
     while (1) {
@@ -387,19 +379,18 @@ void advanced_ota_task(void *pvParameter)
                 ESP_LOGE(TAG, "Image validation failed, image is corrupted");
             }
             ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed 0x%x", ota_finish_err);
-            fota_handler_task_stop();
-            ESP_LOGI(TAG, "FOTA error - restarting device");
-            vTaskDelay(pdMS_TO_TICKS(1000));
             esp_restart();
+            fota_handler_task_stop();
+            vTaskDelete(NULL);
         }
     }
 
+ota_end:
     esp_https_ota_abort(https_ota_handle);
     ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed");
-    fota_handler_task_stop();
-    ESP_LOGI(TAG, "FOTA error - restarting device");
-    vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
+    fota_handler_task_stop();
+    vTaskDelete(NULL);
 }
 
 void fota_handler_task_start(void) 
@@ -411,18 +402,33 @@ void fota_handler_task_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, 
                                                 &event_handler, NULL));
 
-// #if FOTA_CONFIG_CONNECT_WIFI
-//     esp_wifi_set_ps(WIFI_PS_NONE);
-// #endif
-    ESP_LOGI(TAG, "Creating Advanced OTA task");
-    ESP_LOGI(TAG, "Free heap before OTA task: %d bytes", esp_get_free_heap_size());
-    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task", 16 * 1024, NULL, 5, NULL);
+    /* Stop web config portal to free heap for mbedTLS SSL context allocation.
+     * The portal uses ~50-100KB — essential for OTA TLS handshake. */
+    ESP_LOGI(TAG, "Stopping web config portal to free heap for OTA");
+    web_config_handler_stop();
+
+    size_t internal_free    = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG, "Heap before OTA task: total=%d, internal=%d, internal_largest=%d",
+             esp_get_free_heap_size(), internal_free, internal_largest);
+
+    /* IMPORTANT: stack MUST be in internal RAM for mbedTLS crypto performance.
+     * 12KB is sufficient: mbedTLS handshake depth ~3KB, OTA locals ~1KB.
+     * If internal RAM fragmented, fallback to PSRAM (slower TLS but still works). */
+    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task", 12 * 1024, NULL, 5, NULL);
     if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Advanced OTA task");
-    } else {
-        ESP_LOGI(TAG, "Advanced OTA task created successfully");
+        /* Internal RAM stack failed — try PSRAM (if available).
+         * PSRAM stack is slower for crypto (L1$ misses) but better than no task. */
+        ESP_LOGW(TAG, "Internal RAM stack failed (largest=%d), retrying in PSRAM", internal_largest);
+        ret = xTaskCreateWithCaps(&advanced_ota_task, "advanced_ota_task",
+                                  16 * 1024, NULL, 5, NULL,
+                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (ret != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create Advanced OTA task (internal AND PSRAM)");
+            return;
+        }
     }
-    
+    ESP_LOGI(TAG, "Advanced OTA task created successfully");
 }
 
 void fota_handler_task_stop(void) 

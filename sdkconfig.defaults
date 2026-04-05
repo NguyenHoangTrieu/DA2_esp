@@ -1,0 +1,7 @@
+# sdkconfig.defaults — persists across "idf.py" regeneration
+
+# mbedTLS must allocate from PSRAM (external), not internal RAM.
+# Internal RAM is fragmented at OTA time (~15KB largest block) while
+# mbedTLS ssl_context needs ~40KB contiguous → MBEDTLS_ERR_SSL_ALLOC_FAILED (-0x008D).
+# EXTERNAL_MEM_ALLOC makes all mbedTLS heap calls use heap_caps_malloc(MALLOC_CAP_SPIRAM).
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

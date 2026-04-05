@@ -6,7 +6,7 @@
 
 /* UART Configuration for PPP Server */
 #define PPP_UART_PORT           UART_NUM_2
-#define PPP_UART_BAUD_RATE      256000
+#define PPP_UART_BAUD_RATE      921600
 #define PPP_UART_TX_PIN         GPIO_NUM_41
 #define PPP_UART_RX_PIN         GPIO_NUM_42
 
