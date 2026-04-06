@@ -9,6 +9,7 @@
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "esp_log.h"
+#include "DA2_esp.h"
 #include <ctype.h>
 
 static const char *TAG = "config_handler";
@@ -961,8 +962,6 @@ static void config_handler_task(void *arg) {
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
                     led_show_blue();
-                    mqtt_handler_task_stop(); // Stop MQTT task if running
-                    vTaskDelay(pdMS_TO_TICKS(5000));
                     fota_handler_task_start();
                     break;
                 }
@@ -1038,6 +1037,8 @@ static void config_handler_task(void *arg) {
                         if (lan_cmd->length >= 4 && strncmp(lan_cmd->command, "CFFW", 4) == 0) {
                             g_not_ppp_to_lan = true;
                             if (!ppp_server_is_initialized()) {
+                                server_connect_stop(g_server_type);
+                                vTaskDelay(pdMS_TO_TICKS(5000));
                                 ppp_server_init();
                                 vTaskDelay(pdMS_TO_TICKS(200));
                             }
