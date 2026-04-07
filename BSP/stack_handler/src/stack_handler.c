@@ -12,14 +12,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "tca_handler.h"
+#include "i2c_dev_support.h"
 #include <string.h>
 
 static const char *TAG = "STACK_HANDLER";
 
 /* ===== Internal State ===== */
 
-static bool             g_initialized     = false;
+static bool              g_initialized = false;
 static SemaphoreHandle_t g_stack_mutex[STACK_HANDLER_MAX_STACKS];
+static char              g_module_id[4] = "000"; /* Fixed: WAN IOX1 has no adapter ID straps */
 
 /* ===== Helper Functions ===== */
 
@@ -29,6 +31,38 @@ static inline bool is_valid_stack_id(uint8_t stack_id) {
 
 static inline bool is_valid_pin(stack_gpio_pin_num_t pin) {
   return ((uint8_t)pin < STACK_GPIO_PIN_COUNT);
+}
+
+/* Read 4-bit module ID from WAN adapter IOX (TCA6416A at 0x21, P00-P03).
+ * This is SEPARATE from IOX1 (main board TCA6416A at 0x20).
+ * The adapter board has its own TCA6416A just like LAN adapters.
+ * Non-fatal: if adapter has no IOX, g_module_id stays "000".
+ */
+static void read_module_id(void) {
+    i2c_master_dev_handle_t adapter_dev = NULL;
+    esp_err_t ret = i2c_dev_support_add_device(TCA6416A_I2C_ADDR_1, TCA6416A_I2C_FREQ_HZ, &adapter_dev);
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "No adapter IOX at 0x21, module_id=000");
+        return;
+    }
+    /* Probe: read Config0 register */
+    uint8_t reg = TCA6416A_CONFIG_PORT0, dummy;
+    ret = i2c_dev_support_write_read(adapter_dev, &reg, 1, &dummy, 1, 100);
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "Adapter IOX 0x21 not responding, module_id=000");
+        i2c_dev_support_remove_device(adapter_dev);
+        return;
+    }
+    /* Read Input Port 0 (P00-P07), mask P00-P03 for module ID */
+    reg = TCA6416A_INPUT_PORT0;
+    uint8_t port0_val = 0;
+    ret = i2c_dev_support_write_read(adapter_dev, &reg, 1, &port0_val, 1, 100);
+    i2c_dev_support_remove_device(adapter_dev);
+    if (ret == ESP_OK) {
+        uint8_t id = port0_val & 0x0F;
+        snprintf(g_module_id, sizeof(g_module_id), "%03u", id);
+        ESP_LOGI(TAG, "WAN adapter module ID: %s (P00-P03=0x%X)", g_module_id, id);
+    }
 }
 
 static void get_tca_mapping(uint8_t stack_id, stack_gpio_pin_num_t pin,
@@ -45,6 +79,8 @@ esp_err_t stack_handler_init(void) {
     ESP_LOGW(TAG, "Already initialized");
     return ESP_OK;
   }
+
+  snprintf(g_module_id, sizeof(g_module_id), "000");
 
   ESP_LOGI(TAG, "Initializing stack handler");
 
@@ -81,10 +117,14 @@ esp_err_t stack_handler_init(void) {
     }
   }
 
+  /* Read adapter module ID from P00-P03 (ID pins are inputs, sampled once at boot) */
+  read_module_id();
+
   g_initialized = true;
 
   ESP_LOGI(TAG, "WAN Stack initialized (single stack, 16 pins, TCA6416A)");
   ESP_LOGI(TAG, "  P00-P07 → PORT_0 | P10-P17 → PORT_1");
+  ESP_LOGI(TAG, "  Adapter module_id=%s", g_module_id);
 
   return ESP_OK;
 }
@@ -347,19 +387,16 @@ esp_err_t stack_handler_unlock(uint8_t stack_id) {
 }
 
 /**
- * @brief Get WAN module ID (pseudo implementation for NVS change detection).
+ * @brief Get WAN board fixed ID.
  *
- * Returns "001" for stack_id = 0.  The WAN gateway always has the same
- * module connector so the ID is a fixed pseudo-value used only to enable
- * the boot-time NVS comparison logic (same pattern as LAN).
+ * The WAN MCU's TCA6416A (IOX1) is the main-board IO expander controlling
+ * BC_IO, power rails, fan, and RGB LED — P00-P03 are NOT adapter ID straps.
+ * Returns fixed "000" for compatibility with NVS change-detection logic.
  */
 const char *stack_handler_get_module_id(uint8_t stack_id) {
   if (!is_valid_stack_id(stack_id)) {
-    ESP_LOGW(TAG, "Invalid stack_id %d, returning '000'", stack_id);
     return "000";
   }
-
-  ESP_LOGI(TAG, "WAN Stack module ID: 001");
-  return "001";
+  return g_module_id;
 }
 

@@ -39,6 +39,20 @@ extern "C" {
 #define BQ27441_CTRL_STATUS     0x0000
 #define BQ27441_CTRL_DEVICE_TYPE 0x0001
 #define BQ27441_CTRL_FW_VERSION 0x0002
+#define BQ27441_CTRL_UNSEAL_LOW  0x0414  /* First half of unseal sequence */
+#define BQ27441_CTRL_UNSEAL_HIGH 0x3672  /* Second half of unseal sequence (completes 0x3672_0414) */
+#define BQ27441_CTRL_SEAL        0x0020  /* Seal data flash (lock configuration) */
+
+/* Data Flash Block Interface - for accessing/modifying design capacity */
+#define BQ27441_CMD_BLOCK_DATA_CTRL  0x61  /* Block Data Control status */
+#define BQ27441_CMD_BLOCK_DATA_CLASS 0x3E  /* Block Data Class ID */
+#define BQ27441_CMD_BLOCK_DATA_OFFSET 0x3F /* Block Data Offset (within class) */
+#define BQ27441_CMD_BLOCK_DATA       0x40  /* Block Data Array (32 bytes) */
+#define BQ27441_CMD_BLOCK_DATA_CHECK 0x60  /* Block Data Checksum */
+
+/* Data Flash class IDs + offsets */
+#define BQ27441_DF_CLASS_POWER      0x52   /* Class 82 = Power Register Settings */
+#define BQ27441_DESIGN_CAP_OFFSET   0x0A   /* Design Capacity at offset 10-11 within power class */
 
 /* Flags bit definitions */
 #define BQ27441_FLAG_DSG        (1 << 0)    /* Discharging */
@@ -105,6 +119,19 @@ esp_err_t bq27441_read_avg_current_ma(int16_t *current_ma);
  * @return ESP_OK on success
  */
 esp_err_t bq27441_read_status(bq27441_status_t *status);
+
+/**
+ * @brief Reprogram battery DESIGN_CAPACITY via data flash unsealing.
+ *        Requires battery to be present and fully discharged below 2.5V for reliable operation.
+ *        This function will:
+ *        1. Unseal the data flash using security codes
+ *        2. Write new DESIGN_CAPACITY to data flash class 82 (Power)
+ *        3. Recalculate and write checksum
+ *        4. Seal the data flash to protect configuration
+ * @param capacity_mah Target design capacity in mAh (e.g., 3000 for 3000mAh battery)
+ * @return ESP_OK on success, ESP_ERR_* on failure
+ */
+esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah);
 
 #ifdef __cplusplus
 }

@@ -24,32 +24,21 @@ static SemaphoreHandle_t s_int_sem = NULL;
 /*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-static void gpio_output_init(gpio_num_t pin, int default_level)
+static void iox_output_init(stack_gpio_pin_num_t pin, bool default_level)
 {
-    if (pin == GPIO_NUM_NC) return;
-    gpio_config_t cfg = {
-        .pin_bit_mask = (1ULL << pin),
-        .mode         = GPIO_MODE_OUTPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&cfg);
-    gpio_set_level(pin, default_level);
+    if (pin == STACK_GPIO_PIN_NONE) return;
+    stack_handler_gpio_set_direction(0, pin, true);
+    stack_handler_gpio_write(0, pin, default_level);
 }
 
-static void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr)
+static void iox_input_init(stack_gpio_pin_num_t pin)
 {
-    if (pin == GPIO_NUM_NC) return;
-    gpio_config_t cfg = {
-        .pin_bit_mask = (1ULL << pin),
-        .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = intr,
-    };
-    gpio_config(&cfg);
+    if (pin == STACK_GPIO_PIN_NONE) return;
+    stack_handler_gpio_set_direction(0, pin, false);
 }
+
+/* Global state for charging hysteresis (prevents on/off oscillation) */
+static bool s_charge_enabled_state = true;
 
 /* ------------------------------------------------------------------ */
 /*  Public API                                                          */
@@ -59,21 +48,21 @@ esp_err_t pwr_source_init(void)
 {
     ESP_LOGI(TAG, "Initializing power management ICs");
 
-    /* BC discrete GPIO — output pins */
-    gpio_output_init(BC_CE_GPIO_NUM,   0);   /* BC_CE# LOW = charging enabled */
-    gpio_output_init(BC_OTG_GPIO_NUM,  0);   /* OTG off */
-    gpio_output_init(BC_PSEL_GPIO_NUM, 0);   /* PSEL default */
+    /* BC IOX — output pins */
+    iox_output_init(BC_CE_IOX_PIN,   false);   /* BC_CE# LOW = charging enabled */
+    s_charge_enabled_state = true;             /* Initialize charging state for hysteresis */
+    
+    iox_output_init(BC_OTG_IOX_PIN,  false);   /* OTG off */
+    iox_output_init(BC_PSEL_IOX_PIN, false);   /* PSEL default */
 
-    /* BC discrete GPIO — input pins */
-    gpio_input_init(BC_INT_GPIO_NUM,  GPIO_INTR_NEGEDGE);
-    gpio_input_init(BC_STAT_GPIO_NUM, GPIO_INTR_DISABLE);
-    gpio_input_init(BC_PG_GPIO_NUM,   GPIO_INTR_DISABLE);
+    /* BC IOX — input pins */
+    iox_input_init(BC_INT_IOX_PIN);
+    iox_input_init(BC_STAT_IOX_PIN);
+    iox_input_init(BC_PG_IOX_PIN);
 
-    /* Register BC_INT ISR if pin is configured */
-    if (BC_INT_GPIO_NUM != GPIO_NUM_NC) {
-        s_int_sem = xSemaphoreCreateBinary();
-        gpio_isr_handler_add(BC_INT_GPIO_NUM, pwr_source_int_handler, NULL);
-    }
+    /* TCA6416A IO expander does not directly support attach interrupt
+       without tca_handler implementation. Charger status is polled instead. */
+    s_int_sem = NULL;
 
     /* Initialize battery charger */
     esp_err_t ret = bq25892_init();
@@ -91,6 +80,15 @@ esp_err_t pwr_source_init(void)
     ret = bq27441_init();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "BQ27441 init failed: %s (continuing)", esp_err_to_name(ret));
+    } else {
+        /* Verify and reprogram capacity if needed (user battery is 3000mAh, not default) */
+        ESP_LOGI(TAG, "Reprogramming BQ27441 capacity to 3000 mAh...");
+        esp_err_t cap_ret = bq27441_reprogram_capacity(3000);
+        if (cap_ret == ESP_OK) {
+            ESP_LOGI(TAG, "✓ BQ27441 capacity update complete");
+        } else {
+            ESP_LOGW(TAG, "⚠ Capacity reprogram returned: %s (may already be correct)", esp_err_to_name(cap_ret));
+        }
     }
 
     /* Log initial battery status */
@@ -106,9 +104,12 @@ esp_err_t pwr_source_init(void)
 
 esp_err_t pwr_source_set_charge_enable(bool enable)
 {
-    /* Drive BC_CE# GPIO: active-low, so LOW=enable, HIGH=disable */
-    if (BC_CE_GPIO_NUM != GPIO_NUM_NC) {
-        gpio_set_level(BC_CE_GPIO_NUM, enable ? 0 : 1);
+    /* Update charging state for hysteresis logic */
+    s_charge_enabled_state = enable;
+
+    /* Drive BC_CE# IOX: active-low, so LOW=enable, HIGH=disable */
+    if (BC_CE_IOX_PIN != STACK_GPIO_PIN_NONE) {
+        stack_handler_gpio_write(0, BC_CE_IOX_PIN, enable ? false : true);
     }
     /* Also write BQ25892 CHG_CONFIG register */
     esp_err_t ret = bq25892_set_charge_enable(enable);
@@ -118,8 +119,8 @@ esp_err_t pwr_source_set_charge_enable(bool enable)
 
 esp_err_t pwr_source_set_otg(bool enable)
 {
-    if (BC_OTG_GPIO_NUM != GPIO_NUM_NC) {
-        gpio_set_level(BC_OTG_GPIO_NUM, enable ? 1 : 0);
+    if (BC_OTG_IOX_PIN != STACK_GPIO_PIN_NONE) {
+        stack_handler_gpio_write(0, BC_OTG_IOX_PIN, enable ? true : false);
     }
     return bq25892_set_otg(enable);
 }
@@ -173,14 +174,38 @@ esp_err_t pwr_source_charge_monitor(void)
         }
     }
 
-    if (vbat_mv >= PWR_BATT_UPPER_THRESHOLD_MV) {
-        ESP_LOGI(TAG, "Battery full (%u mV >= %u mV) — stopping charge",
-                 vbat_mv, PWR_BATT_UPPER_THRESHOLD_MV);
-        pwr_source_set_charge_enable(false);
-    } else if (vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
-        ESP_LOGW(TAG, "Battery low (%u mV <= %u mV) — enabling charge",
+    /* Hysteresis logic: prevent on/off oscillation around threshold
+       - If charging is enabled: stop when reaching UPPER_THRESHOLD 
+       - If charging is disabled: resume only when dropping below UPPER_HYST (lower threshold)
+     */
+    if (s_charge_enabled_state) {
+        /* Charging is currently ON — stop if battery is full */
+        if (vbat_mv >= PWR_BATT_UPPER_THRESHOLD_MV) {
+            ESP_LOGI(TAG, "CHARGE_CTRL: Battery full (%u mV >= %u mV) — stopping charge",
+                     vbat_mv, PWR_BATT_UPPER_THRESHOLD_MV);
+            s_charge_enabled_state = false;
+            pwr_source_set_charge_enable(false);
+        } else {
+            ESP_LOGD(TAG, "CHARGE_CTRL: State=ON, Vbat=%u mV (thres=%u mV, hyste=%u mV)",
+                    vbat_mv, PWR_BATT_UPPER_THRESHOLD_MV, PWR_BATT_UPPER_HYST_MV);
+        }
+    } else {
+        /* Charging is currently OFF — resume only if battery drops enough (hysteresis) */
+        if (vbat_mv <= PWR_BATT_UPPER_HYST_MV) {
+            ESP_LOGI(TAG, "CHARGE_CTRL: Battery dropped to %u mV (below %u mV hyst) — resuming charge",
+                     vbat_mv, PWR_BATT_UPPER_HYST_MV);
+            s_charge_enabled_state = true;
+            pwr_source_set_charge_enable(true);
+        } else {
+            ESP_LOGD(TAG, "CHARGE_CTRL: State=OFF, Vbat=%u mV (waiting for hyst=%u mV)",
+                    vbat_mv, PWR_BATT_UPPER_HYST_MV);
+        }
+    }
+
+    /* Also handle low battery critical alert (regardless of charging state) */
+    if (vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
+        ESP_LOGW(TAG, "Critical low battery: %u mV <= %u mV",
                  vbat_mv, PWR_BATT_LOWER_THRESHOLD_MV);
-        pwr_source_set_charge_enable(true);
     }
 
     /* BQ25892 hardware VREG at 4.096V also limits charge voltage autonomously */

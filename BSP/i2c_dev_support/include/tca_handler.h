@@ -27,8 +27,8 @@ extern "C" {
 #define TCA6416A_I2C_FREQ_HZ   400000  // 400kHz
 
 // GPIO control pins (new board pinout)
-#define TCA6416A_INT_PIN    47  // IO expander INT (active-low) â€” was GPIO21
-#define TCA6416A_RESET_PIN  48  // IO expander RESET (active-low) â€” was GPIO47
+#define TCA6416A_INT_PIN    47  // IO expander INT (active-low)
+#define TCA6416A_RESET_PIN  48  // IO expander RESET (active-low)
 
 // Port definitions â€” TCA6416A has 2 ports only
 typedef enum {

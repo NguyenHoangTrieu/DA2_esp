@@ -24,18 +24,26 @@ extern "C" {
 
 /* Battery voltage thresholds */
 #define PWR_BATT_UPPER_THRESHOLD_MV   4100   /* Stop charging above this voltage */
+#define PWR_BATT_UPPER_HYST_MV        4050   /* Resume charging below this voltage (hysteresis for upper threshold) */
 #define PWR_BATT_LOWER_THRESHOLD_MV   3500   /* Low battery alert below this voltage */
 
+#include "stack_handler.h"
+
 /*
- * BC_IO discrete GPIO pins — TODO: verify from full schematic netlist.
- * Use GPIO_NUM_NC (-1) for unconfirmed pins; driver skips GPIO ops for NC pins.
+ * BC_IO bus mapped via IOX1 (TCA6416A U10 on WAN main board, I2C 0x20).
+ * P00 (IOX1_P0_0) is a spare/control net — NOT part of BC_IO bus.
+ * BC_IO signals start at P01:
  */
-#define BC_CE_GPIO_NUM    GPIO_NUM_NC   /* Charge Enable (active-low output) */
-#define BC_OTG_GPIO_NUM   GPIO_NUM_NC   /* OTG Enable (output) */
-#define BC_INT_GPIO_NUM   GPIO_NUM_NC   /* Charger Interrupt (input, falling edge) */
-#define BC_STAT_GPIO_NUM  GPIO_NUM_NC   /* Charge Status LED driver (input) */
-#define BC_PG_GPIO_NUM    GPIO_NUM_NC   /* Power Good (input, active-low) */
-#define BC_PSEL_GPIO_NUM  GPIO_NUM_NC   /* Power Source Select (output) */
+#define BC_INT_IOX_PIN    STACK_GPIO_PIN_01   /* P01: BC_INT  — charger interrupt (input, active-low)  */
+#define BC_CE_IOX_PIN     STACK_GPIO_PIN_02   /* P02: BC_CE#  — charge enable (output, active-low)    */
+#define BC_PSEL_IOX_PIN   STACK_GPIO_PIN_03   /* P03: BC_PSEL — power source select (output)          */
+#define BC_STAT_IOX_PIN   STACK_GPIO_PIN_04   /* P04: BC_STAT — charge status (input, open-drain)     */
+#define BC_PG_IOX_PIN     STACK_GPIO_PIN_05   /* P05: BC_PG#  — power good (input, active-low)        */
+#define BC_OTG_IOX_PIN    STACK_GPIO_PIN_NONE /* OTG not wired to IOX                               */
+
+/* Sensor alert pins (IOX1_P0_6 / IOX1_P0_7 nets) */
+#define PM_ALERT_IOX_PIN  STACK_GPIO_PIN_06   /* P06: PM_ALERT — INA230 ALERT (input, active-low)    */
+#define FG_GPOUT_IOX_PIN  STACK_GPIO_PIN_07   /* P07: FG_GPOUT — BQ27441 GPOUT (input)               */
 
 /**
  * @brief Combined power status snapshot (all 3 ICs + GPIO).

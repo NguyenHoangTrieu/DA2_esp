@@ -45,22 +45,22 @@ extern "C" {
  * JSON label: "00"-"07" for P00-P07, "10"-"17" for P10-P17
  */
 typedef enum {
-  STACK_GPIO_PIN_00 = 0,   /* P00 — adapter ID bit 0 (input)   */
-  STACK_GPIO_PIN_01 = 1,   /* P01 — adapter ID bit 1 (input)   */
-  STACK_GPIO_PIN_02 = 2,   /* P02 — adapter ID bit 2 (input)   */
-  STACK_GPIO_PIN_03 = 3,   /* P03 — adapter ID bit 3 (input)   */
-  STACK_GPIO_PIN_04 = 4,   /* P04                               */
-  STACK_GPIO_PIN_05 = 5,   /* P05 (typically modem power)       */
-  STACK_GPIO_PIN_06 = 6,   /* P06 (typically modem reset)       */
-  STACK_GPIO_PIN_07 = 7,   /* P07                               */
-  STACK_GPIO_PIN_10 = 8,   /* P10                               */
-  STACK_GPIO_PIN_11 = 9,   /* P11                               */
-  STACK_GPIO_PIN_12 = 10,  /* P12                               */
-  STACK_GPIO_PIN_13 = 11,  /* P13                               */
-  STACK_GPIO_PIN_14 = 12,  /* P14                               */
-  STACK_GPIO_PIN_15 = 13,  /* P15                               */
-  STACK_GPIO_PIN_16 = 14,  /* P16                               */
-  STACK_GPIO_PIN_17 = 15,  /* P17 — IOX_SLOTDET (input)        */
+  STACK_GPIO_PIN_00 = 0,   /* P00 — IOX1_P0_0 spare/ctrl (NOT BC_IO)         */
+  STACK_GPIO_PIN_01 = 1,   /* P01 — BC_INT  (input, active-low)              */
+  STACK_GPIO_PIN_02 = 2,   /* P02 — BC_CE#  (output, active-low)             */
+  STACK_GPIO_PIN_03 = 3,   /* P03 — BC_PSEL (output)                         */
+  STACK_GPIO_PIN_04 = 4,   /* P04 — BC_STAT (input, open-drain)              */
+  STACK_GPIO_PIN_05 = 5,   /* P05 — BC_PG#  (input, active-low)              */
+  STACK_GPIO_PIN_06 = 6,   /* P06 — PM_ALERT from INA230 (input, active-low) */
+  STACK_GPIO_PIN_07 = 7,   /* P07 — FG_GPOUT from BQ27441 (input)            */
+  STACK_GPIO_PIN_10 = 8,   /* P10 — EN_3V3C power rail enable (output)       */
+  STACK_GPIO_PIN_11 = 9,   /* P11 — EN_5V0C power rail enable (output)       */
+  STACK_GPIO_PIN_12 = 10,  /* P12 — RGB LED Red   (RLED_CTRL, output)        */
+  STACK_GPIO_PIN_13 = 11,  /* P13 — RGB LED Green (GLED_CTRL, output)        */
+  STACK_GPIO_PIN_14 = 12,  /* P14 — RGB LED Blue  (BLED_CTRL, output)        */
+  STACK_GPIO_PIN_15 = 13,  /* P15 — FAN_CTRL DC fan (output)                 */
+  STACK_GPIO_PIN_16 = 14,  /* P16 — NC                                       */
+  STACK_GPIO_PIN_17 = 15,  /* P17 — NC                                       */
 } stack_gpio_pin_num_t;
 
 /* ===== API Functions ===== */

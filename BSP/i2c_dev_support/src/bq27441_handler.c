@@ -5,6 +5,8 @@
 
 #include "bq27441_handler.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "BQ27441";
 
@@ -77,6 +79,16 @@ esp_err_t bq27441_init(void)
     bool bat_present = (flags & BQ27441_FLAG_BAT_DET) != 0;
     ESP_LOGI(TAG, "Battery %s", bat_present ? "detected" : "NOT detected");
 
+    /* Read nominal capacity (DESIGN_CAPACITY set during manufacturing or by unsealing) */
+    uint16_t nom_cap = 0;
+    cmd_read16(BQ27441_CMD_NOM_CAP, &nom_cap);
+    ESP_LOGI(TAG, "Nominal Capacity: %u mAh", nom_cap);
+
+    if (nom_cap != 3000) {
+        ESP_LOGW(TAG, "Nominal capacity is %u mAh, expected 3000 mAh. SoC may be inaccurate.", nom_cap);
+        ESP_LOGW(TAG, "To reprogram: battery must be discharged, then use unsealing procedure");
+    }
+
     return ESP_OK;
 }
 
@@ -137,4 +149,181 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
     status->battery_present = (raw_flags & BQ27441_FLAG_BAT_DET) != 0;
 
     return ESP_OK;
+}
+
+/* ================================================================== */
+/*  Data Flash Access for Capacity Reprogramming                     */
+/* ================================================================== */
+
+/**
+ * @brief Read a byte from the Data Flash Block Data buffer (0x40).
+ */
+static esp_err_t block_read_byte(uint8_t offset, uint8_t *value)
+{
+    if (!value) return ESP_ERR_INVALID_ARG;
+
+    /* First set Block Data Class ID */
+    uint8_t buf[2] = {BQ27441_CMD_BLOCK_DATA_CLASS, BQ27441_DF_CLASS_POWER};
+    esp_err_t ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+    vTaskDelay(pdMS_TO_TICKS(2));
+
+    /* Set Block Data Offset */
+    buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET;
+    buf[1] = offset;
+    ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+    vTaskDelay(pdMS_TO_TICKS(2));
+
+    /* Read the byte from Block Data register (0x40) */
+    uint8_t reg_addr = BQ27441_CMD_BLOCK_DATA;
+    return i2c_dev_support_write_read(s_dev, &reg_addr, 1, value, 1, 50);
+}
+
+/**
+ * @brief Write a byte to the Data Flash Block Data buffer (0x40).
+ */
+static esp_err_t block_write_byte(uint8_t offset, uint8_t value)
+{
+    /* First set Block Data Class ID */
+    uint8_t buf[2] = {BQ27441_CMD_BLOCK_DATA_CLASS, BQ27441_DF_CLASS_POWER};
+    esp_err_t ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+
+    /* Set Block Data Offset */
+    buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET;
+    buf[1] = offset;
+    ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+
+    /* Write the byte to Block Data position */
+    buf[0] = BQ27441_CMD_BLOCK_DATA;
+    buf[1] = value;
+    return i2c_dev_support_write(s_dev, buf, 2, 50);
+}
+
+/**
+ * @brief Read the Block Data Checksum byte.
+ */
+static esp_err_t block_read_checksum(uint8_t *checksum)
+{
+    if (!checksum) return ESP_ERR_INVALID_ARG;
+    uint8_t reg_addr = BQ27441_CMD_BLOCK_DATA_CHECK;
+    return i2c_dev_support_write_read(s_dev, &reg_addr, 1, checksum, 1, 50);
+}
+
+/**
+ * @brief Write new checksum to Block Data Checksum register.
+ */
+static esp_err_t block_write_checksum(uint8_t checksum)
+{
+    uint8_t buf[2] = {BQ27441_CMD_BLOCK_DATA_CHECK, checksum};
+    return i2c_dev_support_write(s_dev, buf, 2, 50);
+}
+
+/**
+ * @brief Reprogram DESIGN_CAPACITY (battery capacity in mAh).
+ */
+esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
+{
+    if (!s_dev) return ESP_ERR_INVALID_STATE;
+
+    ESP_LOGI(TAG, "Starting capacity reprogramming: %u mAh", capacity_mah);
+
+    /* Step 1: Unlock the data flash by sending unseal codes */
+    ESP_LOGD(TAG, "Unsealing data flash...");
+    esp_err_t ret = ctrl_write(BQ27441_CTRL_UNSEAL_LOW);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write unseal code (low): %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    ret = ctrl_write(BQ27441_CTRL_UNSEAL_HIGH);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write unseal code (high): %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    /* Step 2: Read current design capacity bytes via Block Data interface */
+    ESP_LOGD(TAG, "Reading current data flash values...");
+    uint8_t cap_low = 0, cap_high = 0;
+    ret = block_read_byte(BQ27441_DESIGN_CAP_OFFSET, &cap_low);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read design cap low byte: %s", esp_err_to_name(ret));
+        cap_low = 0;
+    }
+
+    ret = block_read_byte(BQ27441_DESIGN_CAP_OFFSET + 1, &cap_high);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read design cap high byte: %s", esp_err_to_name(ret));
+        cap_high = 0;
+    }
+    uint16_t old_cap = (uint16_t)cap_low | ((uint16_t)cap_high << 8);
+    ESP_LOGI(TAG, "Current DESIGN_CAPACITY: %u mAh", old_cap);
+
+    /* Step 3: Write new capacity values */
+    ESP_LOGD(TAG, "Writing new capacity bytes...");
+    cap_low = (uint8_t)(capacity_mah & 0xFF);
+    cap_high = (uint8_t)((capacity_mah >> 8) & 0xFF);
+
+    ret = block_write_byte(BQ27441_DESIGN_CAP_OFFSET, cap_low);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write design cap low byte: %s", esp_err_to_name(ret));
+        goto seal_and_exit;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    ret = block_write_byte(BQ27441_DESIGN_CAP_OFFSET + 1, cap_high);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write design cap high byte: %s", esp_err_to_name(ret));
+        goto seal_and_exit;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));  /* Wait longer after writes before reading back */
+
+    ESP_LOGI(TAG, "Design capacity write complete (0x%02X 0x%02X → %u mAh)", cap_low, cap_high, capacity_mah);
+
+    /* Step 4: Recalculate and write checksum
+       BQ27441 checksum = 0xFF - (sum of bytes 0-30, excluding byte 31 which is the checksum itself) */
+    uint8_t block_sum = 0;
+    for (int i = 0; i < 31; i++) {  /* Only sum bytes 0-30, NOT byte 31 (checksum byte) */
+        uint8_t byte_val = 0;
+        esp_err_t read_ret = block_read_byte(i, &byte_val);
+        if (read_ret == ESP_OK) {
+            block_sum += byte_val;
+            ESP_LOGD(TAG, "  Byte[%d]=0x%02X, sum=0x%02X", i, byte_val, block_sum);
+        }
+    }
+    uint8_t new_checksum = 0xFF - block_sum;
+    
+    ESP_LOGI(TAG, "Checksum calculation: sum(0-30)=0x%02X, new_checksum=0xFF-0x%02X=0x%02X", 
+             block_sum, block_sum, new_checksum);
+    ret = block_write_checksum(new_checksum);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write checksum: %s", esp_err_to_name(ret));
+        goto seal_and_exit;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    ESP_LOGI(TAG, "Capacity reprogramming completed: %u mAh (was %u mAh)", capacity_mah, old_cap);
+
+seal_and_exit:
+    /* Step 5: Seal the data flash to protect configuration */
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_LOGD(TAG, "Sealing data flash...");
+    esp_err_t seal_ret = ctrl_write(BQ27441_CTRL_SEAL);
+    if (seal_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to seal data flash: %s", esp_err_to_name(seal_ret));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    /* Verify the new capacity was written */
+    uint16_t verify_cap = 0;
+    if (cmd_read16(BQ27441_CMD_NOM_CAP, &verify_cap) == ESP_OK) {
+        ESP_LOGI(TAG, "Verified DESIGN_CAPACITY: %u mAh", verify_cap);
+    }
+
+    return ret;
 }

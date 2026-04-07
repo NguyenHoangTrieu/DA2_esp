@@ -54,7 +54,7 @@ esp_err_t tca_init(void) {
     return ESP_ERR_INVALID_STATE;
   }
 
-  ESP_LOGI(TAG, "Initializing TCA6416A (scanning 0x20, 0x21)");
+  ESP_LOGI(TAG, "Initializing TCA6416A IOX1 at fixed address 0x%02X", TCA6416A_I2C_ADDR_0);
 
   // Configure RESET GPIO
   gpio_config_t io_conf = {
@@ -78,25 +78,18 @@ esp_err_t tca_init(void) {
   }
   gpio_isr_handler_add(TCA6416A_INT_PIN, tca_interrupt_handler, NULL);
 
-  // Scan I2C bus: try 0x20 first, then 0x21
-  uint8_t addrs[2] = {TCA6416A_I2C_ADDR_0, TCA6416A_I2C_ADDR_1};
-  esp_err_t ret = ESP_ERR_NOT_FOUND;
-  for (int i = 0; i < 2; i++) {
-    ret = i2c_dev_support_add_device(addrs[i], TCA6416A_I2C_FREQ_HZ, &tca_handle);
-    if (ret == ESP_OK) {
-      g_i2c_addr = addrs[i];
-      ret = tca_test_connection();
-      if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "TCA6416A found at 0x%02X", addrs[i]);
-        break;
-      }
-      i2c_dev_support_remove_device(tca_handle);
-      tca_handle = NULL;
-    }
+  /* IOX1 is always at 0x20 (ADDR=GND, fixed on WAN main board schematic) */
+  esp_err_t ret = i2c_dev_support_add_device(TCA6416A_I2C_ADDR_0, TCA6416A_I2C_FREQ_HZ, &tca_handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to add IOX1 device 0x20: %s", esp_err_to_name(ret));
+    return ret;
   }
-
-  if (ret != ESP_OK || !tca_handle) {
-    ESP_LOGE(TAG, "No TCA6416A found on I2C bus (tried 0x20, 0x21)");
+  g_i2c_addr = TCA6416A_I2C_ADDR_0;
+  ret = tca_test_connection();
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "IOX1 TCA6416A at 0x20 not responding");
+    i2c_dev_support_remove_device(tca_handle);
+    tca_handle = NULL;
     return ret;
   }
 

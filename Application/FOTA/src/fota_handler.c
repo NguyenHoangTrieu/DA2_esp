@@ -249,11 +249,12 @@ void advanced_ota_task(void *pvParameter)
 
     esp_http_client_config_t config = {
         .url = FOTA_CONFIG_FIRMWARE_UPGRADE_URL,
-#if FOTA_CONFIG_USE_CERT_BUNDLE
+#if FOTA_CONFIG_TB_USE_HTTPS && FOTA_CONFIG_USE_CERT_BUNDLE
         .crt_bundle_attach = esp_crt_bundle_attach,
-#else
+#elif FOTA_CONFIG_TB_USE_HTTPS && !FOTA_CONFIG_USE_CERT_BUNDLE
         .cert_pem = (char *)server_cert_pem_start,
 #endif
+        /* Plain HTTP: no TLS cert settings needed */
         .timeout_ms = FOTA_CONFIG_OTA_RECV_TIMEOUT,
         .keep_alive_enable = true,
         .buffer_size = 8 * 1024,
