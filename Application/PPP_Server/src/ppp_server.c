@@ -131,7 +131,7 @@ esp_err_t ppp_server_init() {
   s_ppp_config.uart.rx_io = PPP_UART_RX_PIN;
   s_ppp_config.uart.queue_size = PPP_UART_QUEUE_SIZE;
   s_ppp_config.uart.rx_buffer_size = PPP_UART_BUF_SIZE;
-
+  
   // Create PPP server task
   BaseType_t task_created =
       xTaskCreate(ppp_server_task, "ppp_server", PPP_SERVER_TASK_STACK_SIZE,

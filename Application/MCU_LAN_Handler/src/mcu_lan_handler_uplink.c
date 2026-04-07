@@ -262,7 +262,7 @@ static void uplink_processor_task(void *pvParameters) {
 
     // Extract header (big-endian)
     uint16_t header = (packet.payload[0] << 8) | packet.payload[1];
-    ESP_LOGI(TAG, "SPI RX: header=0x%04X, len=%u", header,
+    ESP_LOGD(TAG, "SPI RX: header=0x%04X, len=%u", header,
              packet.payload_length);
 
     // ===== Dispatch Frame =====
@@ -275,11 +275,11 @@ static void uplink_processor_task(void *pvParameters) {
           process_handshake(packet.payload, packet.payload_length);
         } else if (packet.payload[2] == 'R' && packet.payload[3] == 'T') {
           // RTC request
-          ESP_LOGI(TAG, "RTC request received");
+          ESP_LOGD(TAG, "RTC request received");
           // Avoid overwriting TX buffer while config/downlink is pending.
           if (g_config_cache_has_config || g_active_config_request_valid ||
               g_pending_downlink_valid) {
-            ESP_LOGI(TAG, "RTC response deferred (pending TX payload)");
+            ESP_LOGD(TAG, "RTC response deferred (pending TX payload)");
           } else {
             downlink_send_rtc_response();
           }
@@ -303,7 +303,7 @@ static void uplink_processor_task(void *pvParameters) {
       break;
 
     case WAN_COMM_HEADER_DQ: // Data Query from LAN
-      ESP_LOGI(TAG, "DQ request received from LAN MCU");
+      ESP_LOGD(TAG, "DQ request received from LAN MCU");
       process_data_query();
       break;
 
@@ -401,10 +401,10 @@ static esp_err_t perform_handshake_slave(void) {
   }
 
   // Debug: Log received packet
-  ESP_LOGI(TAG, "RX packet: len=%u", packet.payload_length);
-  ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
-                         packet.payload_length > 32 ? 32 : packet.payload_length, 
-                         ESP_LOG_INFO);
+  ESP_LOGD(TAG, "RX packet: len=%u", packet.payload_length);
+  // ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
+  //                        packet.payload_length > 32 ? 32 : packet.payload_length, 
+  //                        ESP_LOG_INFO);
 
   // Check for handshake request: [CF][0x01][fw_version(4)]
   if (packet.payload_length >= 7 && packet.payload[0] == 0x43 &&
@@ -691,7 +691,7 @@ static void process_data_query(void) {
     // Clear GPIO handshake once something has been served
     clear_data_ready();
   } else {
-    ESP_LOGI(TAG, "DQ received but nothing pending to send");
+    ESP_LOGD(TAG, "DQ received but nothing pending to send");
   }
 }
 

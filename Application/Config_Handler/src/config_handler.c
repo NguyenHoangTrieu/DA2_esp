@@ -9,6 +9,7 @@
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "esp_log.h"
+#include "DA2_esp.h"
 #include <ctype.h>
 
 /* UART switch: defined in DA2_esp.c — must route to LAN MCU before PPP/OTA */
@@ -46,7 +47,7 @@ QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
 config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;  
-config_server_type_t g_server_type = CONFIG_SERVERTYPE_HTTP;
+config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;  /* default to MQTT */
 bool is_internet_connected = false;
 
 static bool config_handler_running = false;
@@ -968,8 +969,6 @@ static void config_handler_task(void *arg) {
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
                     led_show_blue();
-                    mqtt_handler_task_stop(); // Stop MQTT task if running
-                    vTaskDelay(pdMS_TO_TICKS(5000));
                     fota_handler_task_start();
                     break;
                 }
@@ -1049,6 +1048,8 @@ static void config_handler_task(void *arg) {
                             uart_switch_route_to_lan_mcu();
                             vTaskDelay(pdMS_TO_TICKS(50));
                             if (!ppp_server_is_initialized()) {
+                                server_connect_stop(g_server_type);
+                                vTaskDelay(pdMS_TO_TICKS(5000));
                                 ppp_server_init();
                                 vTaskDelay(pdMS_TO_TICKS(200));
                             }

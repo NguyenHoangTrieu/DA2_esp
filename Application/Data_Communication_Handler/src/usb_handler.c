@@ -24,6 +24,8 @@ extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 extern config_internet_type_t g_internet_type;
 extern config_server_type_t g_server_type;
+extern http_config_data_t g_http_cfg;
+extern coap_config_data_t g_coap_cfg;
 
 #define GATEWAY_MODEL "ESP32S3_IoT_Gateway"
 #define GATEWAY_FW_VERSION "v1.2.0"
@@ -168,9 +170,9 @@ static void handle_cfsc_command_usb(void) {
 
   // Server settings
   const char *srv_type_str = (g_server_type == CONFIG_SERVERTYPE_MQTT) ? "MQTT"
-                             : (g_server_type == CONFIG_SERVERTYPE_HTTP)
-                                 ? "HTTP"
-                                 : "UNKNOWN";
+                             : (g_server_type == CONFIG_SERVERTYPE_COAP) ? "COAP"
+                             : (g_server_type == CONFIG_SERVERTYPE_HTTP) ? "HTTP"
+                             : "UNKNOWN";
   usb_send_kv("server_type", srv_type_str);
 
   // MQTT settings - thread-safe read
@@ -182,9 +184,31 @@ static void handle_cfsc_command_usb(void) {
     usb_send_kv("mqtt_device_token",
                 strlen(mqtt_cfg.device_token) > 0 ? "***HIDDEN***" : "");
     usb_send_kv("mqtt_attribute_topic", mqtt_cfg.attribute_topic);
+    usb_send_kv_int("mqtt_keepalive_s", mqtt_cfg.keepalive_s);
+    usb_send_kv_ulong("mqtt_timeout_ms", mqtt_cfg.timeout_ms);
   } else {
     usb_send_kv("mqtt_broker", "ERROR:MUTEX_TIMEOUT");
   }
+
+  // HTTP settings (plain global — only written by config_handler task)
+  usb_send_kv("http_url",           g_http_cfg.server_url);
+  usb_send_kv("http_auth_token",
+              strlen(g_http_cfg.auth_token) > 0 ? "***HIDDEN***" : "");
+  usb_send_kv_int("http_port",      g_http_cfg.port);
+  usb_send_kv_int("http_use_tls",   g_http_cfg.use_tls ? 1 : 0);
+  usb_send_kv_int("http_verify_server", g_http_cfg.verify_server ? 1 : 0);
+  usb_send_kv_ulong("http_timeout_ms", g_http_cfg.timeout_ms);
+
+  // CoAP settings (plain global — only written by config_handler task)
+  usb_send_kv("coap_host",          g_coap_cfg.host);
+  usb_send_kv("coap_resource_path", g_coap_cfg.resource_path);
+  usb_send_kv("coap_device_token",
+              strlen(g_coap_cfg.device_token) > 0 ? "***HIDDEN***" : "");
+  usb_send_kv_int("coap_port",      g_coap_cfg.port);
+  usb_send_kv_int("coap_use_dtls",  g_coap_cfg.use_dtls ? 1 : 0);
+  usb_send_kv_ulong("coap_ack_timeout_ms", g_coap_cfg.ack_timeout_ms);
+  usb_send_kv_int("coap_max_retransmit", g_coap_cfg.max_retransmit);
+  usb_send_kv_ulong("coap_rpc_poll_interval_ms", g_coap_cfg.rpc_poll_interval_ms);
 
   // WAN hardware stack ID (identifies which LTE adapter is connected)
   usb_send_kv("stack_wan_id", config_get_wan_stack_id());

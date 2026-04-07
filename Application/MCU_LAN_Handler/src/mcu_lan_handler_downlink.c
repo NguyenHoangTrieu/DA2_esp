@@ -150,7 +150,7 @@ void downlink_send_rtc_response(void) {
       (g_internet_status == INTERNET_STATUS_ONLINE) ? 1 : 0;
 
   lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
-  ESP_LOGI(TAG, "RTC response loaded: %s, net=%s", response.rtc_string,
+  ESP_LOGD(TAG, "RTC response loaded: %s, net=%s", response.rtc_string,
            response.network_status ? "ONLINE" : "OFFLINE");
 }
 
