@@ -301,11 +301,8 @@ void app_main(void) {
   };
   gpio_config(&iox_rst_cfg);
   gpio_set_level(TCA6416A_RESET_PIN, 0);
-  gpio_set_level(ADAPTER_RESET_GPIO, 0);
-  vTaskDelay(pdMS_TO_TICKS(10));           /* Hold reset low (active-low) */
-  gpio_set_level(TCA6416A_RESET_PIN, 1);  /* Release on-board IOX reset  */
-  gpio_set_level(ADAPTER_RESET_GPIO, 1);  /* Release adapter IOX reset   */
-  vTaskDelay(pdMS_TO_TICKS(20));           /* TCA6416A power-on: ≥4ms     */
+  gpio_set_level(ADAPTER_RESET_GPIO, 1);
+  vTaskDelay(pdMS_TO_TICKS(10));
   tca_init();               /* Init on-board TCA6416A @0x20 */
   i2c_dev_support_scan();   /* Both IOXes should now appear  */
 
