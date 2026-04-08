@@ -21,13 +21,18 @@
 #define FOTA_CONFIG_TB_USE_HTTPS        0
 
 /* ThingsBoard host — change to "demo.thingsboard.io" for cloud */
-#define FOTA_CONFIG_TB_HOST             "192.168.1.6"
+#define FOTA_CONFIG_TB_HOST             "192.168.0.224"
 
 /* Port: 8080 for local HTTP, 443 for demo.thingsboard.io HTTPS */
 #define FOTA_CONFIG_TB_PORT             8080
 
 /* Device Access Token from ThingsBoard Devices page */
-#define FOTA_CONFIG_TB_DEVICE_TOKEN     "CHANGE_ME_DEVICE_TOKEN_WAN"
+#define FOTA_CONFIG_TB_DEVICE_TOKEN     "Zfdvk6M9rEmw5fBj7TzP"
+
+/* Firmware package title and version — must match what was uploaded to
+ * ThingsBoard OTA Updates. ThingsBoard returns HTTP 400 without these. */
+#define FOTA_CONFIG_TB_FIRMWARE_TITLE   "DA2_esp"
+#define FOTA_CONFIG_TB_FIRMWARE_VERSION "1.1.1"
 
 /* Skip TLS certificate verification for local self-signed cert */
 #define FOTA_CONFIG_TB_SKIP_CERT_VERIFY 1
@@ -38,11 +43,15 @@
 #if FOTA_CONFIG_TB_USE_HTTPS
 #define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
     "https://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
-    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware"
+    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
+    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
+    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
 #else
 #define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
     "http://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
-    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware"
+    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
+    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
+    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
 #endif
 
 /* Enable certificate bundle — only needed for HTTPS with a public CA cert.
@@ -80,12 +89,12 @@
 /* Enable Ethernet connection */
 #define FOTA_CONFIG_CONNECT_ETHERNET 0
 
-/* OTA Receive Timeout in milliseconds */
-/* GitHub release download has 2-3 TCP connection hops (github.com → CDN redirects).
- * Each hop = TCP connect (~1-3s) + TLS handshake (~2-4s).
- * 5s was too short — third TCP connect timed out.
- * 120s gives 40s per hop with margin for WiFi/NAPT slowdown and SYN retries. */
-#define FOTA_CONFIG_OTA_RECV_TIMEOUT 120000
+/* OTA Receive Timeout in milliseconds.
+ * 30s is plenty for a local HTTP server — file is ~1.6 MB over LAN. */
+#define FOTA_CONFIG_OTA_RECV_TIMEOUT 30000
+
+/* TCP connect timeout for connectivity pre-check (ms) */
+#define FOTA_CONFIG_CONNECTIVITY_CHECK_TIMEOUT_MS 5000
 
 /* Enable partial HTTP download (for large firmware images) */
 #define FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD 0

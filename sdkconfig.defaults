@@ -5,3 +5,8 @@
 # mbedTLS ssl_context needs ~40KB contiguous → MBEDTLS_ERR_SSL_ALLOC_FAILED (-0x008D).
 # EXTERNAL_MEM_ALLOC makes all mbedTLS heap calls use heap_caps_malloc(MALLOC_CAP_SPIRAM).
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# Allow esp_https_ota to work with plain HTTP URLs (ThingsBoard local HTTP mode).
+# Without this, esp_https_ota rejects the http:// URL with "No option for server
+# verification is enabled" even though TLS is not used for HTTP connections.
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y

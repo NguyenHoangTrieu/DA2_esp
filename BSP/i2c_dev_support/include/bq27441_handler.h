@@ -39,9 +39,10 @@ extern "C" {
 #define BQ27441_CTRL_STATUS     0x0000
 #define BQ27441_CTRL_DEVICE_TYPE 0x0001
 #define BQ27441_CTRL_FW_VERSION 0x0002
-#define BQ27441_CTRL_UNSEAL_LOW  0x0414  /* First half of unseal sequence */
-#define BQ27441_CTRL_UNSEAL_HIGH 0x3672  /* Second half of unseal sequence (completes 0x3672_0414) */
+#define BQ27441_CTRL_UNSEAL_KEY  0x8000  /* Default unseal key (sent twice: 0x8000 then 0x8000) */
 #define BQ27441_CTRL_SEAL        0x0020  /* Seal data flash (lock configuration) */
+#define BQ27441_CTRL_SET_CFGUPDATE 0x0013 /* Enter CONFIG UPDATE mode (required before block data access) */
+#define BQ27441_CTRL_SOFT_RESET  0x0042  /* Exit CONFIG UPDATE mode and commit data flash write */
 
 /* Data Flash Block Interface - for accessing/modifying design capacity */
 #define BQ27441_CMD_BLOCK_DATA_CTRL  0x61  /* Block Data Control status */
@@ -52,9 +53,10 @@ extern "C" {
 
 /* Data Flash class IDs + offsets */
 #define BQ27441_DF_CLASS_POWER      0x52   /* Class 82 = Power Register Settings */
-#define BQ27441_DESIGN_CAP_OFFSET   0x0A   /* Design Capacity at offset 10-11 within power class */
+#define BQ27441_DESIGN_CAP_OFFSET   0x00   /* Design Capacity at offset 0-1 within class 82 (big-endian, MSB first) */
 
 /* Flags bit definitions */
+#define BQ27441_FLAG_CFGUPD     (1 << 4)    /* CONFIG UPDATE mode active (block data access enabled) */
 #define BQ27441_FLAG_DSG        (1 << 0)    /* Discharging */
 #define BQ27441_FLAG_SOCF       (1 << 1)    /* State of Charge Final (critical low) */
 #define BQ27441_FLAG_SOC1       (1 << 2)    /* SoC threshold 1 */

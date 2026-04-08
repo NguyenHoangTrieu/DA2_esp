@@ -31,7 +31,7 @@ extern "C" {
 #endif
 
 /* ===== Constants ===== */
-#define STACK_HANDLER_MAX_STACKS  1     /**< WAN has exactly one stack              */
+#define STACK_HANDLER_MAX_STACKS  2     /**< 0 = on-board IOX@0x20, 1 = adapter IOX@0x21 */
 #define STACK_GPIO_PIN_COUNT      16    /**< TCA6416A 16-pin direct mapping          */
 #define STACK_GPIO_PIN_NONE       0xFF  /**< Sentinel: no pin assigned              */
 

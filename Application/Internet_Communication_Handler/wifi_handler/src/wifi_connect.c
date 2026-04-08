@@ -11,8 +11,8 @@
 
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
-#define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_SSID "TickLab_2.4G2"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS "T1ckL@b5917"      // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define WIFI_ESP_MAXIMUM_RETRY 10000

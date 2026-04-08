@@ -12,13 +12,14 @@ static const char *TAG = "MAIN";
 TaskHandle_t main_task_handle = NULL;
 
 /* ===== GPIO =========================================================== */
-#define USB_SWITCH_PIN GPIO_NUM_3
+#define GPIO3_POWER_RGB_CTRL GPIO_NUM_3  /* Toggle power rails + RGB LED */
 #define UART_SWITCH_SEL_GPIO                                                   \
   GPIO_NUM_46 // UART_SEL: LOW=LAN MCU (SW1), HIGH=HMI LCD (SW2)
-
+#define ADAPTER_RESET_GPIO GPIO_NUM_48 /* Output: reset adapter IOX at boot */
 /* ===== Task Notification Values ======================================= */
 /* Each must be a unique value — eSetValueWithOverwrite overwrites        */
 #define NOTIFY_BUTTON_PRESS 1     /* GPIO45: toggle CONFIG/NORMAL       */
+#define NOTIFY_GPIO3_PRESS 2      /* GPIO3: toggle power/RGB            */
 #define NOTIFY_UART_MODE_SWITCH 3 /* UART callback: CONFIG or NORMAL    */
 
 /* ===== Application State ============================================== */
@@ -30,6 +31,7 @@ typedef enum {
 static app_mode_t current_mode = APP_MODE_NORMAL;
 static int requested_mode = -1; /* set by uart_mode_switch_callback */
 static uint32_t last_isr_tick = 0;
+static bool power_rgb_enabled = true; /* GPIO3: power+RGB state */
 
 /**
  * @brief GPIO45 ISR - Button press
@@ -41,6 +43,24 @@ static void gpio45_isr_handler(void *arg) {
     BaseType_t xTaskWoken = pdFALSE;
     if (main_task_handle) {
       xTaskNotifyFromISR(main_task_handle, NOTIFY_BUTTON_PRESS,
+                         eSetValueWithOverwrite, &xTaskWoken);
+    }
+    if (xTaskWoken == pdTRUE) {
+      portYIELD_FROM_ISR();
+    }
+  }
+}
+
+/**
+ * @brief GPIO3 ISR - Toggle power and RGB LED
+ */
+static void gpio3_isr_handler(void *arg) {
+  uint32_t now = xTaskGetTickCountFromISR();
+  if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
+    last_isr_tick = now;
+    BaseType_t xTaskWoken = pdFALSE;
+    if (main_task_handle) {
+      xTaskNotifyFromISR(main_task_handle, NOTIFY_GPIO3_PRESS,
                          eSetValueWithOverwrite, &xTaskWoken);
     }
     if (xTaskWoken == pdTRUE) {
@@ -61,27 +81,16 @@ void setup_gpio45_interrupt(void) {
   ESP_LOGI(TAG, "GPIO45 button interrupt configured");
 }
 
-/* =====================================================================
- *  USB Switch
- * ===================================================================== */
+void setup_gpio3_interrupt(void) {
+  gpio_config_t gpio3_cfg = {.pin_bit_mask = BIT64(GPIO3_POWER_RGB_CTRL),
+                             .mode = GPIO_MODE_INPUT,
+                             .pull_up_en = GPIO_PULLUP_ENABLE,
+                             .intr_type = GPIO_INTR_NEGEDGE};
 
-static void usb_switch_init(void) {
-  gpio_config_t usb_cfg = {
-      .pin_bit_mask = (1ULL << USB_SWITCH_PIN),
-      .mode = GPIO_MODE_OUTPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE,
-  };
-  ESP_ERROR_CHECK(gpio_config(&usb_cfg));
-  gpio_set_level(USB_SWITCH_PIN, 0); // Default LOW
+  ESP_ERROR_CHECK(gpio_config(&gpio3_cfg));
+  ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO3_POWER_RGB_CTRL, gpio3_isr_handler, NULL));
 
-  ESP_LOGI(TAG, "USB switch initialized (GPIO %d)", USB_SWITCH_PIN);
-}
-
-static void usb_switch_set(bool high) {
-  gpio_set_level(USB_SWITCH_PIN, high ? 1 : 0);
-  ESP_LOGI(TAG, "USB switch -> %s", high ? "HOST" : "MODEM");
+  ESP_LOGI(TAG, "GPIO3 power/RGB interrupt configured");
 }
 
 /* =====================================================================
@@ -162,9 +171,6 @@ static void internet_connect_start(config_internet_type_t type) {
   switch (type) {
   case CONFIG_INTERNET_LTE:
     ESP_LOGI(TAG, "Starting LTE connection");
-    usb_switch_init();
-    usb_switch_set(false); /* USB -> modem */
-    vTaskDelay(pdMS_TO_TICKS(100));
     lte_connect_task_start();
     break;
   case CONFIG_INTERNET_WIFI:
@@ -229,7 +235,6 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
     eth_connect_task_stop();
   }
 
-  usb_switch_set(true); /* USB -> host / config tool */
   vTaskDelay(pdMS_TO_TICKS(100));
   jtag_task_start();
 
@@ -285,10 +290,26 @@ void app_main(void) {
   uart_switch_init(); /* UART_SEL GPIO46: default to LAN MCU   */
   ESP_ERROR_CHECK(config_init());
   ESP_ERROR_CHECK(i2c_dev_support_init());
-  tca_init();               /* configures GPIO38 as output HIGH, resets & scans TCA6416A */
-  i2c_dev_support_scan();
 
-  stack_handler_init(); /* identify WAN connector            */
+  /* Configure both IOX reset pins as outputs, and assert reset (active-low) */
+  gpio_config_t iox_rst_cfg = {
+      .pin_bit_mask = (1ULL << TCA6416A_RESET_PIN) | (1ULL << ADAPTER_RESET_GPIO),
+      .mode         = GPIO_MODE_OUTPUT,
+      .pull_up_en   = GPIO_PULLUP_DISABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type    = GPIO_INTR_DISABLE,
+  };
+  gpio_config(&iox_rst_cfg);
+  gpio_set_level(TCA6416A_RESET_PIN, 0);
+  gpio_set_level(ADAPTER_RESET_GPIO, 0);
+  vTaskDelay(pdMS_TO_TICKS(10));           /* Hold reset low (active-low) */
+  gpio_set_level(TCA6416A_RESET_PIN, 1);  /* Release on-board IOX reset  */
+  gpio_set_level(ADAPTER_RESET_GPIO, 1);  /* Release adapter IOX reset   */
+  vTaskDelay(pdMS_TO_TICKS(20));           /* TCA6416A power-on: ≥4ms     */
+  tca_init();               /* Init on-board TCA6416A @0x20 */
+  i2c_dev_support_scan();   /* Both IOXes should now appear  */
+
+  stack_handler_init();     /* Init on-board (0x20) + probe adapter (0x21) */
 
   /* Turn on DC Fan via IOX P15 */
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_15, true);
@@ -300,12 +321,14 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_12, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, false);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true);
-
+  if (stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true) != ESP_OK)
+      ESP_LOGE(TAG, "Failed to set direction on adapter IOX 0x21 P04");
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, false); /* P10 = EN_3V3 */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* P11 = EN_5V */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true); /* P12 = RLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true); /* P13 = GLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true); /* P14 = BLED off */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, false); /* ADAPTER POWER OFF */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   init_led_strip();
@@ -319,6 +342,7 @@ void app_main(void) {
   /* Assign handle BEFORE enabling interrupts (ISR must not see NULL)  */
   main_task_handle = xTaskGetCurrentTaskHandle();
   setup_gpio45_interrupt();
+  setup_gpio3_interrupt();
 
   /* --- ESP-IDF network stack ------------------------------------------ */
   ESP_ERROR_CHECK(esp_netif_init());
@@ -349,6 +373,7 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO45 = toggle CONFIG/NORMAL");
+  ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
 
   /* --- Main event loop ------------------------------------------------ */
   for (;;) {
@@ -362,6 +387,22 @@ void app_main(void) {
       } else {
         switch_to_normal_mode();
       }
+    }
+
+    /* GPIO3 — toggle power and RGB LED */
+    if (notif == NOTIFY_GPIO3_PRESS) {
+      power_rgb_enabled = !power_rgb_enabled;
+      
+      /* Toggle power rails (P10, P11) */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_10, power_rgb_enabled);
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_11, power_rgb_enabled);
+      stack_handler_gpio_write(1, STACK_GPIO_PIN_04, power_rgb_enabled); // ADAPTER POWER
+      /* Toggle RGB LED (P12, P13, P14) */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_12, !power_rgb_enabled);
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_13, !power_rgb_enabled);
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_14, !power_rgb_enabled);
+      
+      ESP_LOGI(TAG, "Power/RGB -> %s", power_rgb_enabled ? "ON" : "OFF");
     }
 
     /* UART command — CONFIG or NORMAL */
