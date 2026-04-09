@@ -89,19 +89,11 @@ esp_err_t bq27441_init(void)
         ESP_LOGW(TAG, "To reprogram: battery must be discharged, then use unsealing procedure");
     }
 
-    /* Enable Impedance Track so AVG_CURRENT (0x10) returns valid data.
-     * IT_ENABLE requires UNSEALED/FULL_ACCESS mode, so unseal first then reseal. */
-    ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    vTaskDelay(pdMS_TO_TICKS(200));
-    ctrl_write(BQ27441_CTRL_EXIT_HIBERNATE);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    ctrl_write(BQ27441_CTRL_IT_ENABLE);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    ctrl_write(BQ27441_CTRL_SEAL);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    ESP_LOGI(TAG, "Impedance Track enabled");
+    /* IT_ENABLE is handled by bq27441_reprogram_capacity() after SOFT_RESET.
+     * Do NOT issue IT_ENABLE here — it starts the IT algorithm which blocks CFGUPDATE
+     * for up to 2 seconds and interferes with the subsequent reprogram sequence.
+     * If no reprogram is needed, IT runs automatically from the ITEN bit in data flash
+     * (factory default = 1, set by bq27441_reprogram_capacity on first program). */
 
     return ESP_OK;
 }
@@ -212,13 +204,13 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
     if (ret != ESP_OK) { ESP_LOGE(TAG, "Unseal #2 failed: %s", esp_err_to_name(ret)); return ret; }
     vTaskDelay(pdMS_TO_TICKS(200));  /* Allow IC to process security state transition */
 
-    /* ---- 1b. Verify unseal via CONTROL_STATUS — bits[14:13]: 01=Unsealed, 11=Sealed ---- */
+    /* ---- 1b. Verify unseal via CONTROL_STATUS — bits[15:14]: 00=FullAccess, 01=Unsealed, 11=Sealed ---- */
     {
         uint16_t ctrl_status = 0;
         ctrl_write(BQ27441_CTRL_STATUS);   /* 0x0000: request CONTROL_STATUS */
         vTaskDelay(pdMS_TO_TICKS(5));
         cmd_read16(BQ27441_CMD_CONTROL, &ctrl_status);
-        uint8_t sec = (uint8_t)((ctrl_status >> 13) & 0x03);
+        uint8_t sec = (uint8_t)((ctrl_status >> 14) & 0x03);  /* SEC = bits[15:14] per TRM */
         ESP_LOGI(TAG, "CONTROL_STATUS=0x%04X  SECURITY=%u (%s)",
                  ctrl_status, sec,
                  sec == 0x01 ? "Unsealed" : sec == 0x00 ? "FullAccess" : "Sealed");
@@ -242,9 +234,9 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
         goto seal;
     }
 
-    /* ---- 3. Poll FLAGS[4] (CFGUPD) — up to 1 s ---- */
+    /* ---- 3. Poll FLAGS[4] (CFGUPD) — up to 3 s (IT algorithm may delay entry by ~1-2 s) ---- */
     flags = 0;
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 60; i++) {
         vTaskDelay(pdMS_TO_TICKS(50));
         if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK && (flags & BQ27441_FLAG_CFGUPD)) break;
     }
