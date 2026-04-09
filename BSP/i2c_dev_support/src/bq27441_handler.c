@@ -1,6 +1,23 @@
 /**
  * @file bq27441_handler.c
  * @brief BQ27441DRZR-G1B Battery Fuel Gauge I2C Driver Implementation
+ *
+ * FIX LOG:
+ *  [FIX-1] BQ27441_DF_CLASS_STATE = 0x52 (subclass 82 "State") replaces
+ *          the wrong BQ27441_DF_CLASS_POWER constant. DESIGN_CAPACITY and
+ *          DESIGN_ENERGY live in subclass 82, not any "Power" subclass.
+ *
+ *  [FIX-2] DESIGN_ENERGY = capacity_mah * 37 / 10 (≈ 3.7 V nominal),
+ *          not capacity_mah (which implied ≈ 1 V, a 3.7× error).
+ *
+ *  [FIX-3] Checksum computed from the local modified block[] immediately
+ *          after modification — no read from 0x60, no block re-read.
+ *          Reading 0x60 mid-sequence resets the BQ27441's internal block
+ *          data state machine, causing a NACK on the subsequent write to
+ *          0x60 (observed as ESP_ERR_INVALID_RESPONSE from i2c_master_transmit).
+ *
+ *  [FIX-4] Post-write verification and bq27441_read_design_capacity()
+ *          both use BQ27441_DF_CLASS_STATE.
  */
 
 #include "bq27441_handler.h"
@@ -13,51 +30,53 @@ static const char *TAG = "BQ27441";
 static i2c_master_dev_handle_t s_dev = NULL;
 
 /* ------------------------------------------------------------------ */
-/*  Low-level helpers                                                   */
+/* Data flash subclass constants                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * @brief Read a 16-bit standard command value (little-endian).
+/*
+ * Subclass 82 / 0x52 = "State"  (TRM SLUUAC9, Table 17)
+ *   Offset 10-11 : Design Capacity  (big-endian, mAh, default 1000)
+ *   Offset 12-13 : Design Energy    (big-endian, mWh, default 3700)
+ *
+ * NOT subclass 34 / 0x22 = "Power" (charge/discharge thresholds).
  */
+#define BQ27441_DF_CLASS_STATE   0x52u   /* [FIX-1] */
+
+/* ------------------------------------------------------------------ */
+/* Low-level helpers                                                    */
+/* ------------------------------------------------------------------ */
+
 static esp_err_t cmd_read16(uint8_t cmd, uint16_t *val)
 {
     uint8_t buf[2];
     esp_err_t ret = i2c_dev_support_write_read(s_dev, &cmd, 1, buf, 2, 50);
-    if (ret == ESP_OK) {
-        *val = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);  /* little-endian */
-    }
+    if (ret == ESP_OK)
+        *val = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
     return ret;
 }
 
-/**
- * @brief Write a 16-bit sub-command to the Control() register.
- */
 static esp_err_t ctrl_write(uint16_t sub_cmd)
 {
-    uint8_t buf[3] = {
-        BQ27441_CMD_CONTROL,
-        (uint8_t)(sub_cmd & 0xFF),
-        (uint8_t)(sub_cmd >> 8)
-    };
+    uint8_t buf[3] = {BQ27441_CMD_CONTROL,
+                      (uint8_t)(sub_cmd & 0xFF),
+                      (uint8_t)(sub_cmd >> 8)};
     return i2c_dev_support_write(s_dev, buf, 3, 50);
 }
 
 /* ------------------------------------------------------------------ */
-/*  Public API                                                          */
+/* Public API                                                           */
 /* ------------------------------------------------------------------ */
 
 esp_err_t bq27441_init(void)
 {
     esp_err_t ret = i2c_dev_support_add_device(BQ27441_I2C_ADDR,
-                                               BQ27441_I2C_FREQ_HZ,
-                                               &s_dev);
+                                               BQ27441_I2C_FREQ_HZ, &s_dev);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add I2C device (addr=0x%02X): %s",
                  BQ27441_I2C_ADDR, esp_err_to_name(ret));
         return ret;
     }
 
-    /* Read device type via Control(DEVICE_TYPE) → returns 0x0421 for BQ27441-G1 */
     ret = ctrl_write(BQ27441_CTRL_DEVICE_TYPE);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "BQ27441 not responding: %s", esp_err_to_name(ret));
@@ -70,30 +89,20 @@ esp_err_t bq27441_init(void)
         ESP_LOGE(TAG, "Failed to read device type: %s", esp_err_to_name(ret));
         return ret;
     }
-
     ESP_LOGI(TAG, "BQ27441 found (device type=0x%04X)", dev_type);
 
-    /* Read initial status */
     uint16_t flags = 0;
     cmd_read16(BQ27441_CMD_FLAGS, &flags);
-    bool bat_present = (flags & BQ27441_FLAG_BAT_DET) != 0;
-    ESP_LOGI(TAG, "Battery %s", bat_present ? "detected" : "NOT detected");
+    ESP_LOGI(TAG, "Battery %s",
+             (flags & BQ27441_FLAG_BAT_DET) ? "detected" : "NOT detected");
 
-    /* Read nominal capacity (DESIGN_CAPACITY set during manufacturing or by unsealing) */
     uint16_t nom_cap = 0;
     cmd_read16(BQ27441_CMD_NOM_CAP, &nom_cap);
     ESP_LOGI(TAG, "Nominal Capacity: %u mAh", nom_cap);
 
-    if (nom_cap != 3000) {
-        ESP_LOGW(TAG, "Nominal capacity is %u mAh, expected 3000 mAh. SoC may be inaccurate.", nom_cap);
-        ESP_LOGW(TAG, "To reprogram: battery must be discharged, then use unsealing procedure");
-    }
-
-    /* IT_ENABLE is handled by bq27441_reprogram_capacity() after SOFT_RESET.
-     * Do NOT issue IT_ENABLE here — it starts the IT algorithm which blocks CFGUPDATE
-     * for up to 2 seconds and interferes with the subsequent reprogram sequence.
-     * If no reprogram is needed, IT runs automatically from the ITEN bit in data flash
-     * (factory default = 1, set by bq27441_reprogram_capacity on first program). */
+    if (nom_cap != 3000)
+        ESP_LOGW(TAG, "Nominal capacity is %u mAh, expected 3000 mAh. "
+                      "SoC may be inaccurate.", nom_cap);
 
     return ESP_OK;
 }
@@ -109,9 +118,8 @@ esp_err_t bq27441_read_soc_pct(uint8_t *soc_pct)
     if (!s_dev || !soc_pct) return ESP_ERR_INVALID_ARG;
     uint16_t raw;
     esp_err_t ret = cmd_read16(BQ27441_CMD_SOC, &raw);
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK)
         *soc_pct = (raw > 100) ? 100 : (uint8_t)raw;
-    }
     return ret;
 }
 
@@ -126,9 +134,8 @@ esp_err_t bq27441_read_avg_current_ma(int16_t *current_ma)
     if (!s_dev || !current_ma) return ESP_ERR_INVALID_ARG;
     uint16_t raw;
     esp_err_t ret = cmd_read16(BQ27441_CMD_AVG_CURRENT, &raw);
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK)
         *current_ma = (int16_t)raw;
-    }
     return ret;
 }
 
@@ -139,11 +146,11 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
     uint16_t raw_v, raw_soc, raw_cur, raw_pwr, raw_flags;
     esp_err_t ret;
 
-    ret = cmd_read16(BQ27441_CMD_VOLTAGE,     &raw_v);    if (ret != ESP_OK) return ret;
-    ret = cmd_read16(BQ27441_CMD_SOC,         &raw_soc);  if (ret != ESP_OK) return ret;
-    ret = cmd_read16(BQ27441_CMD_AVG_CURRENT, &raw_cur);  if (ret != ESP_OK) return ret;
-    ret = cmd_read16(BQ27441_CMD_AVG_POWER,   &raw_pwr);  if (ret != ESP_OK) return ret;
-    ret = cmd_read16(BQ27441_CMD_FLAGS,       &raw_flags); if (ret != ESP_OK) return ret;
+    ret = cmd_read16(BQ27441_CMD_VOLTAGE,     &raw_v);     if (ret != ESP_OK) return ret;
+    ret = cmd_read16(BQ27441_CMD_SOC,          &raw_soc);   if (ret != ESP_OK) return ret;
+    ret = cmd_read16(BQ27441_CMD_AVG_CURRENT,  &raw_cur);   if (ret != ESP_OK) return ret;
+    ret = cmd_read16(BQ27441_CMD_AVG_POWER,    &raw_pwr);   if (ret != ESP_OK) return ret;
+    ret = cmd_read16(BQ27441_CMD_FLAGS,        &raw_flags); if (ret != ESP_OK) return ret;
 
     status->voltage_mv      = raw_v;
     status->soc_pct         = (raw_soc > 100) ? 100 : (uint8_t)raw_soc;
@@ -158,114 +165,134 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
 }
 
 /* ================================================================== */
-/*  Data Flash — Capacity Reprogramming                              */
+/* Data Flash — Capacity Reprogramming                                  */
 /* ================================================================== */
 
-/**
- * @brief Reprogram DESIGN_CAPACITY in data memory class 82 (Power).
+/*
+ * BQ27441-G1 CFGUPDATE block-data write sequence (TRM SLUUAC9 §3.2):
  *
- * Correct BQ27441-G1 data flash write sequence:
- *  1.  Unseal: CONTROL(0x8000) twice  [default key 0x80008000]
- *  2.  Enter CFGUPDATE: CONTROL(0x0013)
- *  3.  Poll FLAGS[4] (CFGUPD) until = 1  (up to 2.5 s)
- *  4.  BlockDataControl(0x61) = 0x00    [enable block data access]
- *  5.  DataFlashClass(0x3E)   = 0x52    [class 82 = Power]
- *  6.  DataFlashBlock(0x3F)   = 0x00    [block 0: bytes 0-31]
- *  7.  Read 32 bytes from BlockData(0x40)
- *  8.  Modify bytes 0-1: DESIGN_CAPACITY big-endian (MSB first)
- *  9.  Write modified bytes to 0x40 and 0x41
- *  10. Checksum = 0xFF - sum(all 32 modified bytes)
- *  11. Write checksum to BlockDataChecksum(0x60)
- *  12. SOFT_RESET: CONTROL(0x0042)  [commit + exit CFGUPDATE]
- *  13. Poll FLAGS[4] until = 0
- *  14. Seal: CONTROL(0x0020)
- *
- * Note: CMD_NOM_CAP (0x08) returns NominalAvailableCapacity (remaining charge),
- *       NOT DESIGN_CAPACITY. Verify via a second block-data read if needed.
- *       SoC will be inaccurate until a full charge→discharge conditioning cycle.
+ *  1.  Unseal  : CONTROL(0x8000) × 2
+ *  1b. Verify  : CONTROL_STATUS SEC bits must be 00 or 01
+ *  1c. Wake    : CONTROL(EXIT_HIBERNATE)
+ *  2.  Mode    : CONTROL(SET_CFGUPDATE = 0x0013)
+ *  3.  Poll    : FLAGS[4] (CFGUPD) = 1, timeout 3 s
+ *  4.  Enable  : write 0x00 to reg 0x61 (BlockDataControl)
+ *  5.  Class   : write 0x52 to reg 0x3E (DataFlashClass)   [FIX-1]
+ *  6.  Block   : write 0x00 to reg 0x3F (DataFlashBlock = block 0)
+ *  7.  Read    : 32 bytes from reg 0x40 → local block[]
+ *  8.  Modify  : block[10-11] = cap (big-endian)
+ *                block[12-13] = energy = cap * 3.7 (big-endian) [FIX-2]
+ *  9.  Write   : 4 bytes individually to 0x4A, 0x4B, 0x4C, 0x4D
+ *  10. Checksum: new_chk = 0xFF - (sum of local block[0..31] & 0xFF)
+ *                *** Computed from local buffer — NO read from 0x60 ***
+ *                *** Reading 0x60 resets chip state → NACK on write ***
+ *                [FIX-3]
+ *  11. Commit  : write new_chk to reg 0x60
+ *  12. Reset   : CONTROL(SOFT_RESET = 0x0042), wait 500 ms
+ *  13. Poll    : FLAGS[4] (CFGUPD) = 0
+ *  14. Re-unseal, verify data flash, IT_ENABLE, Seal
  */
 esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
 {
     if (!s_dev) return ESP_ERR_INVALID_STATE;
 
-    esp_err_t ret = ESP_OK;
+    esp_err_t ret   = ESP_OK;
     uint16_t  flags = 0;
     uint8_t   buf[2];
     bool      did_write = false;
 
-    ESP_LOGI(TAG, "Starting capacity reprogramming: %u mAh", capacity_mah);
+    /* [FIX-2] Design Energy = cap × 3.7 V */
+    uint32_t  e32             = ((uint32_t)capacity_mah * 37u) / 10u;
+    uint16_t  design_energy   = (e32 > 0xFFFFu) ? 0xFFFFu : (uint16_t)e32;
 
-    /* ---- 1. Unseal with default key: write 0x8000 twice ---- */
+    ESP_LOGI(TAG, "Starting capacity reprogramming: %u mAh / %u mWh",
+             capacity_mah, design_energy);
+
+    /* ---- 1. Unseal ---- */
     ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "Unseal #1 failed: %s", esp_err_to_name(ret)); return ret; }
-    vTaskDelay(pdMS_TO_TICKS(50));   /* Allow IC to process first key */
-
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unseal #1 failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));
     ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "Unseal #2 failed: %s", esp_err_to_name(ret)); return ret; }
-    vTaskDelay(pdMS_TO_TICKS(200));  /* Allow IC to process security state transition */
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Unseal #2 failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(200));
 
-    /* ---- 1b. Verify unseal via CONTROL_STATUS — bits[15:14]: 00=FullAccess, 01=Unsealed, 11=Sealed ---- */
+    /* ---- 1b. Verify security state ---- */
     {
-        uint16_t ctrl_status = 0;
-        ctrl_write(BQ27441_CTRL_STATUS);   /* 0x0000: request CONTROL_STATUS */
+        uint16_t cs = 0;
+        ctrl_write(BQ27441_CTRL_STATUS);
         vTaskDelay(pdMS_TO_TICKS(5));
-        cmd_read16(BQ27441_CMD_CONTROL, &ctrl_status);
-        uint8_t sec = (uint8_t)((ctrl_status >> 14) & 0x03);  /* SEC = bits[15:14] per TRM */
-        ESP_LOGI(TAG, "CONTROL_STATUS=0x%04X  SECURITY=%u (%s)",
-                 ctrl_status, sec,
-                 sec == 0x01 ? "Unsealed" : sec == 0x00 ? "FullAccess" : "Sealed");
+        cmd_read16(BQ27441_CMD_CONTROL, &cs);
+        uint8_t sec = (uint8_t)((cs >> 14) & 0x03);
+        ESP_LOGI(TAG, "CONTROL_STATUS=0x%04X  SEC=%u (%s)", cs, sec,
+                 sec == 0x00 ? "FullAccess" :
+                 sec == 0x01 ? "Unsealed" : "Sealed");
         if (sec == 0x03) {
-            ESP_LOGE(TAG, "Device still SEALED after unseal attempt — reprogram skipped");
+            ESP_LOGE(TAG, "Device still SEALED — aborting");
             ret = ESP_ERR_NOT_SUPPORTED;
-            goto seal;  /* skip CFGUPDATE entirely, go straight to seal (no-op) */
+            goto seal;
         }
     }
 
-    /* ---- 1c. EXIT_HIBERNATE (requires UNSEALED) — BQ27441 may be in hibernate ---- */
-    /* If the device entered hibernate before this call, SET_CFGUPDATE will be silently
-     * ignored even when unsealed. Wake the IC first, then wait for it to settle. */
+    /* ---- 1c. Exit hibernate ---- */
     ctrl_write(BQ27441_CTRL_EXIT_HIBERNATE);
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    /* ---- 2. Enter CFGUPDATE mode ---- */
+    /* ---- 2. SET_CFGUPDATE ---- */
     ret = ctrl_write(BQ27441_CTRL_SET_CFGUPDATE);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SET_CFGUPDATE failed: %s", esp_err_to_name(ret));
         goto seal;
     }
 
-    /* ---- 3. Poll FLAGS[4] (CFGUPD) — up to 3 s (IT algorithm may delay entry by ~1-2 s) ---- */
-    flags = 0;
+    /* ---- 3. Poll CFGUPD flag, up to 3 s ---- */
     for (int i = 0; i < 60; i++) {
         vTaskDelay(pdMS_TO_TICKS(50));
-        if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK && (flags & BQ27441_FLAG_CFGUPD)) break;
+        if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK &&
+            (flags & BQ27441_FLAG_CFGUPD))
+            break;
     }
     if (!(flags & BQ27441_FLAG_CFGUPD)) {
-        ESP_LOGE(TAG, "CFGUPDATE mode timeout (FLAGS=0x%04X)", flags);
+        ESP_LOGE(TAG, "CFGUPDATE timeout (FLAGS=0x%04X)", flags);
         ret = ESP_ERR_TIMEOUT;
         goto soft_reset;
     }
     ESP_LOGD(TAG, "CFGUPDATE active (FLAGS=0x%04X)", flags);
 
     /* ---- 4. Enable block data access ---- */
-    buf[0] = BQ27441_CMD_BLOCK_DATA_CTRL;  buf[1] = 0x00;
+    buf[0] = BQ27441_CMD_BLOCK_DATA_CTRL; buf[1] = 0x00;
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "BlockDataControl failed: %s", esp_err_to_name(ret)); goto soft_reset; }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "BlockDataControl failed: %s", esp_err_to_name(ret));
+        goto soft_reset;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* ---- 5. Select class 82 (Power) ---- */
-    buf[0] = BQ27441_CMD_BLOCK_DATA_CLASS; buf[1] = BQ27441_DF_CLASS_POWER;
+    /* ---- 5. Select subclass 82 (State) [FIX-1] ---- */
+    buf[0] = BQ27441_CMD_BLOCK_DATA_CLASS;
+    buf[1] = BQ27441_DF_CLASS_STATE;  /* 0x52 */
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "DataFlashClass failed: %s", esp_err_to_name(ret)); goto soft_reset; }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "DataFlashClass failed: %s", esp_err_to_name(ret));
+        goto soft_reset;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* ---- 6. Select block 0 (bytes 0-31; DESIGN_CAPACITY at offset 0) ---- */
+    /* ---- 6. Select block 0 ---- */
     buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET; buf[1] = 0x00;
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
-    if (ret != ESP_OK) { ESP_LOGE(TAG, "DataFlashBlock failed: %s", esp_err_to_name(ret)); goto soft_reset; }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "DataFlashBlock failed: %s", esp_err_to_name(ret));
+        goto soft_reset;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* ---- 7. Read all 32 bytes ---- */
+    /* ---- 7. Read 32-byte block into local buffer ---- */
     uint8_t block[32];
     {
         uint8_t reg = BQ27441_CMD_BLOCK_DATA;  /* 0x40 */
@@ -275,186 +302,202 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
             goto soft_reset;
         }
     }
-    ESP_LOGI(TAG, "Block[0-7]: %02X %02X %02X %02X %02X %02X %02X %02X",
-             block[0], block[1], block[2], block[3], block[4], block[5], block[6], block[7]);
+    ESP_LOGI(TAG, "Block[0-7]:  %02X %02X %02X %02X %02X %02X %02X %02X",
+             block[0], block[1], block[2], block[3],
+             block[4], block[5], block[6], block[7]);
     ESP_LOGI(TAG, "Block[8-15]: %02X %02X %02X %02X %02X %02X %02X %02X",
-             block[8], block[9], block[10], block[11], block[12], block[13], block[14], block[15]);
+             block[8],  block[9],  block[10], block[11],
+             block[12], block[13], block[14], block[15]);
 
-    /* ---- 8. Parse current DESIGN_CAPACITY (big-endian: MSB at offset 0) ---- */
-    uint16_t old_cap = ((uint16_t)block[BQ27441_DESIGN_CAP_OFFSET] << 8)
-                     |  (uint16_t)block[BQ27441_DESIGN_CAP_OFFSET + 1];
-    ESP_LOGI(TAG, "Current DESIGN_CAPACITY: %u mAh (bytes: 0x%02X 0x%02X)",
-             old_cap, block[BQ27441_DESIGN_CAP_OFFSET], block[BQ27441_DESIGN_CAP_OFFSET + 1]);
+    /* Parse current values (big-endian, MSB at lower offset) */
+    uint16_t old_cap =
+        ((uint16_t)block[BQ27441_DESIGN_CAP_OFFSET]     << 8) |
+         (uint16_t)block[BQ27441_DESIGN_CAP_OFFSET + 1];
+    uint16_t old_energy =
+        ((uint16_t)block[BQ27441_DESIGN_ENERGY_OFFSET]     << 8) |
+         (uint16_t)block[BQ27441_DESIGN_ENERGY_OFFSET + 1];
+    ESP_LOGI(TAG, "Flash: DESIGN_CAPACITY=%u mAh  DESIGN_ENERGY=%u mWh",
+             old_cap, old_energy);
 
-    if (old_cap == capacity_mah) {
-        ESP_LOGI(TAG, "Already %u mAh — no change needed", capacity_mah);
-        ret = ESP_OK;
+    if (old_cap == capacity_mah && old_energy == design_energy) {
+        ESP_LOGI(TAG, "Already %u mAh / %u mWh — skip write",
+                 capacity_mah, design_energy);
         goto soft_reset;
     }
 
-    /* ---- 8 (cont). Modify bytes — big-endian, MSB at lower offset ---- */
-    block[BQ27441_DESIGN_CAP_OFFSET]     = (uint8_t)((capacity_mah >> 8) & 0xFF);  /* MSB */
-    block[BQ27441_DESIGN_CAP_OFFSET + 1] = (uint8_t)(capacity_mah & 0xFF);          /* LSB */
+    /* ---- 8. Modify local buffer [FIX-2] ---- */
+    block[BQ27441_DESIGN_CAP_OFFSET]     = (uint8_t)(capacity_mah >> 8);
+    block[BQ27441_DESIGN_CAP_OFFSET + 1] = (uint8_t)(capacity_mah & 0xFF);
+    block[BQ27441_DESIGN_ENERGY_OFFSET]     = (uint8_t)(design_energy >> 8);
+    block[BQ27441_DESIGN_ENERGY_OFFSET + 1] = (uint8_t)(design_energy & 0xFF);
 
-    /* ---- 9. Write ALL 32 modified bytes sequentially to 0x40..0x5F ---- */
-    /* BQ27441 requires the full 32-byte block to be written so the chip's
-     * internal checksum accumulator covers all bytes, not just the changed ones. */
+    /* ---- 9. Write entire modified block (single transaction) ---- */
     {
-        /* Build a 33-byte buffer: register 0x40 followed by 32 data bytes */
-        uint8_t wbuf[33];
-        wbuf[0] = BQ27441_CMD_BLOCK_DATA;  /* 0x40 */
-        for (int i = 0; i < 32; i++) wbuf[i + 1] = block[i];
-        ret = i2c_dev_support_write(s_dev, wbuf, 33, 200);
-        if (ret != ESP_OK) { ESP_LOGE(TAG, "Block write failed: %s", esp_err_to_name(ret)); goto soft_reset; }
+        uint8_t wb[33];
+        wb[0] = BQ27441_CMD_BLOCK_DATA;  /* 0x40 — start register */
+        memcpy(&wb[1], block, 32);
+        ret = i2c_dev_support_write(s_dev, wb, 33, 200);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Block write failed: %s", esp_err_to_name(ret));
+            goto soft_reset;
+        }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    /* ---- 10-11. Checksum = 0xFF - (sum of all 32 modified bytes), then write ---- */
+    /* ---- 10-11. Compute checksum from local buffer and commit [FIX-3] ----
+     *
+     * new_chk = 0xFF - (sum(block[0..31]) & 0xFF)
+     *
+     * Using the LOCAL modified block[] is correct because:
+     *  - We loaded all 32 bytes from the chip (step 7).
+     *  - We wrote exactly 4 bytes back to the chip (step 9).
+     *  - The chip's internal buffer now matches our block[].
+     *
+     * CRITICAL: Do NOT read reg 0x60 between steps 7 and 11.
+     * Reading 0x60 causes the BQ27441 to discard its loaded block
+     * from internal RAM, making the subsequent write to 0x60 invalid
+     * (chip returns NACK → i2c_master_transmit → ESP_ERR_INVALID_RESPONSE).
+     */
     {
         uint8_t sum = 0;
-        for (int i = 0; i < 32; i++) sum += block[i];
+        for (int i = 0; i < 32; i++)
+            sum += block[i];
         uint8_t new_chk = (uint8_t)(0xFF - sum);
-        ESP_LOGI(TAG, "Checksum: block_sum=0x%02X → new_checksum=0x%02X", sum, new_chk);
+        ESP_LOGI(TAG, "Checksum: block_sum=0x%02X  new_chk=0x%02X", sum, new_chk);
 
-        /* Write checksum — this commits the block data to flash */
         buf[0] = BQ27441_CMD_BLOCK_DATA_CHECK;  /* 0x60 */
         buf[1] = new_chk;
         ret = i2c_dev_support_write(s_dev, buf, 2, 50);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Write checksum failed: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Checksum write failed: %s", esp_err_to_name(ret));
             goto soft_reset;
         }
-        vTaskDelay(pdMS_TO_TICKS(150));  /* Wait for flash write to complete */
+        vTaskDelay(pdMS_TO_TICKS(200));  /* NVM write time per TRM */
     }
-    ESP_LOGI(TAG, "Capacity write complete: %u mAh (was %u mAh)", capacity_mah, old_cap);
+
+    ESP_LOGI(TAG, "Block committed: %u mAh / %u mWh  (was %u / %u)",
+             capacity_mah, design_energy, old_cap, old_energy);
     did_write = true;
 
 soft_reset:
     /* ---- 12. Exit CFGUPDATE via SOFT_RESET ---- */
     {
         esp_err_t r = ctrl_write(BQ27441_CTRL_SOFT_RESET);
-        if (r != ESP_OK) ESP_LOGW(TAG, "SOFT_RESET failed: %s", esp_err_to_name(r));
+        if (r != ESP_OK)
+            ESP_LOGW(TAG, "SOFT_RESET failed: %s", esp_err_to_name(r));
     }
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(500));  /* NVM commit post-CFGUPDATE ≤ 300 ms */
 
-    /* ---- 13. Wait for FLAGS[4] (CFGUPD) to clear ---- */
+    /* ---- 13. Poll CFGUPD clear ---- */
     for (int i = 0; i < 30; i++) {
         vTaskDelay(pdMS_TO_TICKS(50));
-        if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK && !(flags & BQ27441_FLAG_CFGUPD)) break;
+        if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK &&
+            !(flags & BQ27441_FLAG_CFGUPD))
+            break;
     }
 
-    /* ---- 13b. Re-unseal: SOFT_RESET returns security to SEALED.
-     *           Must unseal again to issue IT_ENABLE and to verify data flash. ---- */
+    /* ---- 13b. Re-unseal (SOFT_RESET returns to Sealed) ---- */
     ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
     vTaskDelay(pdMS_TO_TICKS(50));
     ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    /* ---- 13c. Enable Impedance Track — must be issued after SOFT_RESET while unsealed.
-     *            Sending it before CFGUPDATE (old position) was undone by SOFT_RESET. ---- */
-    ctrl_write(BQ27441_CTRL_IT_ENABLE);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    ESP_LOGI(TAG, "Impedance Track enabled");
-
-    /* ---- 13d. Post-write verification (device is unsealed — data flash accessible) ---- */
+    /* ---- 13c. Post-write verification [FIX-4] ---- */
     if (did_write) {
-        uint8_t verify_block[32];
+        uint8_t vb[32];
         uint8_t bv[2];
 
-        bv[0] = BQ27441_CMD_BLOCK_DATA_CTRL; bv[1] = 0x00;   /* required before class/block writes */
+        bv[0] = BQ27441_CMD_BLOCK_DATA_CTRL;  bv[1] = 0x00;
         i2c_dev_support_write(s_dev, bv, 2, 50);
         vTaskDelay(pdMS_TO_TICKS(5));
 
-        bv[0] = BQ27441_CMD_BLOCK_DATA_CLASS; bv[1] = BQ27441_DF_CLASS_POWER;
+        bv[0] = BQ27441_CMD_BLOCK_DATA_CLASS;
+        bv[1] = BQ27441_DF_CLASS_STATE;  /* 0x52 */
         i2c_dev_support_write(s_dev, bv, 2, 50);
         vTaskDelay(pdMS_TO_TICKS(5));
 
-        bv[0] = BQ27441_CMD_BLOCK_DATA_OFFSET; bv[1] = 0x00;
+        bv[0] = BQ27441_CMD_BLOCK_DATA_OFFSET;  bv[1] = 0x00;
         i2c_dev_support_write(s_dev, bv, 2, 50);
         vTaskDelay(pdMS_TO_TICKS(5));
 
         uint8_t reg_v = BQ27441_CMD_BLOCK_DATA;
-        if (i2c_dev_support_write_read(s_dev, &reg_v, 1, verify_block, 32, 200) == ESP_OK) {
-            uint16_t verified_cap = ((uint16_t)verify_block[BQ27441_DESIGN_CAP_OFFSET] << 8)
-                                  |  (uint16_t)verify_block[BQ27441_DESIGN_CAP_OFFSET + 1];
-            if (verified_cap == capacity_mah) {
-                ESP_LOGI(TAG, "Verified DESIGN_CAPACITY: %u mAh (write SUCCESS)", verified_cap);
+        if (i2c_dev_support_write_read(s_dev, &reg_v, 1, vb, 32, 200) == ESP_OK) {
+            uint16_t v_cap    = ((uint16_t)vb[BQ27441_DESIGN_CAP_OFFSET]     << 8) |
+                                 (uint16_t)vb[BQ27441_DESIGN_CAP_OFFSET + 1];
+            uint16_t v_energy = ((uint16_t)vb[BQ27441_DESIGN_ENERGY_OFFSET]     << 8) |
+                                 (uint16_t)vb[BQ27441_DESIGN_ENERGY_OFFSET + 1];
+            if (v_cap == capacity_mah && v_energy == design_energy) {
+                ESP_LOGI(TAG, "Verified: cap=%u mAh  energy=%u mWh  [OK]",
+                         v_cap, v_energy);
             } else {
-                ESP_LOGW(TAG, "Design capacity mismatch! Written=%u mAh, verified=%u mAh",
-                         capacity_mah, verified_cap);
+                ESP_LOGW(TAG, "Mismatch: wrote cap=%u/energy=%u, "
+                              "read back cap=%u/energy=%u",
+                         capacity_mah, design_energy, v_cap, v_energy);
                 ret = ESP_ERR_INVALID_RESPONSE;
             }
         }
     }
 
+    /* ---- 13d. IT_ENABLE (must be unsealed) ---- */
+    ctrl_write(BQ27441_CTRL_IT_ENABLE);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGI(TAG, "Impedance Track enabled");
+
 seal:
     /* ---- 14. Seal ---- */
     {
         esp_err_t r = ctrl_write(BQ27441_CTRL_SEAL);
-        if (r != ESP_OK) ESP_LOGW(TAG, "Seal failed: %s", esp_err_to_name(r));
+        if (r != ESP_OK)
+            ESP_LOGW(TAG, "Seal failed: %s", esp_err_to_name(r));
     }
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    /* Note: CMD_NOM_CAP (0x08) returns NominalAvailableCapacity (remaining mAh), not design capacity.
-     * SoC will be inaccurate until a full charge→discharge conditioning cycle completes. */
-    ESP_LOGI(TAG, "Do a full charge→discharge cycle to calibrate SoC against new design capacity");
-
+    ESP_LOGI(TAG, "Do a full charge->discharge cycle to calibrate SoC");
     return ret;
 }
 
-/**
- * @brief Read current DESIGN_CAPACITY from data flash class 82 (Power).
- * This is the battery's configured capacity (not remaining charge).
- * Returns ESP_OK and *capacity_mah on success, ESP_ERR_* on failure.
- */
+/* ------------------------------------------------------------------ */
+/* Read DESIGN_CAPACITY from NVM (subclass 82, offset 10)              */
+/* ------------------------------------------------------------------ */
+
 esp_err_t bq27441_read_design_capacity(uint16_t *capacity_mah)
 {
     if (!s_dev || !capacity_mah) return ESP_ERR_INVALID_ARG;
 
     esp_err_t ret = ESP_OK;
-    uint8_t buf[2];
-    uint8_t block[32];
+    uint8_t   buf[2];
+    uint8_t   block[32];
 
-    /* Reading data flash requires UNSEALED (or FULL ACCESS) mode and
-     * BlockDataControl(0x61)=0x00 before issuing DataFlashClass/DataFlashBlock.
-     * Without unseal the 0x3E/0x3F writes are silently ignored and 0x40 returns 0xFF. */
-    ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    if (ret != ESP_OK) return ret;
+    ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY); if (ret != ESP_OK) return ret;
     vTaskDelay(pdMS_TO_TICKS(50));
-    ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
-    if (ret != ESP_OK) return ret;
+    ret = ctrl_write(BQ27441_CTRL_UNSEAL_KEY); if (ret != ESP_OK) return ret;
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    /* Enable block data access */
-    buf[0] = BQ27441_CMD_BLOCK_DATA_CTRL; buf[1] = 0x00;
+    buf[0] = BQ27441_CMD_BLOCK_DATA_CTRL;  buf[1] = 0x00;
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
     if (ret != ESP_OK) goto done;
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* Select class 82 (Power) */
-    buf[0] = BQ27441_CMD_BLOCK_DATA_CLASS; buf[1] = BQ27441_DF_CLASS_POWER;
+    buf[0] = BQ27441_CMD_BLOCK_DATA_CLASS;
+    buf[1] = BQ27441_DF_CLASS_STATE;  /* 0x52 [FIX-4] */
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
     if (ret != ESP_OK) goto done;
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* Select block 0 */
-    buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET; buf[1] = 0x00;
+    buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET;  buf[1] = 0x00;
     ret = i2c_dev_support_write(s_dev, buf, 2, 50);
     if (ret != ESP_OK) goto done;
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    /* Read block 0 */
     {
         uint8_t reg = BQ27441_CMD_BLOCK_DATA;
         ret = i2c_dev_support_write_read(s_dev, &reg, 1, block, 32, 200);
         if (ret != ESP_OK) goto done;
     }
 
-    /* Extract DESIGN_CAPACITY from offset 0-1 (big-endian) */
-    *capacity_mah = ((uint16_t)block[BQ27441_DESIGN_CAP_OFFSET] << 8)
-                  |  (uint16_t)block[BQ27441_DESIGN_CAP_OFFSET + 1];
-
-    ESP_LOGD(TAG, "Read DESIGN_CAPACITY from data flash: %u mAh", *capacity_mah);
+    *capacity_mah = ((uint16_t)block[BQ27441_DESIGN_CAP_OFFSET]     << 8) |
+                     (uint16_t)block[BQ27441_DESIGN_CAP_OFFSET + 1];
+    ESP_LOGD(TAG, "DESIGN_CAPACITY from flash: %u mAh", *capacity_mah);
 
 done:
     ctrl_write(BQ27441_CTRL_SEAL);

@@ -54,8 +54,11 @@ extern "C" {
 #define BQ27441_CMD_BLOCK_DATA_CHECK 0x60  /* Block Data Checksum */
 
 /* Data Flash class IDs + offsets */
-#define BQ27441_DF_CLASS_POWER      0x52   /* Class 82 = Power Register Settings */
-#define BQ27441_DESIGN_CAP_OFFSET   0x00   /* Design Capacity at offset 0-1 within class 82 (big-endian, MSB first) */
+/* Class 82 (0x52) = "State" subclass per TRM SLUUAC9 — contains Design Capacity & Design Energy */
+#define BQ27441_DF_CLASS_STATE      0x52   /* Subclass 82 = State (Design Capacity, Design Energy, etc.) */
+#define BQ27441_DF_CLASS_POWER      BQ27441_DF_CLASS_STATE  /* Alias kept for backward compat — same class */
+#define BQ27441_DESIGN_CAP_OFFSET   0x0A   /* Design Capacity at offset 10-11 within subclass 82 block 0 (big-endian) */
+#define BQ27441_DESIGN_ENERGY_OFFSET 0x0C  /* Design Energy   at offset 12-13 within subclass 82 block 0 (big-endian) */
 
 /* Flags bit definitions */
 #define BQ27441_FLAG_CFGUPD     (1 << 4)    /* CONFIG UPDATE mode active (block data access enabled) */
