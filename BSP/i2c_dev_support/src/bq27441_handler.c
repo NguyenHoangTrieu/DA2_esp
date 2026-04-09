@@ -89,6 +89,20 @@ esp_err_t bq27441_init(void)
         ESP_LOGW(TAG, "To reprogram: battery must be discharged, then use unsealing procedure");
     }
 
+    /* Enable Impedance Track so AVG_CURRENT (0x10) returns valid data.
+     * IT_ENABLE requires UNSEALED/FULL_ACCESS mode, so unseal first then reseal. */
+    ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    ctrl_write(BQ27441_CTRL_EXIT_HIBERNATE);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    ctrl_write(BQ27441_CTRL_IT_ENABLE);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    ctrl_write(BQ27441_CTRL_SEAL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    ESP_LOGI(TAG, "Impedance Track enabled");
+
     return ESP_OK;
 }
 
@@ -185,6 +199,7 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
     esp_err_t ret = ESP_OK;
     uint16_t  flags = 0;
     uint8_t   buf[2];
+    bool      did_write = false;
 
     ESP_LOGI(TAG, "Starting capacity reprogramming: %u mAh", capacity_mah);
 
@@ -219,8 +234,6 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
      * ignored even when unsealed. Wake the IC first, then wait for it to settle. */
     ctrl_write(BQ27441_CTRL_EXIT_HIBERNATE);
     vTaskDelay(pdMS_TO_TICKS(50));
-    ctrl_write(BQ27441_CTRL_IT_ENABLE);
-    vTaskDelay(pdMS_TO_TICKS(20));
 
     /* ---- 2. Enter CFGUPDATE mode ---- */
     ret = ctrl_write(BQ27441_CTRL_SET_CFGUPDATE);
@@ -322,6 +335,7 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
         vTaskDelay(pdMS_TO_TICKS(150));  /* Wait for flash write to complete */
     }
     ESP_LOGI(TAG, "Capacity write complete: %u mAh (was %u mAh)", capacity_mah, old_cap);
+    did_write = true;
 
 soft_reset:
     /* ---- 12. Exit CFGUPDATE via SOFT_RESET ---- */
