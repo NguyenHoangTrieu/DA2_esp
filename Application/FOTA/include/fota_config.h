@@ -1,17 +1,74 @@
 #ifndef FOTA_CONFIG_H
 #define FOTA_CONFIG_H
 
-/* Firmware upgrade URL endpoint */
-#define FOTA_CONFIG_FIRMWARE_UPGRADE_URL "https://github.com/NguyenHoangTrieu/DA2_esp_release/releases/download/V0.0.1/DA2_esp.bin"
+/* ============================================================
+ * ThingsBoard OTA Server Configuration (WAN MCU)
+ * ============================================================
+ *
+ * HOW TO SWITCH SERVERS:
+ *   Local Raspberry Pi  → set USE_HTTPS=0, HOST="192.168.x.x", PORT=8080
+ *   demo.thingsboard.io → set USE_HTTPS=1, HOST="demo.thingsboard.io", PORT=443
+ *
+ * HOW TO GET THE DEVICE TOKEN:
+ *   ThingsBoard UI → Devices → Your Device → Copy Access Token
+ *
+ * HOW TO UPDATE FIRMWARE:
+ *   ThingsBoard UI → OTA Updates → Upload new .bin → assign to Device Profile
+ *   The device automatically downloads the latest assigned firmware.
+ * ============================================================ */
 
-/* Enable certificate bundle (default: enabled) */
+/* 1 = local Raspberry Pi (HTTP), 0 = cloud ThingsBoard (HTTPS) */
+#define FOTA_CONFIG_TB_USE_HTTPS        0
+
+/* ThingsBoard host — change to "demo.thingsboard.io" for cloud */
+#define FOTA_CONFIG_TB_HOST             "192.168.1.100"
+
+/* Port: 8080 for local HTTP, 443 for demo.thingsboard.io HTTPS */
+#define FOTA_CONFIG_TB_PORT             8080
+
+/* Device Access Token from ThingsBoard Devices page */
+#define FOTA_CONFIG_TB_DEVICE_TOKEN     "Zfdvk6M9rEmw5fBj7TzP"
+
+/* Firmware package title and version — must match what was uploaded to
+ * ThingsBoard OTA Updates. ThingsBoard returns HTTP 400 without these. */
+#define FOTA_CONFIG_TB_FIRMWARE_TITLE   "DA2_esp"
+#define FOTA_CONFIG_TB_FIRMWARE_VERSION "1.1.2"
+
+/* Skip TLS certificate verification for local self-signed cert */
+#define FOTA_CONFIG_TB_SKIP_CERT_VERIFY 1
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+#if FOTA_CONFIG_TB_USE_HTTPS
+#define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
+    "https://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
+    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
+    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
+    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
+#else
+#define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
+    "http://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
+    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
+    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
+    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
+#endif
+
+/* Enable certificate bundle — only needed for HTTPS with a public CA cert.
+ * Auto-disabled for plain HTTP or when using skip-verify. */
+#if FOTA_CONFIG_TB_USE_HTTPS && !FOTA_CONFIG_TB_SKIP_CERT_VERIFY
 #define FOTA_CONFIG_USE_CERT_BUNDLE 1
+#else
+#define FOTA_CONFIG_USE_CERT_BUNDLE 0
+#endif
 
 /* Firmware upgrade URL from stdin (set to 1 if URL is "FROM_STDIN") */
 #define FOTA_CONFIG_FIRMWARE_UPGRADE_URL_FROM_STDIN 0
 
-/* Skip server certificate CN field check (default: disabled) */
-#define FOTA_CONFIG_SKIP_COMMON_NAME_CHECK 0
+/* Skip TLS certificate CN field check.
+ * Derived from FOTA_CONFIG_TB_SKIP_CERT_VERIFY: set to 1 for local
+ * self-signed cert, 0 for demo.thingsboard.io public cert. */
+#define FOTA_CONFIG_SKIP_COMMON_NAME_CHECK FOTA_CONFIG_TB_SKIP_CERT_VERIFY
 
 /* Skip firmware version check (default: disabled) */
 #define FOTA_CONFIG_SKIP_VERSION_CHECK 0
@@ -32,12 +89,12 @@
 /* Enable Ethernet connection */
 #define FOTA_CONFIG_CONNECT_ETHERNET 0
 
-/* OTA Receive Timeout in milliseconds */
-/* GitHub release download has 2-3 TCP connection hops (github.com → CDN redirects).
- * Each hop = TCP connect (~1-3s) + TLS handshake (~2-4s).
- * 5s was too short — third TCP connect timed out.
- * 120s gives 40s per hop with margin for WiFi/NAPT slowdown and SYN retries. */
-#define FOTA_CONFIG_OTA_RECV_TIMEOUT 120000
+/* OTA Receive Timeout in milliseconds.
+ * 30s is plenty for a local HTTP server — file is ~1.6 MB over LAN. */
+#define FOTA_CONFIG_OTA_RECV_TIMEOUT 30000
+
+/* TCP connect timeout for connectivity pre-check (ms) */
+#define FOTA_CONFIG_CONNECTIVITY_CHECK_TIMEOUT_MS 5000
 
 /* Enable partial HTTP download (for large firmware images) */
 #define FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD 0
