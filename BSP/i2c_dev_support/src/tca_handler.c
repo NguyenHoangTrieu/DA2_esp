@@ -81,9 +81,24 @@ esp_err_t tca_init_inst(tca6416a_inst_t *inst, uint8_t i2c_addr, int int_gpio) {
         return ret;
     }
 
-    /* Default: all pins input */
-    tca_configure_port_inst(inst, TCA_PORT_0, 0xFF);
-    tca_configure_port_inst(inst, TCA_PORT_1, 0xFF);
+    /* Default: all pins input — with error checking */
+    ret = tca_configure_port_inst(inst, TCA_PORT_0, 0xFF);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure PORT_0 on 0x%02X: %s", i2c_addr, esp_err_to_name(ret));
+        i2c_dev_support_remove_device(inst->dev_handle);
+        inst->dev_handle = NULL;
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));  /* Allow device to process write */
+
+    ret = tca_configure_port_inst(inst, TCA_PORT_1, 0xFF);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure PORT_1 on 0x%02X: %s", i2c_addr, esp_err_to_name(ret));
+        i2c_dev_support_remove_device(inst->dev_handle);
+        inst->dev_handle = NULL;
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));  /* Allow device to process write before subsequent reads */
 
     inst->i2c_addr    = i2c_addr;
     inst->initialized = true;

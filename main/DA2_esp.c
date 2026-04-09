@@ -302,9 +302,14 @@ void app_main(void) {
       .intr_type    = GPIO_INTR_DISABLE,
   };
   gpio_config(&iox_rst_cfg);
+  /* Pulse reset (active-high on this PCB): assert HIGH, then release LOW */
+  gpio_set_level(TCA6416A_RESET_PIN, 1);
+  gpio_set_level(ADAPTER_RESET_GPIO, 1);
+  vTaskDelay(pdMS_TO_TICKS(10));
+  /* Deassert reset — bring LOW so devices enter normal operation */
   gpio_set_level(TCA6416A_RESET_PIN, 0);
   gpio_set_level(ADAPTER_RESET_GPIO, 0);
-  vTaskDelay(pdMS_TO_TICKS(10));
+  vTaskDelay(pdMS_TO_TICKS(50)); /* Allow TCA6416A to complete power-on sequence */
   tca_init();               /* Init on-board TCA6416A @0x20 */
   i2c_dev_support_scan();   /* Both IOXes should now appear  */
 
@@ -329,8 +334,8 @@ void app_main(void) {
   stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
-  pwr_source_init();
-  pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
+  // pwr_source_init();
+  // pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
   hmi_handler_init();       /* HMI display: init state only  */
   
   pcf8563_init();
@@ -389,7 +394,7 @@ void app_main(void) {
     /* GPIO3 — toggle battery source enable/disable */
     if (notif == NOTIFY_GPIO3_PRESS) {
       battery_source_enabled = !battery_source_enabled;
-      pwr_source_set_battery_enable(battery_source_enabled);
+      // pwr_source_set_battery_enable(battery_source_enabled);
       ESP_LOGI(TAG, "Battery source -> %s", battery_source_enabled ? "ENABLED" : "DISABLED");
       stack_handler_gpio_write(0, STACK_GPIO_PIN_10, battery_source_enabled); /* P10 = EN_3V3 */
       stack_handler_gpio_write(0, STACK_GPIO_PIN_11, battery_source_enabled); /* P11 = EN_5V */

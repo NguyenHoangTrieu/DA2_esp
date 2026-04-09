@@ -345,13 +345,73 @@ seal:
     }
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    /* Post-program status: CMD_NOM_CAP is remaining capacity, NOT design capacity */
+    /* Post-program verification: Read back design capacity from data flash to confirm write */
     {
-        uint16_t nom = 0;
-        cmd_read16(BQ27441_CMD_NOM_CAP, &nom);
-        ESP_LOGI(TAG, "NomCap after reprogram: %u mAh (this is remaining charge, not design cap)", nom);
-        ESP_LOGI(TAG, "Do a full charge→discharge cycle to calibrate SoC against new 3000 mAh design");
+        uint8_t verify_block[32];
+        uint8_t buf_verify[2];
+
+        /* Re-enter data flash read mode to verify */
+        buf_verify[0] = BQ27441_CMD_BLOCK_DATA_CLASS; buf_verify[1] = BQ27441_DF_CLASS_POWER;
+        i2c_dev_support_write(s_dev, buf_verify, 2, 50);
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        buf_verify[0] = BQ27441_CMD_BLOCK_DATA_OFFSET; buf_verify[1] = 0x00;
+        i2c_dev_support_write(s_dev, buf_verify, 2, 50);
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        uint8_t reg_read = BQ27441_CMD_BLOCK_DATA;
+        if (i2c_dev_support_write_read(s_dev, &reg_read, 1, verify_block, 32, 200) == ESP_OK) {
+            uint16_t verified_cap = ((uint16_t)verify_block[BQ27441_DESIGN_CAP_OFFSET] << 8)
+                                  |  (uint16_t)verify_block[BQ27441_DESIGN_CAP_OFFSET + 1];
+            if (verified_cap == capacity_mah) {
+                ESP_LOGI(TAG, "✓ Verified DESIGN_CAPACITY in data flash: %u mAh (write SUCCESS)", verified_cap);
+            } else {
+                ESP_LOGW(TAG, "⚠ Design capacity mismatch! Written=%u mAh, verified=%u mAh", capacity_mah, verified_cap);
+                ret = ESP_ERR_INVALID_RESPONSE;
+            }
+        }
     }
 
+    /* Note: CMD_NOM_CAP (0x08) returns NominalAvailableCapacity (remaining mAh), not design capacity.
+     * SoC will be 0% until a full charge→discharge cycle completes (fuel gauge self-calibration). */
+    ESP_LOGI(TAG, "Do a full charge→discharge cycle to calibrate SoC against new design capacity");
+
     return ret;
+}
+
+/**
+ * @brief Read current DESIGN_CAPACITY from data flash class 82 (Power).
+ * This is the battery's configured capacity (not remaining charge).
+ * Returns ESP_OK and *capacity_mah on success, ESP_ERR_* on failure.
+ */
+esp_err_t bq27441_read_design_capacity(uint16_t *capacity_mah)
+{
+    if (!s_dev || !capacity_mah) return ESP_ERR_INVALID_ARG;
+
+    esp_err_t ret = ESP_OK;
+    uint8_t buf[2];
+    uint8_t block[32];
+
+    /* Enter data flash read mode (no CFGUPDATE needed, just read) */
+    buf[0] = BQ27441_CMD_BLOCK_DATA_CLASS; buf[1] = BQ27441_DF_CLASS_POWER;
+    ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    buf[0] = BQ27441_CMD_BLOCK_DATA_OFFSET; buf[1] = 0x00;
+    ret = i2c_dev_support_write(s_dev, buf, 2, 50);
+    if (ret != ESP_OK) return ret;
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    /* Read block 0 */
+    uint8_t reg = BQ27441_CMD_BLOCK_DATA;
+    ret = i2c_dev_support_write_read(s_dev, &reg, 1, block, 32, 200);
+    if (ret != ESP_OK) return ret;
+
+    /* Extract DESIGN_CAPACITY from offset 0-1 (big-endian) */
+    *capacity_mah = ((uint16_t)block[BQ27441_DESIGN_CAP_OFFSET] << 8)
+                  |  (uint16_t)block[BQ27441_DESIGN_CAP_OFFSET + 1];
+
+    ESP_LOGD(TAG, "Read DESIGN_CAPACITY from data flash: %u mAh", *capacity_mah);
+    return ESP_OK;
 }

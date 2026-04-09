@@ -137,6 +137,15 @@ esp_err_t bq27441_read_status(bq27441_status_t *status);
  */
 esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah);
 
+/**
+ * @brief Read current DESIGN_CAPACITY from data flash class 82 (Power).
+ * This is the battery's configured capacity (not remaining charge, not available capacity).
+ * Useful for checking if a reprogram is needed before calling bq27441_reprogram_capacity().
+ * @param capacity_mah Output buffer for design capacity in mAh
+ * @return ESP_OK on success, ESP_ERR_* on failure
+ */
+esp_err_t bq27441_read_design_capacity(uint16_t *capacity_mah);
+
 #ifdef __cplusplus
 }
 #endif

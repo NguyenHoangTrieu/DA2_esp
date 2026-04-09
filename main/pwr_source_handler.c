@@ -82,13 +82,26 @@ esp_err_t pwr_source_init(void)
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "BQ27441 init failed: %s (continuing)", esp_err_to_name(ret));
     } else {
-        /* Verify and reprogram capacity if needed (user battery is 3000mAh, not default) */
-        ESP_LOGI(TAG, "Reprogramming BQ27441 capacity to 3000 mAh...");
-        esp_err_t cap_ret = bq27441_reprogram_capacity(3000);
-        if (cap_ret == ESP_OK) {
-            ESP_LOGI(TAG, "✓ BQ27441 capacity update complete");
+        /* Check current design capacity and reprogram only if needed */
+        uint16_t current_cap = 0;
+        if (bq27441_read_design_capacity(&current_cap) == ESP_OK) {
+            if (current_cap == 3000) {
+                ESP_LOGI(TAG, "✓ BQ27441 capacity already correct: 3000 mAh (no reprogram needed)");
+            } else {
+                ESP_LOGI(TAG, "Reprogramming BQ27441 capacity from %u mAh to 3000 mAh...", current_cap);
+                esp_err_t cap_ret = bq27441_reprogram_capacity(3000);
+                if (cap_ret == ESP_OK) {
+                    ESP_LOGI(TAG, "✓ BQ27441 capacity update complete");
+                } else {
+                    ESP_LOGW(TAG, "⚠ Capacity reprogram returned: %s", esp_err_to_name(cap_ret));
+                }
+            }
         } else {
-            ESP_LOGW(TAG, "⚠ Capacity reprogram returned: %s (may already be correct)", esp_err_to_name(cap_ret));
+            ESP_LOGW(TAG, "⚠ Could not read design capacity, attempting reprogram anyway");
+            esp_err_t cap_ret = bq27441_reprogram_capacity(3000);
+            if (cap_ret == ESP_OK) {
+                ESP_LOGI(TAG, "✓ BQ27441 capacity update complete");
+            }
         }
     }
 

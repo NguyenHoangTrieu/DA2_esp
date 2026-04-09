@@ -92,6 +92,7 @@ esp_err_t stack_handler_init(void) {
         if (ret != ESP_OK) {
             ESP_LOGI(TAG, "Slot %d (0x%02X): not present or init failed: %s",
                      slot, k_addr[slot], esp_err_to_name(ret));
+            g_slot_present[slot] = false;
             continue;
         }
         g_slot_present[slot] = true;
