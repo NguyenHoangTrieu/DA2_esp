@@ -171,14 +171,14 @@ esp_err_t modem_board_force_reset(void)
         ESP_LOGW(TAG, "No reset pin configured, skipping force reset");
         return ESP_OK;
     }
-    stack_handler_gpio_set_direction(0, (stack_gpio_pin_num_t)s_modem_rst_pin, true);
+    stack_handler_gpio_set_direction(1, (stack_gpio_pin_num_t)s_modem_rst_pin, true);
     /* Assert inactive level first, then active pulse */
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)s_modem_rst_pin, !s_modem_rst_inactive_lvl);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, !s_modem_rst_inactive_lvl);
     ESP_LOGI(TAG, "Resetting modem using TCA pin %u, active level %d",
              s_modem_rst_pin, !s_modem_rst_inactive_lvl);
     vTaskDelay(pdMS_TO_TICKS(MODEM_RESET_GPIO_ACTIVE_MS));
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
     ESP_LOGI(TAG, "Waiting for modem initialize ready");
     vTaskDelay(pdMS_TO_TICKS(MODEM_RESET_GPIO_INACTIVE_MS));
     return ESP_OK;
@@ -252,16 +252,16 @@ err:
 
 /** Pulse: assert active level, wait, then deassert via TCA GPIO */
 static void tca_gpio_pulse(esp_modem_usb_recov_gpio_t *pin) {
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
     vTaskDelay(pdMS_TO_TICKS(pin->active_width_ms));
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
     vTaskDelay(pdMS_TO_TICKS(pin->inactive_width_ms));
 }
 
 static void tca_gpio_pulse_special(esp_modem_usb_recov_gpio_t *pin, int active_ms, int inactive_ms) {
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
     vTaskDelay(pdMS_TO_TICKS(active_ms));
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
     vTaskDelay(pdMS_TO_TICKS(inactive_ms));
 }
 
@@ -280,8 +280,8 @@ static esp_modem_usb_recov_gpio_t *tca_gpio_new(uint8_t tca_pin_num,
     if (tca_pin_num == STACK_GPIO_PIN_NONE) return NULL;
 
     /* Configure pin as output and set to inactive level */
-    stack_handler_gpio_set_direction(0, (stack_gpio_pin_num_t)tca_pin_num, true);
-    stack_handler_gpio_write(0, (stack_gpio_pin_num_t)tca_pin_num, inactive_level);
+    stack_handler_gpio_set_direction(1, (stack_gpio_pin_num_t)tca_pin_num, true);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)tca_pin_num, inactive_level);
 
     esp_modem_usb_recov_gpio_t *pin = calloc(1, sizeof(esp_modem_usb_recov_gpio_t));
     if (!pin) return NULL;

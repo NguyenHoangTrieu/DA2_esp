@@ -82,7 +82,7 @@ static void switch_to_config_mode(config_internet_type_t *current_internet_type)
     ESP_LOGI(TAG, "==> Switching to CONFIG mode");
     
     if (*current_internet_type != CONFIG_INTERNET_LTE) jtag_task_start();
-    led_show_yellow();
+    
     current_mode = APP_MODE_CONFIG;
     ESP_LOGI(TAG, "CONFIG mode active");
 }
@@ -203,7 +203,7 @@ static void switch_to_normal_mode(config_internet_type_t *current_internet_type,
         vTaskDelay(pdMS_TO_TICKS(1000));
         server_connect_start(*current_server_type);
     }
-    led_show_blue();
+    
     
     current_mode = APP_MODE_NORMAL;
     ESP_LOGI(TAG, "NORMAL mode active");
@@ -213,7 +213,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "Firmware Version: DA2_esp v1.0.1");
     
     init_led_strip();
-    led_on();
+    
     
     setup_gpio45_interrupt();
     data_send_active = true;

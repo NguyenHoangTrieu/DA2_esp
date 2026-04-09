@@ -2,7 +2,7 @@
 #define DA2_ESP_H
 
 #include "usb_handler.h"
-#include "rbg_handler.h"
+
 #include "wifi_connect.h"
 #include "fota_handler.h"
 #include "uart_handler.h"

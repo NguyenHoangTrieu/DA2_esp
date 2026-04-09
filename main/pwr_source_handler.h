@@ -82,6 +82,15 @@ esp_err_t pwr_source_init(void);
 esp_err_t pwr_source_set_charge_enable(bool enable);
 
 /**
+ * @brief Enable or disable battery as power source via BQ25892 BATFET.
+ *        - disable=true:  Battery FET OFF — battery isolated from system (runs on VBUS only).
+ *        - disable=false: Battery FET ON  — battery reconnected (default / normal).
+ * @param disable true to isolate battery, false to reconnect
+ * @return ESP_OK on success
+ */
+esp_err_t pwr_source_set_battery_enable(bool enable);
+
+/**
  * @brief Enable or disable OTG boost (battery → VBUS).
  * @param enable true to enable OTG
  * @return ESP_OK on success

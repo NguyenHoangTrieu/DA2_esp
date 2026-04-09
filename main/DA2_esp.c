@@ -31,7 +31,9 @@ typedef enum {
 static app_mode_t current_mode = APP_MODE_NORMAL;
 static int requested_mode = -1; /* set by uart_mode_switch_callback */
 static uint32_t last_isr_tick = 0;
+static uint32_t last_gpio3_tick = 0;
 static bool power_rgb_enabled = true; /* GPIO3: power+RGB state */
+static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 
 /**
  * @brief GPIO45 ISR - Button press
@@ -52,12 +54,12 @@ static void gpio45_isr_handler(void *arg) {
 }
 
 /**
- * @brief GPIO3 ISR - Toggle power and RGB LED
+ * @brief GPIO3 ISR - Toggle battery source enable/disable
  */
 static void gpio3_isr_handler(void *arg) {
   uint32_t now = xTaskGetTickCountFromISR();
-  if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
-    last_isr_tick = now;
+  if ((now - last_gpio3_tick) >= pdMS_TO_TICKS(300)) {
+    last_gpio3_tick = now;
     BaseType_t xTaskWoken = pdFALSE;
     if (main_task_handle) {
       xTaskNotifyFromISR(main_task_handle, NOTIFY_GPIO3_PRESS,
@@ -247,7 +249,7 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   ESP_LOGI(TAG, "Web portal: connect to \"DA2-Gateway-Config\" "
                 "then open http://192.168.4.1/");
 
-  led_show_yellow();
+  
   current_mode = APP_MODE_CONFIG;
   ESP_LOGI(TAG, "CONFIG mode active");
 }
@@ -301,7 +303,7 @@ void app_main(void) {
   };
   gpio_config(&iox_rst_cfg);
   gpio_set_level(TCA6416A_RESET_PIN, 0);
-  gpio_set_level(ADAPTER_RESET_GPIO, 1);
+  gpio_set_level(ADAPTER_RESET_GPIO, 0);
   vTaskDelay(pdMS_TO_TICKS(10));
   tca_init();               /* Init on-board TCA6416A @0x20 */
   i2c_dev_support_scan();   /* Both IOXes should now appear  */
@@ -318,21 +320,19 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_12, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
-  if (stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true) != ESP_OK)
-      ESP_LOGE(TAG, "Failed to set direction on adapter IOX 0x21 P04");
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, false); /* P10 = EN_3V3 */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* P11 = EN_5V */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true); /* P12 = RLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true); /* P13 = GLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true); /* P14 = BLED off */
-  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, false); /* ADAPTER POWER OFF */
+  stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
-  init_led_strip();
   pwr_source_init();
   pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
   hmi_handler_init();       /* HMI display: init state only  */
-  led_on();
+  
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 
@@ -370,7 +370,7 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO45 = toggle CONFIG/NORMAL");
-  ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
+  // ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
 
   /* --- Main event loop ------------------------------------------------ */
   for (;;) {
@@ -386,20 +386,17 @@ void app_main(void) {
       }
     }
 
-    /* GPIO3 — toggle power and RGB LED */
+    /* GPIO3 — toggle battery source enable/disable */
     if (notif == NOTIFY_GPIO3_PRESS) {
-      power_rgb_enabled = !power_rgb_enabled;
-      
-      /* Toggle power rails (P10, P11) */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_10, power_rgb_enabled);
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_11, power_rgb_enabled);
-      stack_handler_gpio_write(1, STACK_GPIO_PIN_04, power_rgb_enabled); // ADAPTER POWER
-      /* Toggle RGB LED (P12, P13, P14) */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_12, !power_rgb_enabled);
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_13, !power_rgb_enabled);
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_14, !power_rgb_enabled);
-      
-      ESP_LOGI(TAG, "Power/RGB -> %s", power_rgb_enabled ? "ON" : "OFF");
+      battery_source_enabled = !battery_source_enabled;
+      pwr_source_set_battery_enable(battery_source_enabled);
+      ESP_LOGI(TAG, "Battery source -> %s", battery_source_enabled ? "ENABLED" : "DISABLED");
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_10, battery_source_enabled); /* P10 = EN_3V3 */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_11, battery_source_enabled); /* P11 = EN_5V */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_12, !battery_source_enabled); /* P12 = RLED off */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_13, !battery_source_enabled); /* P13 = GLED off */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_14, !battery_source_enabled); /* P14 = BLED off */
+      stack_handler_gpio_write(1, STACK_GPIO_PIN_04, battery_source_enabled); /* ADAPTER POWER*/
     }
 
     /* UART command — CONFIG or NORMAL */

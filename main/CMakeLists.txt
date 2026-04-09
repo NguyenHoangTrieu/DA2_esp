@@ -22,7 +22,6 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Web_Config_Handler/src/api_config.c"
                                 "../Application/Web_Config_Handler/src/api_status.c"
                                 "../Application/Web_Config_Handler/src/captive_dns.c"
-                                "../BSP/rbg_led_ws_handler/rbg_handler.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
                                 ${I2C_DEVICES}
@@ -73,7 +72,6 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Data_Communication_Handler/include"
                                 "../Application/MCU_LAN_Handler/include"
                                 "../Application/Web_Config_Handler/include"
-                                "../BSP/rbg_led_ws_handler"
                                 "../BSP/esp_modem_uart/include"
                                 "../BSP/esp_modem_usb/include"
                                 "../BSP/bg96_communication/include"

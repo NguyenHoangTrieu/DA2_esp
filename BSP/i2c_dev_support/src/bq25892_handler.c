@@ -124,6 +124,18 @@ esp_err_t bq25892_set_otg(bool enable)
                       enable ? BQ25892_OTG_CONFIG_BIT : 0);
 }
 
+esp_err_t bq25892_set_batfet_disable(bool disable)
+{
+    if (!s_dev) return ESP_ERR_INVALID_STATE;
+    esp_err_t ret = reg_modify(BQ25892_REG09,
+                               BQ25892_BATFET_DIS_BIT,
+                               disable ? BQ25892_BATFET_DIS_BIT : 0);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Battery FET %s", disable ? "DISCONNECTED" : "CONNECTED");
+    }
+    return ret;
+}
+
 esp_err_t bq25892_read_batv_mv(uint16_t *vbat_mv)
 {
     if (!s_dev || !vbat_mv) return ESP_ERR_INVALID_ARG;

@@ -39,6 +39,7 @@ static void iox_input_init(stack_gpio_pin_num_t pin)
 
 /* Global state for charging hysteresis (prevents on/off oscillation) */
 static bool s_charge_enabled_state = true;
+static bool s_battery_enabled_state = true;  /* true = battery FET connected (default) */
 
 /* ------------------------------------------------------------------ */
 /*  Public API                                                          */
@@ -100,6 +101,15 @@ esp_err_t pwr_source_init(void)
 
     ESP_LOGI(TAG, "Power management initialized");
     return ESP_OK;
+}
+
+esp_err_t pwr_source_set_battery_enable(bool enable)
+{
+    s_battery_enabled_state = enable;
+    /* BATFET_DIS=1 disconnects, so pass !enable */
+    esp_err_t ret = bq25892_set_batfet_disable(!enable);
+    ESP_LOGI(TAG, "Battery source %s", enable ? "ENABLED" : "DISABLED");
+    return ret;
 }
 
 esp_err_t pwr_source_set_charge_enable(bool enable)

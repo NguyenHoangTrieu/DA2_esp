@@ -28,7 +28,7 @@ extern "C" {
 #define BQ25892_REG02   0x02   /* ADC Control (CONV_START, CONV_RATE) */
 #define BQ25892_REG03   0x03   /* Charge Control (OTG_CONFIG, CHG_CONFIG, SYS_MIN) */
 #define BQ25892_REG06   0x06   /* Charge Voltage Limit (VREG[5:0], BATLOWV, VRECHG) */
-#define BQ25892_REG09   0x09   /* Fault Register */
+#define BQ25892_REG09   0x09   /* Fault / BATFET_DIS Register */
 #define BQ25892_REG0B   0x0B   /* System Status (VBUS_STAT, CHRG_STAT, PG_STAT) */
 #define BQ25892_REG0E   0x0E   /* Battery Voltage ADC (THERM_STAT, BATV[6:0]) */
 #define BQ25892_REG14   0x14   /* Device ID / Rev register */
@@ -36,6 +36,9 @@ extern "C" {
 /* REG03 bits */
 #define BQ25892_CHG_CONFIG_BIT  (1 << 4)   /* 1 = enable charging */
 #define BQ25892_OTG_CONFIG_BIT  (1 << 5)   /* 1 = enable OTG boost */
+
+/* REG09 bits */
+#define BQ25892_BATFET_DIS_BIT  (1 << 5)   /* 1 = disconnect battery FET (battery isolated) */
 
 /* REG0B charge status field (bits [4:3]) */
 #define BQ25892_CHRG_STAT_MASK      0x18
@@ -105,6 +108,15 @@ esp_err_t bq25892_set_otg(bool enable);
  * @return ESP_OK on success
  */
 esp_err_t bq25892_read_batv_mv(uint16_t *vbat_mv);
+
+/**
+ * @brief Enable or disable the battery FET (BATFET_DIS bit in REG09).
+ *        When disabled, battery is disconnected from the system (VSYS falls to VBUS only).
+ *        When enabled (default), battery supplies power normally.
+ * @param disable true to disconnect battery, false to reconnect
+ * @return ESP_OK on success
+ */
+esp_err_t bq25892_set_batfet_disable(bool disable);
 
 /**
  * @brief Read current charge status and fault flags.

@@ -36,13 +36,15 @@ extern "C" {
 #define BQ27441_CMD_AVG_CURRENT 0x10   /* Average Current (mA, signed) */
 
 /* Control sub-commands */
-#define BQ27441_CTRL_STATUS     0x0000
-#define BQ27441_CTRL_DEVICE_TYPE 0x0001
-#define BQ27441_CTRL_FW_VERSION 0x0002
-#define BQ27441_CTRL_UNSEAL_KEY  0x8000  /* Default unseal key (sent twice: 0x8000 then 0x8000) */
-#define BQ27441_CTRL_SEAL        0x0020  /* Seal data flash (lock configuration) */
-#define BQ27441_CTRL_SET_CFGUPDATE 0x0013 /* Enter CONFIG UPDATE mode (required before block data access) */
-#define BQ27441_CTRL_SOFT_RESET  0x0042  /* Exit CONFIG UPDATE mode and commit data flash write */
+#define BQ27441_CTRL_STATUS        0x0000
+#define BQ27441_CTRL_DEVICE_TYPE   0x0001
+#define BQ27441_CTRL_FW_VERSION    0x0002
+#define BQ27441_CTRL_UNSEAL_KEY    0x8000  /* Default unseal key (sent twice: 0x8000 then 0x8000) */
+#define BQ27441_CTRL_SEAL          0x0020  /* Seal data flash (lock configuration) */
+#define BQ27441_CTRL_SET_CFGUPDATE 0x0013  /* Enter CONFIG UPDATE mode (required before block data access) */
+#define BQ27441_CTRL_SOFT_RESET    0x0042  /* Exit CONFIG UPDATE mode and commit data flash write */
+#define BQ27441_CTRL_EXIT_HIBERNATE 0x0011 /* Wake from hibernate — resumes current measurements */
+#define BQ27441_CTRL_IT_ENABLE     0x0021  /* Enable Impedance Track algorithm (activates SoC/current) */
 
 /* Data Flash Block Interface - for accessing/modifying design capacity */
 #define BQ27441_CMD_BLOCK_DATA_CTRL  0x61  /* Block Data Control status */

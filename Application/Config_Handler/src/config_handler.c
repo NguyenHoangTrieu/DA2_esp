@@ -5,7 +5,6 @@
  */
 
 #include "config_handler.h"
-#include "rbg_handler.h"
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "esp_log.h"
@@ -968,7 +967,7 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
-                    led_show_blue();
+                    
                     fota_handler_task_start();
                     break;
                 }

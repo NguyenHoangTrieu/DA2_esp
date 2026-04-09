@@ -20,7 +20,7 @@
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "pcf8563_rtc.h"
-#include "rbg_handler.h"
+
 #include "ppp_server.h"
 #include <string.h>
 #include <sys/time.h>
@@ -793,7 +793,7 @@ static void fota_task(void *pvParameters) {
 
     ESP_LOGI(TAG, "FOTA pre-handshake completed, initiating WAN update");
     server_connect_stop(g_server_type);
-    led_show_blue();
+    
     vTaskDelay(pdMS_TO_TICKS(5000));
     fota_handler_task_start();
     vTaskDelay(pdMS_TO_TICKS(200000));
