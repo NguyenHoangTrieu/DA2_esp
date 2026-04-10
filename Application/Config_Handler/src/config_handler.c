@@ -6,7 +6,6 @@
 
 #include "config_handler.h"
 #include "fota_handler.h"
-#include "rbg_handler.h"
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "esp_log.h"
@@ -975,7 +974,6 @@ static void config_handler_task(void *arg) {
                 }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
-                    led_show_blue();
                     /* Optional URL: "FW:<url>" sets WAN MCU URL before triggering */
                     if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
                         const char *url = cmd->raw_data + 3;

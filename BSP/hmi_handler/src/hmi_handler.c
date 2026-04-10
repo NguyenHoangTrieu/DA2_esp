@@ -14,7 +14,6 @@
 
 #include "hmi_handler.h"
 #include "config_handler.h"
-#include "ppp_server.h"
 #include "esp_log.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -460,13 +459,6 @@ esp_err_t hmi_enter_mode(void)
     if (s_hmi_active) {
         ESP_LOGW(TAG, "Already in HMI mode");
         return ESP_OK;
-    }
-
-    /* 1. Deinit PPP server if it is holding UART2 */
-    if (ppp_server_is_initialized()) {
-        ESP_LOGI(TAG, "Deinitializing PPP server to release UART2");
-        ppp_server_deinit();
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     /* 2. Install UART2 driver at 115200 baud (HMI protocol speed) */
