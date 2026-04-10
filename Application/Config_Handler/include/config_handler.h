@@ -8,7 +8,7 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include "fota_handler.h"
-#include "ppp_server.h"
+#include "fota_ap.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
 #include "wifi_connect.h"
@@ -28,7 +28,8 @@ typedef enum {
     CONFIG_TYPE_MQTT = 1,      // "MQ" - MQTT configuration
     CONFIG_TYPE_LTE = 2,       // "LT" - LTE configuration
     CONFIG_TYPE_INTERNET = 3,   // "IN" - Internet configuration
-    CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command
+    CONFIG_UPDATE_FIRMWARE = 4, // "FW" - Firmware update command (set URL + trigger)
+    CONFIG_SET_FIRMWARE_URL = 9, // "FU" - Set WAN firmware URL only (no trigger, saved to NVS)
     CONFIG_TYPE_MCU_LAN = 5,    // "ML" - MCU LAN configuration
     CONFIG_TYPE_SERVER = 6,     // "SV" - Server configuration
     CONFIG_TYPE_HTTP = 7,        // "HP" - HTTP server configuration
@@ -143,6 +144,7 @@ config_type_t config_parse_type(const char *cmd, uint16_t len);
 
 // NVS save/load functions
 esp_err_t save_internet_config_to_nvs(void);
+esp_err_t save_fota_wan_url_to_nvs(void);
 esp_err_t save_server_config_to_nvs(void);
 esp_err_t save_mqtt_config_to_nvs(void);
 esp_err_t save_lte_config_to_nvs(void);

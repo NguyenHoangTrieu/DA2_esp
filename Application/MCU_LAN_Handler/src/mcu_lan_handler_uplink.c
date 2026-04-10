@@ -20,8 +20,8 @@
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "pcf8563_rtc.h"
-
-#include "ppp_server.h"
+#include "rbg_handler.h"
+#include "fota_ap.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -212,6 +212,7 @@ static void uplink_processor_task(void *pvParameters) {
         ESP_LOGE(TAG, "[TIMEOUT] LAN may have failed FOTA or stuck - resetting wait flag");
         g_waiting_for_lan_update = false;
         g_lan_fota_wait_start_tick = 0;
+        fota_ap_stop(); /* LAN gave up — tear down the FOTA AP */
       }
     }
     
@@ -220,10 +221,9 @@ static void uplink_processor_task(void *pvParameters) {
     if (g_fota_pending_internet && g_internet_status == INTERNET_STATUS_ONLINE && 
         g_prev_internet_status == INTERNET_STATUS_OFFLINE) {
       ESP_LOGI(TAG, "[FOTA] Internet just came online, triggering pending FOTA");
-      g_not_ppp_to_lan = true;
-      if (!ppp_server_is_initialized()) {
-        ppp_server_init();
-        vTaskDelay(pdMS_TO_TICKS(200));
+      if (!fota_ap_is_running()) {
+        fota_ap_start();
+        vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
       }
       send_fota_trigger_to_lan();
       g_waiting_for_lan_update = true;
@@ -370,12 +370,11 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
     return;
   }
 
-  // Internet is online - proceed with FOTA trigger (following config_handler MCU_LAN pattern)
-  ESP_LOGI(TAG, "[FOTA] Internet online, initializing PPP server for LAN");
-  g_not_ppp_to_lan = true;
-  if (!ppp_server_is_initialized()) {
-    ppp_server_init();
-    vTaskDelay(pdMS_TO_TICKS(200));
+  // Internet is online - start FOTA AP and trigger LAN MCU
+  ESP_LOGI(TAG, "[FOTA] Internet online, starting FOTA WiFi AP for LAN");
+  if (!fota_ap_is_running()) {
+    fota_ap_start();
+    vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
   }
 
   // Trigger LAN FOTA via DQ
@@ -474,6 +473,9 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
     g_waiting_for_lan_update = false;
     g_lan_fota_wait_start_tick = 0;  // Clear timeout timer
     g_wan_fota_in_progress = true;  // Prevent re-triggering while WAN FOTA runs
+    g_fota_request_pending = false;  /* Clear so it doesn't re-fire if WAN FOTA
+        is delayed or skipped — server intent already served (LAN is updated) */
+    fota_ap_stop(); /* LAN FOTA done — AP no longer needed */
     // DO NOT send ACK - let LAN retry handshake
     // Start WAN FOTA immediately
     fota_handler_task_start();
@@ -676,8 +678,20 @@ static void process_data_query(void) {
   // 2) Config/FOTA downlink to LAN (from WAN config cache)
   if (!served && g_config_cache_has_config) {
     ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
-    downlink_handle_config_request();
+    bool cache_was_fota = g_fota_request_pending;  /* g_fota_request_pending is only
+        set alongside is_fota=true in the config cache, so it's a safe proxy */
+    downlink_handle_config_request();  /* clears g_config_cache_has_config */
     served = true;
+    if (cache_was_fota && !g_waiting_for_lan_update) {
+      /* The FOTA trigger was delivered to LAN via the config-cache path
+       * (server CFFW command, NOT via trigger_lan_fota_if_needed).  That
+       * path never sets g_waiting_for_lan_update, so when LAN reconnects
+       * after flashing, process_handshake() CASE 1 is skipped and CASE 2
+       * re-fires the FOTA.  Set the flag here so CASE 1 fires correctly. */
+      g_waiting_for_lan_update = true;
+      g_lan_fota_wait_start_tick = xTaskGetTickCount();
+      ESP_LOGI(TAG, "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
+    }
   }
 
   // 3) Normal downlink data (DT) to LAN
@@ -793,7 +807,7 @@ static void fota_task(void *pvParameters) {
 
     ESP_LOGI(TAG, "FOTA pre-handshake completed, initiating WAN update");
     server_connect_stop(g_server_type);
-    
+    led_show_blue();
     vTaskDelay(pdMS_TO_TICKS(5000));
     fota_handler_task_start();
     vTaskDelay(pdMS_TO_TICKS(200000));

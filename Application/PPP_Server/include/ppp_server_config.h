@@ -9,6 +9,8 @@
 #define PPP_UART_BAUD_RATE      921600
 #define PPP_UART_TX_PIN         GPIO_NUM_41
 #define PPP_UART_RX_PIN         GPIO_NUM_42
+#define PPP_UART_RTS_PIN        GPIO_NUM_9   /* Flow control: request-to-send */
+#define PPP_UART_CTS_PIN        GPIO_NUM_14  /* Flow control: clear-to-send */
 
 /* UART Buffer Sizes */
 #define PPP_UART_BUF_SIZE       (32*1024)  // Increased to 32KB for FOTA stability

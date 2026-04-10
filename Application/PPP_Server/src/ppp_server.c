@@ -3,6 +3,7 @@
  */
 
 #include "ppp_server.h"
+#include "driver/uart.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -71,7 +72,21 @@ static void ppp_server_task(void *pvParameters) {
 
   if (s_ppp_netif) {
     ESP_LOGI(TAG, "PPP connection established successfully");
-    ESP_LOGI(TAG, "NAPT enabled between WiFi and PPP interfaces");
+
+    /* Explicit post-connect UART setup — mirrors what LAN MCU does after
+     * eppp_connect().
+     * 1) uart_set_pin: assign RTS/CTS GPIOs (eppp_link already does this
+     *    but repeat explicitly to be safe).
+     * 2) uart_set_hw_flow_ctrl: activate hardware CTS/RTS in the UART
+     *    controller with RX FIFO threshold of 16 bytes.
+     * 3) uart_set_rx_full_threshold: fire ISR early so the UART ring buffer
+     *    never fills up during burst traffic from the LAN MCU. */
+    uart_set_pin(PPP_UART_PORT, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
+                 PPP_UART_RTS_PIN, PPP_UART_CTS_PIN);
+    uart_set_hw_flow_ctrl(PPP_UART_PORT, UART_HW_FLOWCTRL_CTS_RTS, 16);
+    uart_set_rx_full_threshold(PPP_UART_PORT, 16);
+    ESP_LOGI(TAG, "PPP UART: flow_control=RTS_CTS(GPIO%d/GPIO%d), eppp_prio=17",
+             PPP_UART_RTS_PIN, PPP_UART_CTS_PIN);
 
     // Enable NAPT between WiFi and PPP interfaces
 #if PPP_SERVER_INTERNET_EPPP_CHANNEL
@@ -131,6 +146,26 @@ esp_err_t ppp_server_init() {
   s_ppp_config.uart.rx_io = PPP_UART_RX_PIN;
   s_ppp_config.uart.queue_size = PPP_UART_QUEUE_SIZE;
   s_ppp_config.uart.rx_buffer_size = PPP_UART_BUF_SIZE;
+
+  /* Assign RTS/CTS pins AND set flow_control mode.
+   * Without flow_control = UART_HW_FLOWCTRL_CTS_RTS, eppp_uart.c passes
+   * flow_ctrl=0 to uart_param_config(), so the UART controller ignores the
+   * CTS pin even though it is assigned.  Hardware flow control only works
+   * when BOTH the GPIO pins AND the controller mode are configured. */
+  s_ppp_config.uart.rts_io = PPP_UART_RTS_PIN;
+  s_ppp_config.uart.cts_io = PPP_UART_CTS_PIN;
+  s_ppp_config.uart.flow_control = UART_HW_FLOWCTRL_CTS_RTS;
+
+  /* Raise eppp_link internal task priority to 17 (just below LwIP=18).
+   * Default priority is 8.  At priority 8, the eppp_link receive task
+   * (which reads LAN-MCU ACKs from UART and posts to LwIP tcpip mailbox)
+   * cannot run while LwIP (18) is busy in uart_write_bytes() forwarding
+   * data.  This delays TCP window-update ACKs from LAN MCU to ThingsBoard,
+   * causing the TCP sender to stall at exactly the initial congestion
+   * window (~6713 bytes) until the ACKs are finally processed.
+   * At priority 17, the eppp_link task runs during LwIP's internal
+   * scheduling gaps, forwarding ACKs promptly and keeping data flowing. */
+  s_ppp_config.task.priority = 17;
   
   // Create PPP server task
   BaseType_t task_created =

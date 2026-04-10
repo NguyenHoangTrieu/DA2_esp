@@ -13,7 +13,7 @@
 #include "lte_connect.h"
 #include "eth_connect.h"
 #include "mcu_lan_handler.h"
-#include "ppp_server.h"
+#include "fota_ap.h"
 #include "web_config_handler.h"
 #include "i2c_dev_support.h"
 #include "tca_handler.h"

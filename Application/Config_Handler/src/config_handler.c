@@ -5,14 +5,13 @@
  */
 
 #include "config_handler.h"
+#include "fota_handler.h"
+#include "rbg_handler.h"
 #include "http_handler.h"
 #include "coap_handler.h"
 #include "esp_log.h"
 #include "DA2_esp.h"
 #include <ctype.h>
-
-/* UART switch: defined in DA2_esp.c — must route to LAN MCU before PPP/OTA */
-extern void uart_switch_route_to_lan_mcu(void);
 
 static const char *TAG = "config_handler";
 
@@ -80,6 +79,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_MQTT;
     } else if (cmd[0] == 'F' && cmd[1] == 'W') {
         return CONFIG_UPDATE_FIRMWARE;
+    } else if (cmd[0] == 'F' && cmd[1] == 'U') {
+        return CONFIG_SET_FIRMWARE_URL;
     } else if (cmd[0] == 'L' && cmd[1] == 'T') {
         return CONFIG_TYPE_LTE;
     } else if (cmd[0] == 'I' && cmd[1] == 'N') {
@@ -366,30 +367,26 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 /**
  * @brief Parse LTE configuration from command string
  * Format: "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
- * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:05:06"
+ * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE"
  * Note: USERNAME and PASSWORD can be empty (consecutive colons allowed).
- *       PWR_PIN / RST_PIN are numeric GPIO pin IDs (00-17) for flat TCA6416A mapping.
- *       Examples: "05"=P05, "06"=P06, etc. Omit or use "" to keep defaults (05 for PWR, 06 for RST).
+ *       PWR_PIN / RST_PIN are TCA pin labels: "WK"="WAKE#"(11), "PE"="PERST#"(12),
+ *       or "01".."11" for numbered GPIO pins (0-10).  Omit or use "" to keep default.
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output LTE config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
 static uint8_t parse_tca_pin_label(const char *s, int len) {
-    /* New architecture: Parse numeric GPIO pin IDs directly (04-17, flat TCA mapping)
-     * Pins 00-03 reserved for adapter ID detection. Use numeric pins P04-P17 */
-    if (len >= 1 && len <= 2) {
-        int num = 0;
-        if (len == 1) {
-            num = s[0] - '0';  /* 4-9 (single digit) */
-        } else if (len == 2) {
-            num = (s[0] - '0') * 10 + (s[1] - '0');  /* 04-17 (two digits) */
-        }
-        if (num >= 4 && num <= 17) {
-            return (uint8_t)num;
+    if (len == 2) {
+        if ((s[0] == 'W' || s[0] == 'w') && (s[1] == 'K' || s[1] == 'k')) return 11; /* STACK_GPIO_PIN_WAKE  */
+        if ((s[0] == 'P' || s[0] == 'p') && (s[1] == 'E' || s[1] == 'e')) return 12; /* STACK_GPIO_PIN_PERST */
+        /* "01" - "11" -> index 0-10 */
+        if (s[0] == '0' || s[0] == '1') {
+            int num = (s[0] - '0') * 10 + (s[1] - '0');
+            if (num >= 1 && num <= 11) return (uint8_t)(num - 1);
         }
     }
-    return 0xFF; /* STACK_GPIO_PIN_NONE — invalid pin */
+    return 0xFF; /* STACK_GPIO_PIN_NONE */
 }
 
 static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_data_t *cfg) {
@@ -398,9 +395,9 @@ static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_dat
     }
 
     memset(cfg, 0, sizeof(lte_config_data_t));
-    /* Default TCA pins: P05 for power, P06 for reset (configurable per use case) */
-    cfg->pwr_pin = 5;   /* STACK_GPIO_PIN_05 (P05) */
-    cfg->rst_pin = 6;   /* STACK_GPIO_PIN_06 (P06) */
+    /* Default TCA pins if not supplied in command */
+    cfg->pwr_pin = 11; /* STACK_GPIO_PIN_WAKE  */
+    cfg->rst_pin = 12; /* STACK_GPIO_PIN_PERST */
 
     /* Parse format:
      * "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
@@ -965,9 +962,27 @@ static void config_handler_task(void *arg) {
                     }
                     break;
                 }
+                case CONFIG_SET_FIRMWARE_URL: {
+                    /* FU:<url> — save WAN firmware URL to NVS only, no OTA trigger */
+                    if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
+                        const char *url = cmd->raw_data + 3;
+                        if (url[0] != '\0') {
+                            fota_handler_set_url(url); /* set_url saves to NVS internally */
+                            ESP_LOGI(TAG, "WAN firmware URL saved: %s", url);
+                        }
+                    }
+                    break;
+                }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
-                    
+                    led_show_blue();
+                    /* Optional URL: "FW:<url>" sets WAN MCU URL before triggering */
+                    if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
+                        const char *url = cmd->raw_data + 3;
+                        if (url[0] != '\0') {
+                            fota_handler_set_url(url);
+                        }
+                    }
                     fota_handler_task_start();
                     break;
                 }
@@ -1041,16 +1056,9 @@ static void config_handler_task(void *arg) {
 
                         // Check if this is a firmware update command
                         if (lan_cmd->length >= 4 && strncmp(lan_cmd->command, "CFFW", 4) == 0) {
-                            g_not_ppp_to_lan = true;
-                            /* Ensure UART2 is routed to LAN MCU before PPP server starts.
-                             * The HMI display may have taken the UART channel; switch back first. */
-                            uart_switch_route_to_lan_mcu();
-                            vTaskDelay(pdMS_TO_TICKS(50));
-                            if (!ppp_server_is_initialized()) {
-                                server_connect_stop(g_server_type);
-                                vTaskDelay(pdMS_TO_TICKS(5000));
-                                ppp_server_init();
-                                vTaskDelay(pdMS_TO_TICKS(200));
+                            if (!fota_ap_is_running()) {
+                                fota_ap_start();
+                                vTaskDelay(pdMS_TO_TICKS(500));
                             }
                             is_fota = true;
                         }
