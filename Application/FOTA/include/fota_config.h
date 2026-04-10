@@ -91,7 +91,7 @@
 
 /* OTA Receive Timeout in milliseconds.
  * 30s is plenty for a local HTTP server — file is ~1.6 MB over LAN. */
-#define FOTA_CONFIG_OTA_RECV_TIMEOUT 30000
+#define FOTA_CONFIG_OTA_RECV_TIMEOUT 300000
 
 /* TCP connect timeout for connectivity pre-check (ms) */
 #define FOTA_CONFIG_CONNECTIVITY_CHECK_TIMEOUT_MS 5000

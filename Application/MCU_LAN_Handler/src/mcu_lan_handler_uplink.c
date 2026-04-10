@@ -21,7 +21,7 @@
 #include "coap_handler.h"
 #include "pcf8563_rtc.h"
 #include "rbg_handler.h"
-#include "ppp_server.h"
+#include "fota_ap.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -212,6 +212,7 @@ static void uplink_processor_task(void *pvParameters) {
         ESP_LOGE(TAG, "[TIMEOUT] LAN may have failed FOTA or stuck - resetting wait flag");
         g_waiting_for_lan_update = false;
         g_lan_fota_wait_start_tick = 0;
+        fota_ap_stop(); /* LAN gave up — tear down the FOTA AP */
       }
     }
     
@@ -220,10 +221,9 @@ static void uplink_processor_task(void *pvParameters) {
     if (g_fota_pending_internet && g_internet_status == INTERNET_STATUS_ONLINE && 
         g_prev_internet_status == INTERNET_STATUS_OFFLINE) {
       ESP_LOGI(TAG, "[FOTA] Internet just came online, triggering pending FOTA");
-      g_not_ppp_to_lan = true;
-      if (!ppp_server_is_initialized()) {
-        ppp_server_init();
-        vTaskDelay(pdMS_TO_TICKS(200));
+      if (!fota_ap_is_running()) {
+        fota_ap_start();
+        vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
       }
       send_fota_trigger_to_lan();
       g_waiting_for_lan_update = true;
@@ -370,12 +370,11 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
     return;
   }
 
-  // Internet is online - proceed with FOTA trigger (following config_handler MCU_LAN pattern)
-  ESP_LOGI(TAG, "[FOTA] Internet online, initializing PPP server for LAN");
-  g_not_ppp_to_lan = true;
-  if (!ppp_server_is_initialized()) {
-    ppp_server_init();
-    vTaskDelay(pdMS_TO_TICKS(200));
+  // Internet is online - start FOTA AP and trigger LAN MCU
+  ESP_LOGI(TAG, "[FOTA] Internet online, starting FOTA WiFi AP for LAN");
+  if (!fota_ap_is_running()) {
+    fota_ap_start();
+    vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
   }
 
   // Trigger LAN FOTA via DQ
@@ -474,6 +473,7 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
     g_waiting_for_lan_update = false;
     g_lan_fota_wait_start_tick = 0;  // Clear timeout timer
     g_wan_fota_in_progress = true;  // Prevent re-triggering while WAN FOTA runs
+    fota_ap_stop(); /* LAN FOTA done — AP no longer needed */
     // DO NOT send ACK - let LAN retry handshake
     // Start WAN FOTA immediately
     fota_handler_task_start();

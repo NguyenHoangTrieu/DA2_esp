@@ -1035,12 +1035,9 @@ static void config_handler_task(void *arg) {
 
                         // Check if this is a firmware update command
                         if (lan_cmd->length >= 4 && strncmp(lan_cmd->command, "CFFW", 4) == 0) {
-                            g_not_ppp_to_lan = true;
-                            if (!ppp_server_is_initialized()) {
-                                server_connect_stop(g_server_type);
-                                vTaskDelay(pdMS_TO_TICKS(5000));
-                                ppp_server_init();
-                                vTaskDelay(pdMS_TO_TICKS(200));
+                            if (!fota_ap_is_running()) {
+                                fota_ap_start();
+                                vTaskDelay(pdMS_TO_TICKS(500));
                             }
                             is_fota = true;
                         }
