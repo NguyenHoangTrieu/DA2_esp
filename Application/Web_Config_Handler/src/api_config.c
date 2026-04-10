@@ -14,6 +14,7 @@
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
 #include "stack_handler.h"
+#include "fota_handler.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -24,7 +25,8 @@
 static const char *TAG = "api_config";
 
 /* Max body size we accept on POST (matches CONFIG_CMD_MAX_LEN) */
-#define API_MAX_BODY_LEN  CONFIG_CMD_MAX_LEN
+#define API_MAX_BODY_LEN   CONFIG_CMD_MAX_LEN
+#define FOTA_URL_MAX_LEN   256
 
 /* ================================================================
  *  Helper: send JSON error response
@@ -162,6 +164,13 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON *jlan = cJSON_AddObjectToObject(root, "lan");
     cJSON_AddStringToObject(jlan, "stack1_id", lan_s1);
     cJSON_AddStringToObject(jlan, "stack2_id", lan_s2);
+
+    /* FOTA — firmware download URLs for both LAN and WAN MCUs */
+    cJSON *jfota = cJSON_AddObjectToObject(root, "fota");
+    cJSON_AddStringToObject(jfota, "lan_fw_url",
+                            "http://192.168.1.100:8080/api/v1/TOKEN/firmware"
+                            "?title=DA2_esp_LAN&version=1.1.2");
+    cJSON_AddStringToObject(jfota, "wan_fw_url", fota_handler_get_url());
 
     /* Serialise */
     const char *json_str = cJSON_PrintUnformatted(root);
@@ -407,6 +416,32 @@ static esp_err_t build_server_type_cmd(const cJSON *obj)
     return enqueue_config_cmd(CONFIG_TYPE_SERVER, wire, (uint16_t)len);
 }
 
+static esp_err_t build_fota_url_cmd(const cJSON *obj)
+{
+    /* obj fields:
+     *   lan_fw_url  (string) — saved to LAN MCU via ML:CFFU:<url> (NVS, no trigger)
+     *   wan_fw_url  (string) — saved to WAN MCU directly         (NVS, no trigger)
+     */
+    esp_err_t ret = ESP_OK;
+
+    /* ── LAN MCU: set URL only ── */
+    const cJSON *lan_url = cJSON_GetObjectItem(obj, "lan_fw_url");
+    if (cJSON_IsString(lan_url) && lan_url->valuestring[0] != '\0') {
+        char wire[FOTA_URL_MAX_LEN + 16];
+        int wire_len = snprintf(wire, sizeof(wire),
+                                "ML:CFFU:%s", lan_url->valuestring);
+        ret = enqueue_config_cmd(CONFIG_TYPE_MCU_LAN, wire, (uint16_t)wire_len);
+    }
+
+    /* ── WAN MCU: set URL only (direct, saves to NVS via set_url) ── */
+    const cJSON *wan_url = cJSON_GetObjectItem(obj, "wan_fw_url");
+    if (cJSON_IsString(wan_url) && wan_url->valuestring[0] != '\0') {
+        fota_handler_set_url(wan_url->valuestring);
+    }
+
+    return ret;
+}
+
 /* ================================================================
  *  POST /api/config — accept partial JSON, enqueue commands
  * ================================================================ */
@@ -470,6 +505,12 @@ esp_err_t api_config_post_handler(void *arg)
 
     item = cJSON_GetObjectItem(root, "coap");
     if (item) { (build_coap_cmd(item) == ESP_OK) ? queued++ : errors++; }
+
+    item = cJSON_GetObjectItem(root, "fota");
+    if (item) {
+        esp_err_t fota_ret = build_fota_url_cmd(item);
+        if (fota_ret == ESP_OK) queued++; else errors++;
+    }
 
     cJSON_Delete(root);
 

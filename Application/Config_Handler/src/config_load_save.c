@@ -1,4 +1,5 @@
 #include "config_handler.h"
+#include "fota_handler.h"
 #include "esp_log.h"
 #include "lte_connect.h"
 #include "mqtt_handler.h"
@@ -24,6 +25,7 @@ static const char *TAG = "CONFIG_NVS";
 #define NVS_NS_GATEWAY "gateway_cfg"
 #define NVS_KEY_INITIALIZED "initialized"
 #define NVS_KEY_WAN_STACK_ID "wan_stack_id"  /* tracks WAN hardware stack, clears LTE config on change */
+#define NVS_KEY_FOTA_WAN_URL "fota_wan_url"  /* WAN MCU firmware OTA URL */
 
 /* WAN stack module ID — pseudo hardware identifier (always "001" for single-stack WAN) */
 char g_stack_id_wan[8] = "000";
@@ -581,6 +583,41 @@ esp_err_t save_coap_config_to_nvs(void) {
 }
 
 /**
+ * @brief Save WAN MCU firmware OTA URL to NVS.
+ */
+esp_err_t save_fota_wan_url_to_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+  err = nvs_set_str(nvs_handle, NVS_KEY_FOTA_WAN_URL, fota_handler_get_url());
+  if (err == ESP_OK) err = nvs_commit(nvs_handle);
+  nvs_close(nvs_handle);
+  if (err == ESP_OK)
+    ESP_LOGI(TAG, "FOTA WAN URL saved: %s", fota_handler_get_url());
+  return err;
+}
+
+/**
+ * @brief Load WAN MCU firmware OTA URL from NVS (call at startup).
+ */
+static esp_err_t load_fota_wan_url_from_nvs(void) {
+  nvs_handle_t nvs_handle;
+  esp_err_t err = nvs_open_handle(&nvs_handle);
+  if (err != ESP_OK) return err;
+  char buf[FOTA_CONFIG_FIRMWARE_URL_MAX_LEN];
+  size_t len = sizeof(buf);
+  err = nvs_get_str(nvs_handle, NVS_KEY_FOTA_WAN_URL, buf, &len);
+  nvs_close(nvs_handle);
+  if (err == ESP_OK && len > 1) {
+    fota_handler_set_url(buf);
+    ESP_LOGI(TAG, "FOTA WAN URL loaded: %s", buf);
+  } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+    err = ESP_OK; /* use default from fota_config.h */
+  }
+  return err;
+}
+
+/**
  * @brief Load all configurations from NVS (call at startup)
  */
 static esp_err_t load_all_configs_from_nvs(void) {
@@ -627,6 +664,12 @@ static esp_err_t load_all_configs_from_nvs(void) {
   err = load_coap_config_from_nvs();
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "Failed to load CoAP config");
+  }
+
+  // Load FOTA WAN URL
+  err = load_fota_wan_url_from_nvs();
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to load FOTA WAN URL");
   }
 
   ESP_LOGI(TAG, "Configuration loading complete");
@@ -736,6 +779,7 @@ esp_err_t config_init(void) {
         save_coap_config_to_nvs();
         save_internet_config_to_nvs();
         save_server_config_to_nvs();
+        save_fota_wan_url_to_nvs();
         
         mark_initialized();
         

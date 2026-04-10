@@ -5,6 +5,7 @@
  */
 
 #include "config_handler.h"
+#include "fota_handler.h"
 #include "rbg_handler.h"
 #include "http_handler.h"
 #include "coap_handler.h"
@@ -78,6 +79,8 @@ config_type_t config_parse_type(const char *cmd, uint16_t len) {
         return CONFIG_TYPE_MQTT;
     } else if (cmd[0] == 'F' && cmd[1] == 'W') {
         return CONFIG_UPDATE_FIRMWARE;
+    } else if (cmd[0] == 'F' && cmd[1] == 'U') {
+        return CONFIG_SET_FIRMWARE_URL;
     } else if (cmd[0] == 'L' && cmd[1] == 'T') {
         return CONFIG_TYPE_LTE;
     } else if (cmd[0] == 'I' && cmd[1] == 'N') {
@@ -959,9 +962,27 @@ static void config_handler_task(void *arg) {
                     }
                     break;
                 }
+                case CONFIG_SET_FIRMWARE_URL: {
+                    /* FU:<url> — save WAN firmware URL to NVS only, no OTA trigger */
+                    if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
+                        const char *url = cmd->raw_data + 3;
+                        if (url[0] != '\0') {
+                            fota_handler_set_url(url); /* set_url saves to NVS internally */
+                            ESP_LOGI(TAG, "WAN firmware URL saved: %s", url);
+                        }
+                    }
+                    break;
+                }
                 case CONFIG_UPDATE_FIRMWARE: {
                     ESP_LOGI(TAG, "Firmware update command received");
                     led_show_blue();
+                    /* Optional URL: "FW:<url>" sets WAN MCU URL before triggering */
+                    if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
+                        const char *url = cmd->raw_data + 3;
+                        if (url[0] != '\0') {
+                            fota_handler_set_url(url);
+                        }
+                    }
                     fota_handler_task_start();
                     break;
                 }

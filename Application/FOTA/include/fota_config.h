@@ -17,58 +17,37 @@
  *   The device automatically downloads the latest assigned firmware.
  * ============================================================ */
 
-/* 1 = local Raspberry Pi (HTTP), 0 = cloud ThingsBoard (HTTPS) */
-#define FOTA_CONFIG_TB_USE_HTTPS        0
+/* ============================================================
+ * ThingsBoard OTA Server Configuration (WAN MCU)
+ * ============================================================
+ *
+ * Set FOTA_CONFIG_FIRMWARE_URL to the full firmware download URL.
+ * Works with ThingsBoard, GitHub Releases, any plain HTTP/HTTPS server.
+ *
+ * Examples:
+ *   ThingsBoard local : http://192.168.1.100:8080/api/v1/TOKEN/firmware?title=DA2_esp&version=1.1.2
+ *   ThingsBoard cloud : https://demo.thingsboard.io/api/v1/TOKEN/firmware?title=DA2_esp&version=1.1.2
+ *   GitHub Release    : https://github.com/USER/REPO/releases/download/v1.1.2/DA2_esp.bin
+ *   Custom HTTP       : http://192.168.1.50/ota/DA2_esp.bin
+ * ============================================================ */
 
-/* ThingsBoard host — change to "demo.thingsboard.io" for cloud */
-#define FOTA_CONFIG_TB_HOST             "192.168.1.100"
+/* Full firmware download URL — the only setting that needs to change */
+#define FOTA_CONFIG_FIRMWARE_URL \
+    "http://192.168.1.100:8080/api/v1/Zfdvk6M9rEmw5fBj7TzP/firmware?title=DA2_esp&version=1.1.2"
 
-/* Port: 8080 for local HTTP, 443 for demo.thingsboard.io HTTPS */
-#define FOTA_CONFIG_TB_PORT             8080
+/* Maximum URL length stored at runtime */
+#define FOTA_CONFIG_FIRMWARE_URL_MAX_LEN  256
 
-/* Device Access Token from ThingsBoard Devices page */
-#define FOTA_CONFIG_TB_DEVICE_TOKEN     "Zfdvk6M9rEmw5fBj7TzP"
-
-/* Firmware package title and version — must match what was uploaded to
- * ThingsBoard OTA Updates. ThingsBoard returns HTTP 400 without these. */
-#define FOTA_CONFIG_TB_FIRMWARE_TITLE   "DA2_esp"
-#define FOTA_CONFIG_TB_FIRMWARE_VERSION "1.1.2"
-
-/* Skip TLS certificate verification for local self-signed cert */
-#define FOTA_CONFIG_TB_SKIP_CERT_VERIFY 1
-
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
-
-#if FOTA_CONFIG_TB_USE_HTTPS
-#define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
-    "https://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
-    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
-    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
-    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
-#else
-#define FOTA_CONFIG_FIRMWARE_UPGRADE_URL \
-    "http://" FOTA_CONFIG_TB_HOST ":" STR(FOTA_CONFIG_TB_PORT) \
-    "/api/v1/" FOTA_CONFIG_TB_DEVICE_TOKEN "/firmware" \
-    "?title=" FOTA_CONFIG_TB_FIRMWARE_TITLE \
-    "&version=" FOTA_CONFIG_TB_FIRMWARE_VERSION
-#endif
-
-/* Enable certificate bundle — only needed for HTTPS with a public CA cert.
- * Auto-disabled for plain HTTP or when using skip-verify. */
-#if FOTA_CONFIG_TB_USE_HTTPS && !FOTA_CONFIG_TB_SKIP_CERT_VERIFY
-#define FOTA_CONFIG_USE_CERT_BUNDLE 1
-#else
+/* Use cert bundle for https:// URLs with a public CA (e.g. GitHub, demo.thingsboard.io).
+ * Leave 0 for plain http:// or self-signed certs. */
 #define FOTA_CONFIG_USE_CERT_BUNDLE 0
-#endif
 
 /* Firmware upgrade URL from stdin (set to 1 if URL is "FROM_STDIN") */
 #define FOTA_CONFIG_FIRMWARE_UPGRADE_URL_FROM_STDIN 0
 
 /* Skip TLS certificate CN field check.
- * Derived from FOTA_CONFIG_TB_SKIP_CERT_VERIFY: set to 1 for local
- * self-signed cert, 0 for demo.thingsboard.io public cert. */
-#define FOTA_CONFIG_SKIP_COMMON_NAME_CHECK FOTA_CONFIG_TB_SKIP_CERT_VERIFY
+ * Set to 1 only when using a local self-signed certificate. */
+#define FOTA_CONFIG_SKIP_COMMON_NAME_CHECK 0
 
 /* Skip firmware version check (default: disabled) */
 #define FOTA_CONFIG_SKIP_VERSION_CHECK 0

@@ -473,6 +473,8 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
     g_waiting_for_lan_update = false;
     g_lan_fota_wait_start_tick = 0;  // Clear timeout timer
     g_wan_fota_in_progress = true;  // Prevent re-triggering while WAN FOTA runs
+    g_fota_request_pending = false;  /* Clear so it doesn't re-fire if WAN FOTA
+        is delayed or skipped — server intent already served (LAN is updated) */
     fota_ap_stop(); /* LAN FOTA done — AP no longer needed */
     // DO NOT send ACK - let LAN retry handshake
     // Start WAN FOTA immediately
@@ -676,8 +678,20 @@ static void process_data_query(void) {
   // 2) Config/FOTA downlink to LAN (from WAN config cache)
   if (!served && g_config_cache_has_config) {
     ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
-    downlink_handle_config_request();
+    bool cache_was_fota = g_fota_request_pending;  /* g_fota_request_pending is only
+        set alongside is_fota=true in the config cache, so it's a safe proxy */
+    downlink_handle_config_request();  /* clears g_config_cache_has_config */
     served = true;
+    if (cache_was_fota && !g_waiting_for_lan_update) {
+      /* The FOTA trigger was delivered to LAN via the config-cache path
+       * (server CFFW command, NOT via trigger_lan_fota_if_needed).  That
+       * path never sets g_waiting_for_lan_update, so when LAN reconnects
+       * after flashing, process_handshake() CASE 1 is skipped and CASE 2
+       * re-fires the FOTA.  Set the flag here so CASE 1 fires correctly. */
+      g_waiting_for_lan_update = true;
+      g_lan_fota_wait_start_tick = xTaskGetTickCount();
+      ESP_LOGI(TAG, "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
+    }
   }
 
   // 3) Normal downlink data (DT) to LAN

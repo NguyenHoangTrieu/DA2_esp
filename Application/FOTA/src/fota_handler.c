@@ -5,6 +5,7 @@
 * and optional OTA resumption using NVS.
 */
 #include "fota_handler.h"
+#include "config_handler.h"
 #include "esp_heap_caps.h"
 #include "web_config_handler.h"
 #include "lwip/sockets.h"
@@ -27,6 +28,23 @@ extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
 
 static bool ota_task_close = false;
+
+/* ------------------------------------------------------------------ */
+/*  Runtime firmware URL (overridable at runtime via set_url)          */
+/* ------------------------------------------------------------------ */
+static char s_fota_url[FOTA_CONFIG_FIRMWARE_URL_MAX_LEN] = FOTA_CONFIG_FIRMWARE_URL;
+
+void fota_handler_set_url(const char *url) {
+    if (!url || !url[0]) return;
+    strncpy(s_fota_url, url, sizeof(s_fota_url) - 1);
+    s_fota_url[sizeof(s_fota_url) - 1] = '\0';
+    ESP_LOGI(TAG, "[OTA] Firmware URL updated: %s", s_fota_url);
+    save_fota_wan_url_to_nvs();
+}
+
+const char *fota_handler_get_url(void) {
+    return s_fota_url;
+}
 
 #if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
 #define NVS_NAMESPACE_OTA_RESUMPTION  "ota_resumption"
@@ -232,44 +250,82 @@ static void get_sha256_of_partitions(void)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Connectivity pre-check: TCP connect to ThingsBoard host:port       */
+/*  Connectivity pre-check: TCP connect to host:port parsed from URL   */
 /* ------------------------------------------------------------------ */
 static bool server_reachable(void) {
-    char port_str[8];
-    snprintf(port_str, sizeof(port_str), "%d", FOTA_CONFIG_TB_PORT);
+    /* Parse host and port from FOTA_CONFIG_FIRMWARE_URL at runtime so
+     * any URL format works (ThingsBoard, GitHub, custom HTTP, etc.). */
+    const char *url = fota_handler_get_url();
+    const char *after_scheme = strstr(url, "://");
+    if (!after_scheme) {
+        ESP_LOGW(TAG, "[OTA-CHECK] Malformed URL: %s", url);
+        return false;
+    }
+    after_scheme += 3; /* skip "://" */
+
+    /* Extract host (up to ':' or '/' or end) */
+    char host[128] = {0};
+    const char *port_ptr = NULL;
+    const char *slash    = strchr(after_scheme, '/');
+    const char *colon    = strchr(after_scheme, ':');
+    /* colon must be before the first slash to be a port separator */
+    if (colon && (!slash || colon < slash)) {
+        int hlen = (int)(colon - after_scheme);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, after_scheme, hlen);
+        port_ptr = colon + 1;
+    } else {
+        int hlen = slash ? (int)(slash - after_scheme) : (int)strlen(after_scheme);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, after_scheme, hlen);
+    }
+
+    char port_str[8] = "80";
+    if (port_ptr) {
+        int plen = slash ? (int)(slash - port_ptr) : (int)strlen(port_ptr);
+        if (plen > 0 && plen < (int)sizeof(port_str))
+            memcpy(port_str, port_ptr, plen);
+    } else if (strncmp(url, "https", 5) == 0) {
+        strcpy(port_str, "443");
+    }
 
     struct addrinfo hints = {.ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM};
     struct addrinfo *res = NULL;
-    if (getaddrinfo(FOTA_CONFIG_TB_HOST, port_str, &hints, &res) != 0 || !res) {
-        ESP_LOGW(TAG, "[OTA-CHECK] DNS failed for %s", FOTA_CONFIG_TB_HOST);
+    if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
+        ESP_LOGW(TAG, "[OTA-CHECK] DNS failed for %s", host);
         return false;
     }
 
     int sock = socket(res->ai_family, SOCK_STREAM, 0);
-    if (sock < 0) {
-        freeaddrinfo(res);
-        return false;
-    }
+    if (sock < 0) { freeaddrinfo(res); return false; }
+
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
     int timeout_ms = FOTA_CONFIG_CONNECTIVITY_CHECK_TIMEOUT_MS;
-    struct timeval tv = {.tv_sec = timeout_ms / 1000,
-                         .tv_usec = (timeout_ms % 1000) * 1000};
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
     uint32_t t0 = esp_log_timestamp();
     int r = connect(sock, res->ai_addr, res->ai_addrlen);
+    if (r < 0 && errno == EINPROGRESS) {
+        struct timeval tv = {.tv_sec  = timeout_ms / 1000,
+                             .tv_usec = (timeout_ms % 1000) * 1000};
+        fd_set wfds; FD_ZERO(&wfds); FD_SET(sock, &wfds);
+        int sel = select(sock + 1, NULL, &wfds, NULL, &tv);
+        if (sel > 0) {
+            int so_err = 0; socklen_t sl = sizeof(so_err);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_err, &sl);
+            r = (so_err == 0) ? 0 : -1;
+        } else { r = -1; }
+    }
     uint32_t ms = esp_log_timestamp() - t0;
     close(sock);
     freeaddrinfo(res);
 
     if (r == 0) {
-        ESP_LOGI(TAG, "[OTA-CHECK] %s:%d reachable (%lums)",
-                 FOTA_CONFIG_TB_HOST, FOTA_CONFIG_TB_PORT, (unsigned long)ms);
+        ESP_LOGI(TAG, "[OTA-CHECK] %s:%s reachable (%lums)", host, port_str, (unsigned long)ms);
         return true;
     }
-    ESP_LOGW(TAG, "[OTA-CHECK] %s:%d unreachable (%lums) errno=%d",
-             FOTA_CONFIG_TB_HOST, FOTA_CONFIG_TB_PORT, (unsigned long)ms, errno);
+    ESP_LOGW(TAG, "[OTA-CHECK] %s:%s unreachable (%lums) errno=%d",
+             host, port_str, (unsigned long)ms, errno);
     return false;
 }
 
@@ -277,7 +333,8 @@ static bool server_reachable(void) {
 /*  OTA download via esp_http_client                                    */
 /* ------------------------------------------------------------------ */
 static esp_err_t ota_download(void) {
-    ESP_LOGI(TAG, "[OTA] Downloading from: %s", FOTA_CONFIG_FIRMWARE_UPGRADE_URL);
+    const char *fw_url = fota_handler_get_url();
+    ESP_LOGI(TAG, "[OTA] Downloading from: %s", fw_url);
 
     const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
     if (!update) {
@@ -290,18 +347,13 @@ static esp_err_t ota_download(void) {
     if (!buf) return ESP_ERR_NO_MEM;
 
     esp_http_client_config_t http_cfg = {
-        .url            = FOTA_CONFIG_FIRMWARE_UPGRADE_URL,
+        .url            = fw_url,
         .timeout_ms     = FOTA_CONFIG_OTA_RECV_TIMEOUT,
         .buffer_size    = 4096,
         .buffer_size_tx = 512,
         .keep_alive_enable = false,
-#if FOTA_CONFIG_TB_USE_HTTPS && FOTA_CONFIG_USE_CERT_BUNDLE
+#if FOTA_CONFIG_USE_CERT_BUNDLE
         .crt_bundle_attach = esp_crt_bundle_attach,
-#elif FOTA_CONFIG_TB_USE_HTTPS && !FOTA_CONFIG_USE_CERT_BUNDLE
-        .cert_pem = (char *)server_cert_pem_start,
-#endif
-#if FOTA_CONFIG_SKIP_COMMON_NAME_CHECK
-        .skip_cert_common_name_check = true,
 #endif
     };
 
@@ -388,7 +440,7 @@ cleanup_client:
 void advanced_ota_task(void *pvParameter) 
 {
     ESP_LOGI(TAG, "Starting Advanced OTA - V2.0.0");
-    ESP_LOGI(TAG, "[OTA] Target: %s", FOTA_CONFIG_FIRMWARE_UPGRADE_URL);
+    ESP_LOGI(TAG, "[OTA] Target: %s", fota_handler_get_url());
 
     get_sha256_of_partitions();
 
