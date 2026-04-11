@@ -33,7 +33,7 @@
 
 /* Full firmware download URL — the only setting that needs to change */
 #define FOTA_CONFIG_FIRMWARE_URL \
-    "http://192.168.1.100:8080/api/v1/Zfdvk6M9rEmw5fBj7TzP/firmware?title=DA2_esp&version=1.1.2"
+    "https://github.com/NguyenHoangTrieu/DA2_esp_release/releases/download/V0.0.1/DA2_esp.bin"
 
 /* Maximum URL length stored at runtime */
 #define FOTA_CONFIG_FIRMWARE_URL_MAX_LEN  256

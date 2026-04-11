@@ -7,11 +7,13 @@
 #include "fota_handler.h"
 #include "config_handler.h"
 #include "esp_heap_caps.h"
+#include "esp_crt_bundle.h"
 #include "web_config_handler.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 
 #if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
 /* The interface name value can refer to if_desc in esp_netif_defaults.h */
@@ -330,6 +332,21 @@ static bool server_reachable(void) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Event handler to capture redirect Location response header          */
+/* ------------------------------------------------------------------ */
+static char s_wan_location_header[2048];
+static esp_err_t wan_ota_http_event_handler(esp_http_client_event_t *evt)
+{
+    if (evt->event_id == HTTP_EVENT_ON_HEADER) {
+        if (strcasecmp(evt->header_key, "Location") == 0) {
+            strlcpy(s_wan_location_header, evt->header_value,
+                    sizeof(s_wan_location_header));
+        }
+    }
+    return ESP_OK;
+}
+
+/* ------------------------------------------------------------------ */
 /*  OTA download via esp_http_client                                    */
 /* ------------------------------------------------------------------ */
 static esp_err_t ota_download(void) {
@@ -346,15 +363,51 @@ static esp_err_t ota_download(void) {
     if (!buf) buf = (char *)malloc(4096);
     if (!buf) return ESP_ERR_NO_MEM;
 
+    /* Resolve redirects first via lightweight probe requests. The
+     * HTTP_EVENT_ON_HEADER callback captures the Location response header
+     * (esp_http_client_get_header() only reads request headers — wrong API). */
+    static char s_final_url[2048];
+    strlcpy(s_final_url, fw_url, sizeof(s_final_url));
+
+    for (int redir = 0; redir < 5; redir++) {
+        s_wan_location_header[0] = '\0';
+        bool cur_https = (strncmp(s_final_url, "https://", 8) == 0);
+        esp_http_client_config_t probe_cfg = {
+            .url               = s_final_url,
+            .timeout_ms        = 10000,
+            .buffer_size       = 2048,
+            .buffer_size_tx    = 512,
+            .keep_alive_enable = false,
+            .event_handler     = wan_ota_http_event_handler,
+            .crt_bundle_attach = cur_https ? esp_crt_bundle_attach : NULL,
+        };
+        esp_http_client_handle_t probe = esp_http_client_init(&probe_cfg);
+        if (!probe) { ESP_LOGE(TAG, "[OTA] probe init failed"); free(buf); return ESP_FAIL; }
+        esp_http_client_open(probe, 0);
+        esp_http_client_fetch_headers(probe);
+        int pstatus = esp_http_client_get_status_code(probe);
+        esp_http_client_cleanup(probe);
+        if (pstatus == 301 || pstatus == 302 || pstatus == 307 || pstatus == 308) {
+            if (s_wan_location_header[0] == '\0') {
+                ESP_LOGE(TAG, "[OTA] Redirect %d: no Location header", redir + 1);
+                free(buf); return ESP_FAIL;
+            }
+            ESP_LOGI(TAG, "[OTA] Redirect %d (%d) → %s", redir + 1, pstatus, s_wan_location_header);
+            strlcpy(s_final_url, s_wan_location_header, sizeof(s_final_url));
+        } else {
+            break;
+        }
+    }
+
+    ESP_LOGI(TAG, "[OTA] Final URL: %s", s_final_url);
+    bool use_https = (strncmp(s_final_url, "https://", 8) == 0);
     esp_http_client_config_t http_cfg = {
-        .url            = fw_url,
-        .timeout_ms     = FOTA_CONFIG_OTA_RECV_TIMEOUT,
-        .buffer_size    = 4096,
-        .buffer_size_tx = 512,
+        .url               = s_final_url,
+        .timeout_ms        = FOTA_CONFIG_OTA_RECV_TIMEOUT,
+        .buffer_size       = 4096,
+        .buffer_size_tx    = 2048,
         .keep_alive_enable = false,
-#if FOTA_CONFIG_USE_CERT_BUNDLE
-        .crt_bundle_attach = esp_crt_bundle_attach,
-#endif
+        .crt_bundle_attach = use_https ? esp_crt_bundle_attach : NULL,
     };
 
     esp_err_t ret = ESP_FAIL;
@@ -432,8 +485,10 @@ cleanup_ota:
     if (ota_started) esp_ota_abort(ota_handle);
 cleanup_client:
     free(buf);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
+    if (client) {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+    }
     return ret;
 }
 

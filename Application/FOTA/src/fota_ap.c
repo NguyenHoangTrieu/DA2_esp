@@ -173,6 +173,25 @@ esp_err_t fota_ap_start(void)
         /* Non-fatal — AP still usable, but no internet routing */
     }
 
+    /* ------------------------------------------------------------------
+     * 8. Configure the DHCP server to advertise a public DNS server.
+     *    By default the DHCP server offers its own IP (192.168.4.1) as
+     *    DNS, but lwIP has no DNS proxy there — hostname resolution by
+     *    AP clients (LAN MCU) would time out.  Advertising 8.8.8.8
+     *    lets NAPT forward UDP/53 queries to the real internet DNS.
+     * ------------------------------------------------------------------ */
+    esp_netif_dhcps_stop(s_fota_ap_netif);
+    uint8_t dns_addr[4] = {8, 8, 8, 8};
+    esp_err_t dns_ret = esp_netif_dhcps_option(
+            s_fota_ap_netif, ESP_NETIF_OP_SET,
+            ESP_NETIF_DOMAIN_NAME_SERVER,
+            dns_addr, sizeof(dns_addr));
+    if (dns_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set DHCP DNS option: %s", esp_err_to_name(dns_ret));
+    }
+    esp_netif_dhcps_start(s_fota_ap_netif);
+    ESP_LOGI(TAG, "FOTA AP DHCP: DNS=8.8.8.8 advertised to AP clients");
+
     s_fota_ap_running = true;
     ESP_LOGI(TAG,
              "FOTA AP started — SSID=\"" FOTA_AP_SSID
@@ -193,8 +212,13 @@ esp_err_t fota_ap_stop(void)
     ESP_LOGI(TAG, "Stopping FOTA AP");
 
     if (s_was_apsta) {
-        /* Revert to STA-only mode; the STA association is still alive. */
+        /* Revert to STA-only mode; the STA association may have been dropped
+         * while the FOTA AP was running (we suppressed auto-reconnect to avoid
+         * disrupting the LAN MCU client).  Kick esp_wifi_connect() now so the
+         * STA re-associates to the main router immediately. */
         esp_wifi_set_mode(WIFI_MODE_STA);
+        esp_wifi_connect();
+        ESP_LOGI(TAG, "FOTA AP stopped — re-triggering STA reconnect");
     } else {
         /* WiFi was started only for the AP — shut it down completely. */
         esp_wifi_stop();

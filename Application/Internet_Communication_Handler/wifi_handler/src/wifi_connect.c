@@ -8,11 +8,12 @@
 #include "config_handler.h"
 #include "esp_sntp.h"
 #include "pcf8563_rtc.h"
+#include "fota_ap.h"
 
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
-#define DEFAULT_ESP_WIFI_SSID "TickLab_2.4G2"      // Configure via config handler
-#define DEFAULT_ESP_WIFI_PASS "T1ckL@b5917"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS "hamhap7604"      // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define WIFI_ESP_MAXIMUM_RETRY 10000
@@ -142,7 +143,13 @@ static void event_handler(void *arg, esp_event_base_t event_base,
       xSemaphoreGive(g_wifi_reconfig_mutex);
     }
     
-    if (should_reconnect) {
+    /* While the FOTA AP is serving the LAN MCU, the WiFi radio is in APSTA
+     * mode.  Calling esp_wifi_connect() here would trigger a STA scan / channel
+     * switch that suspends AP beacons and drops the LAN MCU's WiFi association,
+     * aborting its OTA.  Suppress STA reconnects until the FOTA AP is stopped. */
+    if (fota_ap_is_running()) {
+      ESP_LOGW(TAG, "FOTA AP active — deferring STA reconnect to avoid disrupting LAN MCU");
+    } else if (should_reconnect) {
       // Apply the new configuration (outside lock to avoid holding mutex during operation)
       ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &temp_config));
       esp_wifi_connect();
