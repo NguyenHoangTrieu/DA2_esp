@@ -534,6 +534,7 @@ static void mqtt_reinit(void) {
               .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
+              .reconnect_timeout_ms = 30000, // 30s between retries to reduce log noise
           },
       .buffer =
           {
@@ -641,6 +642,7 @@ void mqtt_handler_task_start(void) {
               .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
+              .reconnect_timeout_ms = 30000, // 30s between retries to reduce log noise
           },
       .buffer =
           {

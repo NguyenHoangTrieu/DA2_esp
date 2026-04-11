@@ -10,8 +10,8 @@
 extern "C" {
 #endif
 
-#define LAN_COMM_DEFAULT_RX_BUFFER    4096      // Fixed 4KB
-#define LAN_COMM_DEFAULT_TX_BUFFER    4096      // Fixed 4KB
+#define LAN_COMM_DEFAULT_RX_BUFFER    16384     // 16KB – large enough for max config JSON
+#define LAN_COMM_DEFAULT_TX_BUFFER    16384     // 16KB
 #define LAN_COMM_TRANS_QUEUE_SIZE     7
 #define LAN_COMM_ACK_TIMEOUT_MS       500
 #define LAN_COMM_DQ_RETRY_MS          50        //
@@ -61,7 +61,7 @@ typedef struct {
     spi_host_device_t host_id;
     int dma_channel;
     
-    // Buffer sizes (fixed 4KB)
+    // Buffer sizes (16KB to accommodate large config JSON payloads)
     size_t rx_buffer_size;
     size_t tx_buffer_size;
     

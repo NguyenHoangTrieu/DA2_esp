@@ -612,6 +612,24 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     return;
   }
 
+  // Config ACK responses (CFLR:JSON:, CFZB:JSON:, CFBL:JSON:, CFRS:JSON:) must NOT
+  // be routed through the internet/SD-card path — they are control-plane messages.
+  // The config flow is completely separate from the data/telemetry flow.
+  {
+    const uint8_t *resp_data = &payload[DATA_PACKET_HEADER_SIZE];
+    if (data_length >= 10 &&
+        (strncmp((const char *)resp_data, "CFLR:JSON:", 10) == 0 ||
+         strncmp((const char *)resp_data, "CFZB:JSON:", 10) == 0 ||
+         strncmp((const char *)resp_data, "CFBL:JSON:", 10) == 0 ||
+         strncmp((const char *)resp_data, "CFRS:JSON:", 10) == 0)) {
+      ESP_LOGI(TAG, "Config ACK (local only): %.*s",
+               data_length > 64 ? 64 : (int)data_length, (char *)resp_data);
+      downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
+                               g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+      return;
+    }
+  }
+
   // Forward to server (MQTT) only if from server command
   if (g_internet_status == INTERNET_STATUS_ONLINE) {
     // Build uplink buffer: [handler_type(3)] + [data]
