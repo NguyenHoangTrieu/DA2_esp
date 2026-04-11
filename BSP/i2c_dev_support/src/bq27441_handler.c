@@ -1,51 +1,6 @@
 /**
  * @file bq27441_handler.c
  * @brief BQ27441DRZR-G1B Battery Fuel Gauge I2C Driver Implementation
- *
- * FIX LOG:
- *  [FIX-1] BQ27441_DF_CLASS_STATE = 0x52 (subclass 82 "State") replaces
- *          the wrong BQ27441_DF_CLASS_POWER constant. DESIGN_CAPACITY and
- *          DESIGN_ENERGY live in subclass 82, not any "Power" subclass.
- *
- *  [FIX-2] DESIGN_ENERGY = capacity_mah * 37 / 10 (≈ 3.7 V nominal),
- *          not capacity_mah (which implied ≈ 1 V, a 3.7× error).
- *
- *  [FIX-3] Checksum computed from the local modified block[] immediately
- *          after modification — no read from 0x60, no block re-read.
- *          Reading 0x60 mid-sequence resets the BQ27441's internal block
- *          data state machine, causing a NACK on the subsequent write to
- *          0x60 (observed as ESP_ERR_INVALID_RESPONSE from i2c_master_transmit).
- *
- *  [FIX-4] Post-write verification and bq27441_read_design_capacity()
- *          both use BQ27441_DF_CLASS_STATE.
- *
- *  [FIX-6] Step 9 uses a single 33-byte incremental write {0x40, block[0..31]}
- *          instead of 4 individual 2-byte writes ({0x4A,cap_msb}, etc.).
- *          Individual writes do NOT update the chip's internal 32-byte block
- *          buffer — the chip only refreshes it via the full incremental write
- *          that starts at reg 0x40 (auto-increment, f_SCL ≤ 100 kHz, §9.5.4.1).
- *          Without the full block load, the chip's checksum over its buffer
- *          mismatches ours → NACK on 0x60 write (ESP_ERR_INVALID_RESPONSE).
- *
- *  [FIX-5] Step 12 now uses EXIT_RESIM (0x0044) instead of SOFT_RESET
- *          (0x0042).  SOFT_RESET performs a gauge firmware reset which
- *          reloads all Data Memory from OTP NVM on exit, discarding every
- *          RAM-based change we just made (Design Capacity reverts to the
- *          factory OTP value — 47147 mAh in the observed device).
- *          EXIT_RESIM exits CONFIG UPDATE mode WITHOUT reloading OTP AND
- *          immediately resimulates StateOfCharge using the updated Design
- *          Capacity (3000 mAh) + current OCV via voltage lookup table.
- *          EXIT_CFGUPDATE (0x0043) was tried first but it explicitly does
- *          NOT resimulate ("without resimulating to update StateOfCharge"),
- *          leaving SoC stuck at 0% indefinitely.  EXIT_RESIM (0x0044)
- *          both preserves RAM and gives a valid initial SoC estimate
- *          (e.g. ~95% for a 4165 mV LiCoO₂ cell) on the same boot.
- *
- *  [FIX-7] Post-write verification now reads DesignCapacity() extended
- *          command (0x3C) directly from Data Memory instead of re-accessing
- *          block data registers.  Block data re-access after EXIT_RESIM
- *          without a second SET_CFGUPDATE is unreliable; 0x3C is always
- *          readable in both SEALED and UNSEALED modes (Table 3, §9.5.3).
  */
 
 #include "bq27441_handler.h"
@@ -68,7 +23,6 @@ static i2c_master_dev_handle_t s_dev = NULL;
  *
  * NOT subclass 34 / 0x22 = "Power" (charge/discharge thresholds).
  */
-#define BQ27441_DF_CLASS_STATE   0x52u   /* [FIX-1] */
 
 /* ------------------------------------------------------------------ */
 /* Low-level helpers                                                    */
@@ -189,6 +143,28 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
     status->critical_low    = (raw_flags & BQ27441_FLAG_SOCF)    != 0;
     status->battery_present = (raw_flags & BQ27441_FLAG_BAT_DET) != 0;
 
+    /* Diagnostic: log CONTROL_STATUS and FLAGS every 30 reads (~150s at 5s interval) */
+    static int read_count = 0;
+    if (++read_count >= 30) {
+        read_count = 0;
+        uint16_t ctrl_status = 0;
+        if (cmd_read16(BQ27441_CMD_CONTROL, &ctrl_status) == ESP_OK) {
+            uint8_t sec = (uint8_t)((ctrl_status >> 14) & 0x03);
+            uint8_t initcomp = (ctrl_status >> 4) & 1;
+            uint8_t hibernate = (ctrl_status >> 7) & 1;
+            uint8_t snooze = (ctrl_status >> 6) & 1;
+            ESP_LOGI(TAG, "[DIAG] CONTROL=0x%04X (SEC=%u INITCOMP=%u SNOOZE=%u HIBERNATE=%u) | "
+                         "FLAGS=0x%04X (CFGUPD=%u DSG=%u BAT_DET=%u FC=%u)",
+                     ctrl_status, sec, initcomp, snooze, hibernate,
+                     raw_flags,
+                     (raw_flags >> 4) & 1,  /* CFGUPD */
+                     (raw_flags >> 0) & 1,  /* DSG (discharging) */
+                     (raw_flags >> 3) & 1,  /* BAT_DET */
+                     (raw_flags >> 12) & 1  /* FC (full charge) */
+            );
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -216,9 +192,10 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
  *                *** Reading 0x60 resets chip state → NACK on write ***
  *                [FIX-3]
  *  11. Commit  : write new_chk to reg 0x60
- *  12. Reset   : CONTROL(SOFT_RESET = 0x0042), wait 500 ms
- *  13. Poll    : FLAGS[4] (CFGUPD) = 0
- *  14. Re-unseal, verify data flash, IT_ENABLE, Seal
+ *  12a. IT_ENB : CONTROL(IT_ENABLE = 0x0021) — while still in CFGUPDATE [FIX-8]
+ *  12b. Reset  : CONTROL(EXIT_RESIM = 0x0044), wait 500 ms [FIX-5]
+ *  13.  Poll   : FLAGS[4] (CFGUPD) = 0
+ *  14.  Re-unseal, verify data flash, Seal
  */
 esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
 {
@@ -419,7 +396,18 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
     did_write = true;
 
 soft_reset:
-    /* ---- 12. Exit CFGUPDATE via EXIT_RESIM [FIX-5] ----
+    /* ---- 12a. IT_ENABLE (MUST be inside CFGUPDATE mode, while unsealed) [FIX-8] ----
+     *
+     * Per TRM SLUUAC9 §3.1: IT_ENABLE must be issued while the device is
+     * still in CONFIG UPDATE mode.  Sending it after EXIT_RESIM has already
+     * exited CFGUPDATE either has no effect or reinitialises the Impedance
+     * Track algorithm state back to zero, leaving SoC stuck at 0%.
+     */
+    ctrl_write(BQ27441_CTRL_IT_ENABLE);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGI(TAG, "Impedance Track enabled (in CFGUPDATE)");
+
+    /* ---- 12b. Exit CFGUPDATE via EXIT_RESIM [FIX-5] ----
      *
      * EXIT_RESIM (0x0044) does two things:
      *  1. Exits CONFIG UPDATE mode WITHOUT reloading Data Memory from OTP
@@ -435,7 +423,7 @@ soft_reset:
         if (r != ESP_OK)
             ESP_LOGW(TAG, "EXIT_RESIM failed: %s", esp_err_to_name(r));
     }
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(500));   /* allow resimulation to complete */
 
     /* ---- 13. Poll CFGUPD clear ---- */
     for (int i = 0; i < 20; i++) {
@@ -472,11 +460,6 @@ soft_reset:
         }
     }
 
-    /* ---- 13d. IT_ENABLE (must be unsealed) ---- */
-    ctrl_write(BQ27441_CTRL_IT_ENABLE);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    ESP_LOGI(TAG, "Impedance Track enabled");
-
 seal:
     /* ---- 14. Seal ---- */
     {
@@ -488,6 +471,75 @@ seal:
 
     ESP_LOGI(TAG, "Do a full charge->discharge cycle to calibrate SoC");
     return ret;
+}
+
+/* ================================================================== */
+/* OCV-based SoC estimation (fallback when IT algorithm fails)        */
+/* ================================================================== */
+
+/**
+ * OCV-to-SoC lookup table for LiCoO2 chemistry (typical curve).
+ * Maps battery voltage (mV) to estimated State of Charge (%).
+ * Linear interpolation used between table points.
+ */
+static const struct {
+    uint16_t voltage_mv;
+    uint8_t  soc_pct;
+} ocv_soc_table[] = {
+    {3000, 0},
+    {3200, 3},
+    {3400, 5},
+    {3600, 10},
+    {3700, 20},
+    {3750, 30},
+    {3800, 40},
+    {3850, 50},
+    {3900, 60},
+    {3950, 70},
+    {4000, 80},
+    {4050, 85},
+    {4100, 90},
+    {4150, 95},
+    {4200, 100},
+};
+
+#define OCV_SOC_TABLE_SIZE (sizeof(ocv_soc_table) / sizeof(ocv_soc_table[0]))
+
+/**
+ * @brief Estimate SoC from Open Circuit Voltage using lookup table.
+ *        A simple OCV-based fallback for when BQ27441's IT algorithm fails
+ *        (e.g., when INITCOMP is not set or SoC register stuck at 0%).
+ *        Useful for getting a rough SoC estimate independent of coulomb counting.
+ *
+ * @param voltage_mv Battery voltage in mV
+ * @return Estimated SoC percentage (0–100)
+ */
+uint8_t bq27441_estimate_soc_from_ocv(uint16_t voltage_mv)
+{
+    /* Clamp voltage to table range */
+    if (voltage_mv <= ocv_soc_table[0].voltage_mv)
+        return ocv_soc_table[0].soc_pct;
+    if (voltage_mv >= ocv_soc_table[OCV_SOC_TABLE_SIZE - 1].voltage_mv)
+        return ocv_soc_table[OCV_SOC_TABLE_SIZE - 1].soc_pct;
+
+    /* Linear interpolation between table points */
+    for (int i = 0; i < OCV_SOC_TABLE_SIZE - 1; i++) {
+        uint16_t v1 = ocv_soc_table[i].voltage_mv;
+        uint16_t v2 = ocv_soc_table[i + 1].voltage_mv;
+
+        if (voltage_mv >= v1 && voltage_mv <= v2) {
+            uint8_t soc1 = ocv_soc_table[i].soc_pct;
+            uint8_t soc2 = ocv_soc_table[i + 1].soc_pct;
+
+            /* Linear interpolation: soc = soc1 + (soc2 - soc1) * (v - v1) / (v2 - v1) */
+            uint16_t dv = v2 - v1;
+            uint16_t ds = (soc2 > soc1) ? (soc2 - soc1) : 0;
+            uint16_t interpolated = soc1 + (ds * (voltage_mv - v1)) / dv;
+            return (uint8_t)interpolated;
+        }
+    }
+
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */

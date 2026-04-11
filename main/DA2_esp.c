@@ -32,7 +32,6 @@ static app_mode_t current_mode = APP_MODE_NORMAL;
 static int requested_mode = -1; /* set by uart_mode_switch_callback */
 static uint32_t last_isr_tick = 0;
 static uint32_t last_gpio3_tick = 0;
-static bool power_rgb_enabled = true; /* GPIO3: power+RGB state */
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 
 /**

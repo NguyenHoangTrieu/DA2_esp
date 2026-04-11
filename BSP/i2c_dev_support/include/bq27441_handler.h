@@ -154,6 +154,16 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah);
  */
 esp_err_t bq27441_read_design_capacity(uint16_t *capacity_mah);
 
+/**
+ * @brief Estimate State of Charge from Open Circuit Voltage (OCV).
+ *        Uses an OCV-to-SoC lookup table for LiCoO2 chemistry with linear interpolation.
+ *        This is a fallback when BQ27441's IT algorithm fails (SoC stuck at 0%).
+ *        Gives a rough estimate independent of coulomb counting history.
+ * @param voltage_mv Battery voltage in mV
+ * @return Estimated SoC percentage (0–100)
+ */
+uint8_t bq27441_estimate_soc_from_ocv(uint16_t voltage_mv);
+
 #ifdef __cplusplus
 }
 #endif

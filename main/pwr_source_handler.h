@@ -22,10 +22,10 @@
 extern "C" {
 #endif
 
-/* Battery voltage thresholds */
-#define PWR_BATT_UPPER_THRESHOLD_MV   4100   /* Stop charging above this voltage */
-#define PWR_BATT_UPPER_HYST_MV        4050   /* Resume charging below this voltage (hysteresis for upper threshold) */
-#define PWR_BATT_LOWER_THRESHOLD_MV   3500   /* Low battery alert below this voltage */
+/* Battery charge thresholds */
+#define PWR_BATT_CHARGE_FULL_SOC_PCT   100   /* Stop charging at 100% SoC */
+#define PWR_BATT_CHARGE_RESUME_SOC_PCT 95    /* Resume charging below 95% SoC (hysteresis) */
+#define PWR_BATT_LOWER_THRESHOLD_MV    3500  /* Low battery alert below this voltage */
 
 #include "stack_handler.h"
 

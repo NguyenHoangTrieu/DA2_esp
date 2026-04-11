@@ -154,6 +154,16 @@ esp_err_t pwr_source_get_status(pwr_source_status_t *status)
         status->battery_present = fg.battery_present;
         status->fully_charged   = fg.fully_charged;
         status->critical_low    = fg.critical_low;
+
+        /* Fallback: Use OCV-based SoC estimate if BQ27441's IT algorithm failed (SoC=0%).
+           This happens when INITCOMP is not set (IT not initialized on this chip). */
+        if (status->soc_pct == 0 && fg.voltage_mv > 3000) {
+            status->soc_pct = bq27441_estimate_soc_from_ocv(fg.voltage_mv);
+            if (status->soc_pct > 0) {
+                ESP_LOGD(TAG, "Using OCV-based SoC: %u%% (Vbat=%u mV, IT_ALGO failed)",
+                        status->soc_pct, fg.voltage_mv);
+            }
+        }
     }
 
     /* BQ25892 — charger */
@@ -178,52 +188,49 @@ esp_err_t pwr_source_get_status(pwr_source_status_t *status)
 
 esp_err_t pwr_source_charge_monitor(void)
 {
-    uint16_t vbat_mv = 0;
-    esp_err_t ret = bq27441_read_voltage_mv(&vbat_mv);
+    uint8_t soc_pct = 0;
+    esp_err_t ret = bq27441_read_soc_pct(&soc_pct);
     if (ret != ESP_OK) {
-        /* Fall back to BQ25892 ADC if fuel gauge unavailable */
-        ret = bq25892_read_batv_mv(&vbat_mv);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Cannot read battery voltage");
-            return ret;
-        }
+        ESP_LOGW(TAG, "Cannot read SoC");
+        return ret;
     }
 
-    /* Hysteresis logic: prevent on/off oscillation around threshold
-       - If charging is enabled: stop when reaching UPPER_THRESHOLD 
-       - If charging is disabled: resume only when dropping below UPPER_HYST (lower threshold)
+    /* Hysteresis logic (SoC-based): prevent on/off oscillation around threshold
+       - If charging is enabled: stop when reaching FULL_SOC_PCT
+       - If charging is disabled: resume only when dropping below RESUME_SOC_PCT (hysteresis)
      */
     if (s_charge_enabled_state) {
-        /* Charging is currently ON — stop if battery is full */
-        if (vbat_mv >= PWR_BATT_UPPER_THRESHOLD_MV) {
-            ESP_LOGI(TAG, "CHARGE_CTRL: Battery full (%u mV >= %u mV) — stopping charge",
-                     vbat_mv, PWR_BATT_UPPER_THRESHOLD_MV);
+        /* Charging is currently ON — stop when battery is full (100% SoC) */
+        if (soc_pct >= PWR_BATT_CHARGE_FULL_SOC_PCT) {
+            ESP_LOGI(TAG, "CHARGE_CTRL: Battery full (SoC=%u%% >= %u%%) — stopping charge",
+                     soc_pct, PWR_BATT_CHARGE_FULL_SOC_PCT);
             s_charge_enabled_state = false;
             pwr_source_set_charge_enable(false);
         } else {
-            ESP_LOGD(TAG, "CHARGE_CTRL: State=ON, Vbat=%u mV (thres=%u mV, hyste=%u mV)",
-                    vbat_mv, PWR_BATT_UPPER_THRESHOLD_MV, PWR_BATT_UPPER_HYST_MV);
+            ESP_LOGD(TAG, "CHARGE_CTRL: State=ON, SoC=%u%% (full_thres=%u%%, resume_hyst=%u%%)",
+                    soc_pct, PWR_BATT_CHARGE_FULL_SOC_PCT, PWR_BATT_CHARGE_RESUME_SOC_PCT);
         }
     } else {
-        /* Charging is currently OFF — resume only if battery drops enough (hysteresis) */
-        if (vbat_mv <= PWR_BATT_UPPER_HYST_MV) {
-            ESP_LOGI(TAG, "CHARGE_CTRL: Battery dropped to %u mV (below %u mV hyst) — resuming charge",
-                     vbat_mv, PWR_BATT_UPPER_HYST_MV);
+        /* Charging is currently OFF — resume only if SoC drops enough (hysteresis) */
+        if (soc_pct <= PWR_BATT_CHARGE_RESUME_SOC_PCT) {
+            ESP_LOGI(TAG, "CHARGE_CTRL: SoC dropped to %u%% (below %u%% hyst) — resuming charge",
+                     soc_pct, PWR_BATT_CHARGE_RESUME_SOC_PCT);
             s_charge_enabled_state = true;
             pwr_source_set_charge_enable(true);
         } else {
-            ESP_LOGD(TAG, "CHARGE_CTRL: State=OFF, Vbat=%u mV (waiting for hyst=%u mV)",
-                    vbat_mv, PWR_BATT_UPPER_HYST_MV);
+            ESP_LOGD(TAG, "CHARGE_CTRL: State=OFF, SoC=%u%% (waiting for hyst=%u%%)",
+                    soc_pct, PWR_BATT_CHARGE_RESUME_SOC_PCT);
         }
     }
 
-    /* Also handle low battery critical alert (regardless of charging state) */
-    if (vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
+    /* Also handle low battery critical alert (independent of charging state) */
+    uint16_t vbat_mv = 0;
+    esp_err_t voltage_ret = bq27441_read_voltage_mv(&vbat_mv);
+    if (voltage_ret == ESP_OK && vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
         ESP_LOGW(TAG, "Critical low battery: %u mV <= %u mV",
                  vbat_mv, PWR_BATT_LOWER_THRESHOLD_MV);
     }
 
-    /* BQ25892 hardware VREG at 4.096V also limits charge voltage autonomously */
     return ESP_OK;
 }
 
