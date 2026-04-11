@@ -42,9 +42,14 @@ extern "C" {
 #define BQ27441_CTRL_UNSEAL_KEY    0x8000  /* Default unseal key (sent twice: 0x8000 then 0x8000) */
 #define BQ27441_CTRL_SEAL          0x0020  /* Seal data flash (lock configuration) */
 #define BQ27441_CTRL_SET_CFGUPDATE 0x0013  /* Enter CONFIG UPDATE mode (required before block data access) */
-#define BQ27441_CTRL_SOFT_RESET    0x0042  /* Exit CONFIG UPDATE mode and commit data flash write */
-#define BQ27441_CTRL_EXIT_HIBERNATE 0x0011 /* Wake from hibernate — resumes current measurements */
-#define BQ27441_CTRL_IT_ENABLE     0x0021  /* Enable Impedance Track algorithm (activates SoC/current) */
+#define BQ27441_CTRL_SOFT_RESET      0x0042  /* Gauge reset — exits CFGUPDATE but RELOADS Data Memory from OTP */
+#define BQ27441_CTRL_EXIT_CFGUPDATE  0x0043  /* Exits CFGUPDATE mode only — PRESERVES RAM-based Data Memory, NO SoC resim */
+#define BQ27441_CTRL_EXIT_RESIM      0x0044  /* Exits CFGUPDATE + resimulates SoC from current voltage — use this */
+#define BQ27441_CTRL_EXIT_HIBERNATE  0x0011  /* Wake from hibernate — resumes current measurements */
+#define BQ27441_CTRL_IT_ENABLE       0x0021  /* Enable Impedance Track algorithm (activates SoC/current) */
+
+/* Extended command for reading Design Capacity from Data Memory (Table 3, §9.5.3) */
+#define BQ27441_CMD_DESIGN_CAP       0x3C    /* DesignCapacity() — readable in sealed+unsealed modes (mAh) */
 
 /* Data Flash Block Interface - for accessing/modifying design capacity */
 #define BQ27441_CMD_BLOCK_DATA_CTRL  0x61  /* Block Data Control status */

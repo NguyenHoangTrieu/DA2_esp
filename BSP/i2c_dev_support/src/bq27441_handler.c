@@ -18,6 +18,34 @@
  *
  *  [FIX-4] Post-write verification and bq27441_read_design_capacity()
  *          both use BQ27441_DF_CLASS_STATE.
+ *
+ *  [FIX-6] Step 9 uses a single 33-byte incremental write {0x40, block[0..31]}
+ *          instead of 4 individual 2-byte writes ({0x4A,cap_msb}, etc.).
+ *          Individual writes do NOT update the chip's internal 32-byte block
+ *          buffer — the chip only refreshes it via the full incremental write
+ *          that starts at reg 0x40 (auto-increment, f_SCL ≤ 100 kHz, §9.5.4.1).
+ *          Without the full block load, the chip's checksum over its buffer
+ *          mismatches ours → NACK on 0x60 write (ESP_ERR_INVALID_RESPONSE).
+ *
+ *  [FIX-5] Step 12 now uses EXIT_RESIM (0x0044) instead of SOFT_RESET
+ *          (0x0042).  SOFT_RESET performs a gauge firmware reset which
+ *          reloads all Data Memory from OTP NVM on exit, discarding every
+ *          RAM-based change we just made (Design Capacity reverts to the
+ *          factory OTP value — 47147 mAh in the observed device).
+ *          EXIT_RESIM exits CONFIG UPDATE mode WITHOUT reloading OTP AND
+ *          immediately resimulates StateOfCharge using the updated Design
+ *          Capacity (3000 mAh) + current OCV via voltage lookup table.
+ *          EXIT_CFGUPDATE (0x0043) was tried first but it explicitly does
+ *          NOT resimulate ("without resimulating to update StateOfCharge"),
+ *          leaving SoC stuck at 0% indefinitely.  EXIT_RESIM (0x0044)
+ *          both preserves RAM and gives a valid initial SoC estimate
+ *          (e.g. ~95% for a 4165 mV LiCoO₂ cell) on the same boot.
+ *
+ *  [FIX-7] Post-write verification now reads DesignCapacity() extended
+ *          command (0x3C) directly from Data Memory instead of re-accessing
+ *          block data registers.  Block data re-access after EXIT_RESIM
+ *          without a second SET_CFGUPDATE is unreliable; 0x3C is always
+ *          readable in both SEALED and UNSEALED modes (Table 3, §9.5.3).
  */
 
 #include "bq27441_handler.h"
@@ -182,7 +210,7 @@ esp_err_t bq27441_read_status(bq27441_status_t *status)
  *  7.  Read    : 32 bytes from reg 0x40 → local block[]
  *  8.  Modify  : block[10-11] = cap (big-endian)
  *                block[12-13] = energy = cap * 3.7 (big-endian) [FIX-2]
- *  9.  Write   : 4 bytes individually to 0x4A, 0x4B, 0x4C, 0x4D
+ *  9.  Write   : 33-byte incremental write {0x40, block[0..31]} [FIX-6]
  *  10. Checksum: new_chk = 0xFF - (sum of local block[0..31] & 0xFF)
  *                *** Computed from local buffer — NO read from 0x60 ***
  *                *** Reading 0x60 resets chip state → NACK on write ***
@@ -331,7 +359,18 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
     block[BQ27441_DESIGN_ENERGY_OFFSET]     = (uint8_t)(design_energy >> 8);
     block[BQ27441_DESIGN_ENERGY_OFFSET + 1] = (uint8_t)(design_energy & 0xFF);
 
-    /* ---- 9. Write entire modified block (single transaction) ---- */
+    /* ---- 9. Write entire modified block via incremental I2C write [FIX-6] ----
+     *
+     * Single 33-byte transaction: {0x40, block[0..31]}.
+     * At f_SCL=100kHz the BQ27441 supports incremental writes and uses the
+     * auto-incrementing address pointer (§9.5.4.1).  This correctly loads
+     * all 32 bytes into the chip's internal block buffer so the chip's own
+     * checksum computation matches ours in step 10-11.
+     *
+     * Individual byte writes ({0x4A,byte}, etc.) do NOT update the buffer —
+     * the chip only refreshes it via the full incremental write or via the
+     * class/block load in step 6.  See [FIX-6].
+     */
     {
         uint8_t wb[33];
         wb[0] = BQ27441_CMD_BLOCK_DATA;  /* 0x40 — start register */
@@ -350,7 +389,7 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
      *
      * Using the LOCAL modified block[] is correct because:
      *  - We loaded all 32 bytes from the chip (step 7).
-     *  - We wrote exactly 4 bytes back to the chip (step 9).
+     *  - We wrote the full modified 32-byte block to the chip (step 9).
      *  - The chip's internal buffer now matches our block[].
      *
      * CRITICAL: Do NOT read reg 0x60 between steps 7 and 11.
@@ -380,59 +419,54 @@ esp_err_t bq27441_reprogram_capacity(uint16_t capacity_mah)
     did_write = true;
 
 soft_reset:
-    /* ---- 12. Exit CFGUPDATE via SOFT_RESET ---- */
+    /* ---- 12. Exit CFGUPDATE via EXIT_RESIM [FIX-5] ----
+     *
+     * EXIT_RESIM (0x0044) does two things:
+     *  1. Exits CONFIG UPDATE mode WITHOUT reloading Data Memory from OTP
+     *     (preserves our 3000-mAh RAM value, unlike SOFT_RESET).
+     *  2. Immediately resimulates StateOfCharge using the updated Design
+     *     Capacity + current voltage via the OCV-to-SoC lookup table.
+     *     This gives a non-zero SoC estimate on the same boot.
+     *     EXIT_CFGUPDATE (0x0043) was NOT enough — it explicitly skips
+     *     resimulation, leaving SoC at 0% until a full charge/discharge.
+     */
     {
-        esp_err_t r = ctrl_write(BQ27441_CTRL_SOFT_RESET);
+        esp_err_t r = ctrl_write(BQ27441_CTRL_EXIT_RESIM);
         if (r != ESP_OK)
-            ESP_LOGW(TAG, "SOFT_RESET failed: %s", esp_err_to_name(r));
+            ESP_LOGW(TAG, "EXIT_RESIM failed: %s", esp_err_to_name(r));
     }
-    vTaskDelay(pdMS_TO_TICKS(500));  /* NVM commit post-CFGUPDATE ≤ 300 ms */
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     /* ---- 13. Poll CFGUPD clear ---- */
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 20; i++) {
         vTaskDelay(pdMS_TO_TICKS(50));
         if (cmd_read16(BQ27441_CMD_FLAGS, &flags) == ESP_OK &&
             !(flags & BQ27441_FLAG_CFGUPD))
             break;
     }
 
-    /* ---- 13b. Re-unseal (SOFT_RESET returns to Sealed) ---- */
+    /* ---- 13b. Re-unseal (EXIT_CFGUPDATE may re-seal on some firmware revisions) ---- */
     ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
     vTaskDelay(pdMS_TO_TICKS(50));
     ctrl_write(BQ27441_CTRL_UNSEAL_KEY);
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    /* ---- 13c. Post-write verification [FIX-4] ---- */
+    /* ---- 13c. Post-write verification via DesignCapacity() command [FIX-7] ----
+     *
+     * Read Design Capacity directly from Data Memory using the extended
+     * DesignCapacity() command (0x3C/0x3D, Table 3).  This is always
+     * readable in SEALED and UNSEALED mode and does NOT require re-entering
+     * CFGUPDATE, avoiding the unreliable block-data-re-access pattern that
+     * was failing before.
+     */
     if (did_write) {
-        uint8_t vb[32];
-        uint8_t bv[2];
-
-        bv[0] = BQ27441_CMD_BLOCK_DATA_CTRL;  bv[1] = 0x00;
-        i2c_dev_support_write(s_dev, bv, 2, 50);
-        vTaskDelay(pdMS_TO_TICKS(5));
-
-        bv[0] = BQ27441_CMD_BLOCK_DATA_CLASS;
-        bv[1] = BQ27441_DF_CLASS_STATE;  /* 0x52 */
-        i2c_dev_support_write(s_dev, bv, 2, 50);
-        vTaskDelay(pdMS_TO_TICKS(5));
-
-        bv[0] = BQ27441_CMD_BLOCK_DATA_OFFSET;  bv[1] = 0x00;
-        i2c_dev_support_write(s_dev, bv, 2, 50);
-        vTaskDelay(pdMS_TO_TICKS(5));
-
-        uint8_t reg_v = BQ27441_CMD_BLOCK_DATA;
-        if (i2c_dev_support_write_read(s_dev, &reg_v, 1, vb, 32, 200) == ESP_OK) {
-            uint16_t v_cap    = ((uint16_t)vb[BQ27441_DESIGN_CAP_OFFSET]     << 8) |
-                                 (uint16_t)vb[BQ27441_DESIGN_CAP_OFFSET + 1];
-            uint16_t v_energy = ((uint16_t)vb[BQ27441_DESIGN_ENERGY_OFFSET]     << 8) |
-                                 (uint16_t)vb[BQ27441_DESIGN_ENERGY_OFFSET + 1];
-            if (v_cap == capacity_mah && v_energy == design_energy) {
-                ESP_LOGI(TAG, "Verified: cap=%u mAh  energy=%u mWh  [OK]",
-                         v_cap, v_energy);
+        uint16_t v_cap = 0;
+        if (cmd_read16(BQ27441_CMD_DESIGN_CAP, &v_cap) == ESP_OK) {
+            if (v_cap == capacity_mah) {
+                ESP_LOGI(TAG, "Verified: DesignCapacity=%u mAh  [OK]", v_cap);
             } else {
-                ESP_LOGW(TAG, "Mismatch: wrote cap=%u/energy=%u, "
-                              "read back cap=%u/energy=%u",
-                         capacity_mah, design_energy, v_cap, v_energy);
+                ESP_LOGW(TAG, "Mismatch: wrote %u mAh, DesignCapacity reads %u mAh",
+                         capacity_mah, v_cap);
                 ret = ESP_ERR_INVALID_RESPONSE;
             }
         }
