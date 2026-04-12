@@ -41,8 +41,8 @@ typedef struct {
 // command_source_t is now defined in mcu_lan_handler.h (public API)
 
 typedef struct {
-  uint8_t config_data[8912];
-  uint16_t config_length;
+  uint8_t config_data[16384];
+  uint32_t config_length;
   bool has_config;
   bool is_fota;
   command_source_t source;  // Track command source for ACK routing
@@ -245,8 +245,8 @@ esp_err_t mcu_lan_handler_start(void) {
                                   .mode = 0,
                                   .host_id = SPI2_HOST,
                                   .dma_channel = SPI_DMA_CH_AUTO,
-                                  .rx_buffer_size = 8192,
-                                  .tx_buffer_size = 8192,
+                                  .rx_buffer_size = 16384,
+                                  .tx_buffer_size = 16384,
                                   .auto_signal_data_ready = false};
 
   lan_comm_status_t status = lan_comm_init(&lan_config, &g_lan_handle);

@@ -19,7 +19,7 @@
 
 // Command buffer size - Increased to support large JSON configs (up to 4KB)
 // Must match MAX_CONFIG_LENGTH in uart_handler.c
-#define CONFIG_CMD_MAX_LEN 8192
+#define CONFIG_CMD_MAX_LEN 16384
 #define CONFIG_QUEUE_SIZE 20
 
 // Command type codes (2-character prefix)
