@@ -33,6 +33,8 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "pwr_source_handler.c"
                                 "pwr_monitor_task.c"
                                 "../BSP/hmi_handler/src/hmi_handler.c"
+                                "../Middleware/HMI_Display/src/hmi_display.c"
+                                "../Application/HMI_Task/src/hmi_task.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash
@@ -80,5 +82,7 @@ idf_component_register(SRCS "DA2_esp.c"
                                 "../BSP/stack_handler/include"
                                 "../BSP/hmi_handler/include"
                                 "../Middleware/LTE_Handler/include"
+                                "../Middleware/HMI_Display/include"
+                                "../Application/HMI_Task/include"
                     EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem
                                    ${project_dir}/Application/Web_Config_Handler/web/firmware/index.html)

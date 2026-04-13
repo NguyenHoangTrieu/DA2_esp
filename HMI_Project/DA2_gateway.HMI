@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="gb2312"?>
+<nextion baud="115200" model="TJC3224T024_011" sleep="0" dim="100" dims="10" thsp="0" thup="0" ussp="0" usp="0" sendxy="0" recmod="0" lcddev="0" lcdspd="7688" pfstat="0" resume="0">
+
+  <!-- ================================================================
+       PAGE 0 : home  (status display)
+       ================================================================ -->
+  <page id="0" name="home" bco="0" bco2="0">
+
+    <!-- ID 1  t_title  — title bar -->
+    <comp id="1" obj="t" name="t_title"
+          x="0" y="0" w="240" h="28"
+          txt="DA2 Gateway" font="0" pco="65535" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 2  t_bat_pct  — battery percentage text -->
+    <comp id="2" obj="t" name="t_bat_pct"
+          x="150" y="2" w="54" h="24"
+          txt="--%" font="0" pco="2016" bco="0"
+          xcen="2" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 3  j_bat  — battery progress bar -->
+    <comp id="3" obj="j" name="j_bat"
+          x="100" y="4" w="48" h="16"
+          val="50" dir="0" pco="2016" bco="33808" wid="5" sta="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 4  t_bat_status  — Idle / Chrg label -->
+    <comp id="4" obj="t" name="t_bat_status"
+          x="0" y="2" w="98" h="24"
+          txt="Idle" font="0" pco="33808" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 5  t_wifi_hdr -->
+    <comp id="5" obj="t" name="t_wifi_hdr"
+          x="4" y="30" w="80" h="22"
+          txt="WiFi" font="0" pco="2047" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 6  t_wifi_dot -->
+    <comp id="6" obj="t" name="t_wifi_dot"
+          x="4" y="54" w="16" h="20"
+          txt="*" font="0" pco="63488" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 7  t_wifi_status -->
+    <comp id="7" obj="t" name="t_wifi_status"
+          x="22" y="54" w="100" h="20"
+          txt="Disconnected" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 8  t_wifi_ssid -->
+    <comp id="8" obj="t" name="t_wifi_ssid"
+          x="124" y="54" w="112" h="20"
+          txt="" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 9  t_wifi_detail -->
+    <comp id="9" obj="t" name="t_wifi_detail"
+          x="4" y="79" w="232" h="18"
+          txt="" font="0" pco="33808" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 10  t_lte_hdr -->
+    <comp id="10" obj="t" name="t_lte_hdr"
+          x="4" y="106" w="80" h="22"
+          txt="LTE" font="0" pco="2047" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 11  t_lte_dot -->
+    <comp id="11" obj="t" name="t_lte_dot"
+          x="4" y="130" w="16" h="20"
+          txt="*" font="0" pco="63488" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 12  t_lte_status -->
+    <comp id="12" obj="t" name="t_lte_status"
+          x="22" y="130" w="100" h="20"
+          txt="Disconnected" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 13  t_lte_apn -->
+    <comp id="13" obj="t" name="t_lte_apn"
+          x="124" y="130" w="112" h="20"
+          txt="" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 14  t_lte_detail -->
+    <comp id="14" obj="t" name="t_lte_detail"
+          x="4" y="155" w="232" h="18"
+          txt="" font="0" pco="33808" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 15  t_eth_hdr -->
+    <comp id="15" obj="t" name="t_eth_hdr"
+          x="4" y="182" w="80" h="22"
+          txt="Ethernet" font="0" pco="2047" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 16  t_eth_dot -->
+    <comp id="16" obj="t" name="t_eth_dot"
+          x="4" y="206" w="16" h="20"
+          txt="*" font="0" pco="63488" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 17  t_eth_status -->
+    <comp id="17" obj="t" name="t_eth_status"
+          x="22" y="206" w="100" h="20"
+          txt="Disconnected" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 18  t_eth_ip -->
+    <comp id="18" obj="t" name="t_eth_ip"
+          x="124" y="206" w="112" h="20"
+          txt="" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 19  b_wifi_cfg  (MUST be 19 — matches HMI_HOME_COMP_WIFI_BTN) -->
+    <comp id="19" obj="b" name="b_wifi_cfg"
+          x="4" y="278" w="112" h="36"
+          txt="WiFi CFG" font="0"
+          pco="0" bco="2047" pco2="0" bco2="33808"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page pgWifi
+</crel>
+    </comp>
+
+    <!-- ID 20  b_lte_cfg  (MUST be 20 — matches HMI_HOME_COMP_LTE_BTN) -->
+    <comp id="20" obj="b" name="b_lte_cfg"
+          x="124" y="278" w="112" h="36"
+          txt="LTE CFG" font="0"
+          pco="0" bco="2047" pco2="0" bco2="33808"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page pgLTE
+</crel>
+    </comp>
+
+  </page>
+
+  <!-- ================================================================
+       PAGE 1 : pgWifi  (WiFi configuration)
+       ================================================================ -->
+  <page id="1" name="pgWifi" bco="0" bco2="0">
+
+    <!-- ID 1  b_back  (HMI_WIFI_COMP_BACK=1) -->
+    <comp id="1" obj="b" name="b_back"
+          x="4" y="4" w="60" h="28"
+          txt="&lt;-" font="0"
+          pco="65535" bco="33808" pco2="65535" bco2="0"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page home
+</crel>
+    </comp>
+
+    <!-- ID 2  t_hdr -->
+    <comp id="2" obj="t" name="t_hdr"
+          x="70" y="4" w="166" h="28"
+          txt="WiFi Config" font="0" pco="65535" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 3  t_lbl_ssid -->
+    <comp id="3" obj="t" name="t_lbl_ssid"
+          x="4" y="40" w="80" h="22"
+          txt="SSID:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 4  x_ssid  (HMI_WIFI_COMP_SSID=4) — white bg = editable field -->
+    <comp id="4" obj="t" name="x_ssid"
+          x="90" y="36" w="146" h="28"
+          txt="" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 5  t_lbl_pwd -->
+    <comp id="5" obj="t" name="t_lbl_pwd"
+          x="4" y="76" w="80" h="22"
+          txt="Password:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 6  x_pwd  (HMI_WIFI_COMP_PWD=6) -->
+    <comp id="6" obj="t" name="x_pwd"
+          x="90" y="72" w="146" h="28"
+          txt="" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 7  t_lbl_auth -->
+    <comp id="7" obj="t" name="t_lbl_auth"
+          x="4" y="112" w="80" h="22"
+          txt="Auth:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 8  x_auth  (HMI_WIFI_COMP_AUTH=8) -->
+    <comp id="8" obj="t" name="x_auth"
+          x="90" y="108" w="146" h="28"
+          txt="PERSONAL" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 9  b_cancel  (HMI_WIFI_COMP_CANCEL=9) -->
+    <comp id="9" obj="b" name="b_cancel"
+          x="4" y="278" w="112" h="36"
+          txt="Cancel" font="0"
+          pco="65535" bco="33808" pco2="65535" bco2="0"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page home
+</crel>
+    </comp>
+
+    <!-- ID 10  b_set  (HMI_WIFI_COMP_SET=10) -->
+    <comp id="10" obj="b" name="b_set"
+          x="124" y="278" w="112" h="36"
+          txt="Set" font="0"
+          pco="0" bco="2016" pco2="0" bco2="33808"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+  </page>
+
+  <!-- ================================================================
+       PAGE 2 : pgLTE  (LTE configuration)
+       ================================================================ -->
+  <page id="2" name="pgLTE" bco="0" bco2="0">
+
+    <!-- ID 1  b_back  (HMI_LTE_COMP_BACK=1) -->
+    <comp id="1" obj="b" name="b_back"
+          x="4" y="4" w="60" h="28"
+          txt="&lt;-" font="0"
+          pco="65535" bco="33808" pco2="65535" bco2="0"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page home
+</crel>
+    </comp>
+
+    <!-- ID 2  t_hdr -->
+    <comp id="2" obj="t" name="t_hdr"
+          x="70" y="4" w="166" h="28"
+          txt="LTE Config" font="0" pco="65535" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 3  t_lbl_apn -->
+    <comp id="3" obj="t" name="t_lbl_apn"
+          x="4" y="40" w="80" h="22"
+          txt="APN:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 4  x_apn  (HMI_LTE_COMP_APN=4) -->
+    <comp id="4" obj="t" name="x_apn"
+          x="90" y="36" w="146" h="28"
+          txt="" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 5  t_lbl_user -->
+    <comp id="5" obj="t" name="t_lbl_user"
+          x="4" y="76" w="80" h="22"
+          txt="User:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 6  x_user  (HMI_LTE_COMP_USER=6) -->
+    <comp id="6" obj="t" name="x_user"
+          x="90" y="72" w="146" h="28"
+          txt="" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 7  t_lbl_pwd -->
+    <comp id="7" obj="t" name="t_lbl_pwd"
+          x="4" y="112" w="80" h="22"
+          txt="Password:" font="0" pco="65535" bco="0"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 8  x_pwd  (HMI_LTE_COMP_PWD=8) -->
+    <comp id="8" obj="t" name="x_pwd"
+          x="90" y="108" w="146" h="28"
+          txt="" font="0" pco="0" bco="65535"
+          xcen="0" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 9  b_cancel  (HMI_LTE_COMP_CANCEL=9) -->
+    <comp id="9" obj="b" name="b_cancel"
+          x="4" y="278" w="112" h="36"
+          txt="Cancel" font="0"
+          pco="65535" bco="33808" pco2="65535" bco2="0"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page home
+</crel>
+    </comp>
+
+    <!-- ID 10  b_set  (HMI_LTE_COMP_SET=10) -->
+    <comp id="10" obj="b" name="b_set"
+          x="124" y="278" w="112" h="36"
+          txt="Set" font="0"
+          pco="0" bco="2016" pco2="0" bco2="33808"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+  </page>
+
+  <!-- ================================================================
+       PAGE 3 : pgKB  (keyboard placeholder — not used currently)
+       Config input is done via BLE / Web / PC app.
+       If on-screen keyboard is needed later, add TJC Keyboard component
+       on this page and update HMI_KB_COMP_OK / HMI_KB_COMP_CANCEL in
+       hmi_display.h to match the actual auto-assigned IDs.
+       ================================================================ -->
+  <page id="3" name="pgKB" bco="0" bco2="0">
+
+    <!-- ID 1  t_info -->
+    <comp id="1" obj="t" name="t_info"
+          x="0" y="140" w="240" h="40"
+          txt="Use app to config" font="0" pco="33808" bco="0"
+          xcen="1" ycen="1" sta="1" pw="0">
+      <cpri></cpri><crel></crel>
+    </comp>
+
+    <!-- ID 2  b_back -->
+    <comp id="2" obj="b" name="b_back"
+          x="80" y="200" w="80" h="36"
+          txt="Back" font="0"
+          pco="65535" bco="33808" pco2="65535" bco2="0"
+          xcen="1" ycen="1" sta="1">
+      <cpri></cpri>
+      <crel>page home
+</crel>
+    </comp>
+
+  </page>
+
+</nextion>

@@ -8,7 +8,7 @@
 
 #include "pwr_monitor_task.h"
 #include "pwr_source_handler.h"
-#include "hmi_handler.h"
+#include "hmi_task.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -130,16 +130,30 @@ static void power_monitor_task(void *arg)
     s_monitor_running = true;
 
     const TickType_t update_interval = pdMS_TO_TICKS(PWR_MONITOR_UPDATE_INTERVAL_MS);
-    TickType_t last_update = xTaskGetTickCount();
 
     while (s_monitor_running) {
+        TickType_t cycle_start = xTaskGetTickCount();
+
         /* 1. Read power status from all ICs */
         pwr_monitor_status_t new_status = {0};
         esp_err_t ret = read_power_status(&new_status);
 
         if (ret == ESP_OK) {
-            /* 2. Call charge monitor logic (threshold control) */
-            pwr_source_charge_monitor();
+            /* 2. Call charge monitor with already-read status (avoids double I2C read).
+             *    Build a pwr_source_status_t from the monitor status to pass through. */
+            {
+                pwr_source_status_t src_status = {
+                    .vbat_mv        = new_status.bat_voltage_mv,
+                    .soc_pct        = new_status.bat_soc_pct,
+                    .bat_current_ma = new_status.bat_current_ma,
+                    .battery_present = new_status.bat_present,
+                    .fully_charged  = new_status.bat_fully_charged,
+                    .critical_low   = new_status.bat_critical_low,
+                    .chrg_status    = new_status.chrg_status,
+                    .power_good     = new_status.power_good,
+                };
+                pwr_source_charge_monitor_with_status(&src_status);
+            }
 
             /* 3. Update global status under mutex */
             if (g_pwr_monitor_mutex) {
@@ -156,10 +170,8 @@ static void power_monitor_task(void *arg)
             update_hmi_battery_status(&new_status);
         }
 
-        /* 6. Sleep until next update */
-        last_update = xTaskGetTickCount();
-        TickType_t now = xTaskGetTickCount();
-        TickType_t elapsed = now - last_update;
+        /* 6. Sleep until next update (compensate for time spent reading) */
+        TickType_t elapsed = xTaskGetTickCount() - cycle_start;
         if (elapsed < update_interval) {
             vTaskDelay(update_interval - elapsed);
         }
@@ -258,7 +270,18 @@ esp_err_t pwr_monitor_update_now(void)
     esp_err_t ret = read_power_status(&new_status);
 
     if (ret == ESP_OK) {
-        pwr_source_charge_monitor();
+        /* Use pre-read status for charge monitor */
+        pwr_source_status_t src_status = {
+            .vbat_mv        = new_status.bat_voltage_mv,
+            .soc_pct        = new_status.bat_soc_pct,
+            .bat_current_ma = new_status.bat_current_ma,
+            .battery_present = new_status.bat_present,
+            .fully_charged  = new_status.bat_fully_charged,
+            .critical_low   = new_status.bat_critical_low,
+            .chrg_status    = new_status.chrg_status,
+            .power_good     = new_status.power_good,
+        };
+        pwr_source_charge_monitor_with_status(&src_status);
 
         if (g_pwr_monitor_mutex) {
             if (xSemaphoreTake(g_pwr_monitor_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {

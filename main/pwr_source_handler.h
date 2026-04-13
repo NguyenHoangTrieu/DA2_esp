@@ -23,8 +23,10 @@ extern "C" {
 #endif
 
 /* Battery charge thresholds */
-#define PWR_BATT_CHARGE_FULL_SOC_PCT   100   /* Stop charging at 100% SoC */
+#define PWR_BATT_CHARGE_FULL_SOC_PCT   100   /* Stop charging at 100% SoC (secondary criterion) */
 #define PWR_BATT_CHARGE_RESUME_SOC_PCT 95    /* Resume charging below 95% SoC (hysteresis) */
+#define PWR_BATT_CHARGE_MIN_STOP_MV    4100  /* Never stop charging below this voltage, even if SoC=100% */
+#define PWR_BATT_CHARGE_RESUME_MV      4000  /* Resume charging if voltage drops below this (regardless of SoC) */
 #define PWR_BATT_LOWER_THRESHOLD_MV    3500  /* Low battery alert below this voltage */
 
 #include "stack_handler.h"
@@ -105,11 +107,19 @@ esp_err_t pwr_source_set_otg(bool enable);
 esp_err_t pwr_source_get_status(pwr_source_status_t *status);
 
 /**
- * @brief Threshold-based charge control — call periodically (e.g. every 30 s).
- *        Stops charging if vbat > UPPER_THRESHOLD, enables charging if vbat < LOWER_THRESHOLD.
+ * @brief Threshold-based charge control — call periodically (e.g. every 5 s).
+ *        Uses SoC with OCV fallback, debounce, and minimum toggle interval.
  * @return ESP_OK on success
  */
 esp_err_t pwr_source_charge_monitor(void);
+
+/**
+ * @brief Charge control using pre-read status (avoids double I2C read).
+ *        Preferred over pwr_source_charge_monitor() when status is already available.
+ * @param status Pre-read status from pwr_source_get_status(), or NULL to read internally
+ * @return ESP_OK on success
+ */
+esp_err_t pwr_source_charge_monitor_with_status(const pwr_source_status_t *status);
 
 /**
  * @brief Read battery SoC directly (convenience wrapper over bq27441_read_soc_pct).

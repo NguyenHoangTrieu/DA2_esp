@@ -41,6 +41,13 @@ static void iox_input_init(stack_gpio_pin_num_t pin)
 static bool s_charge_enabled_state = true;
 static bool s_battery_enabled_state = true;  /* true = battery FET connected (default) */
 
+/* Debounce: require N consecutive readings before toggling charge state */
+#define CHARGE_DEBOUNCE_COUNT       3    /* 3 consecutive reads (= 15s at 5s interval) */
+#define CHARGE_MIN_TOGGLE_INTERVAL_MS 15000  /* minimum 15s between charge state changes */
+static int s_charge_stop_counter  = 0;   /* counts consecutive "should stop" readings */
+static int s_charge_start_counter = 0;   /* counts consecutive "should start" readings */
+static TickType_t s_last_charge_toggle_tick = 0;
+
 /* ------------------------------------------------------------------ */
 /*  Public API                                                          */
 /* ------------------------------------------------------------------ */
@@ -186,52 +193,170 @@ esp_err_t pwr_source_get_status(pwr_source_status_t *status)
     return ESP_OK;
 }
 
-esp_err_t pwr_source_charge_monitor(void)
+esp_err_t pwr_source_charge_monitor_with_status(const pwr_source_status_t *status)
 {
-    uint8_t soc_pct = 0;
-    esp_err_t ret = bq27441_read_soc_pct(&soc_pct);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Cannot read SoC");
-        return ret;
+    uint8_t soc_pct;
+    uint16_t vbat_mv;
+
+    if (status) {
+        /* Use pre-read status (avoids double I2C read in same cycle) */
+        soc_pct = status->soc_pct;
+        vbat_mv = status->vbat_mv;
+    } else {
+        /* Fallback: read directly */
+        esp_err_t ret = bq27441_read_soc_pct(&soc_pct);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Cannot read SoC");
+            return ret;
+        }
+        bq27441_read_voltage_mv(&vbat_mv);
+
+        /* Apply OCV fallback (same logic as pwr_source_get_status) */
+        if (soc_pct == 0 && vbat_mv > 3000) {
+            soc_pct = bq27441_estimate_soc_from_ocv(vbat_mv);
+        }
     }
 
-    /* Hysteresis logic (SoC-based): prevent on/off oscillation around threshold
-       - If charging is enabled: stop when reaching FULL_SOC_PCT
-       - If charging is disabled: resume only when dropping below RESUME_SOC_PCT (hysteresis)
+    /* Sanity check: if SoC reads 100% but voltage is below 3.9V, IT is lying.
+     * If SoC reads 0% but voltage is above 3.5V, IT is lying.
+     * In both cases, use OCV estimate instead. */
+    if (soc_pct >= 100 && vbat_mv < 3900) {
+        uint8_t ocv_soc = bq27441_estimate_soc_from_ocv(vbat_mv);
+        ESP_LOGW(TAG, "CHARGE_CTRL: SoC=%u%% but Vbat=%u mV too low — using OCV estimate %u%%",
+                 soc_pct, vbat_mv, ocv_soc);
+        soc_pct = ocv_soc;
+    } else if (soc_pct == 0 && vbat_mv > 3500) {
+        uint8_t ocv_soc = bq27441_estimate_soc_from_ocv(vbat_mv);
+        ESP_LOGW(TAG, "CHARGE_CTRL: SoC=0%% but Vbat=%u mV — using OCV estimate %u%%",
+                 vbat_mv, ocv_soc);
+        soc_pct = ocv_soc;
+    }
+
+    /* Minimum toggle interval: prevent rapid on/off cycling */
+    TickType_t now = xTaskGetTickCount();
+    TickType_t elapsed_since_toggle = now - s_last_charge_toggle_tick;
+    bool toggle_allowed = (elapsed_since_toggle >= pdMS_TO_TICKS(CHARGE_MIN_TOGGLE_INTERVAL_MS))
+                          || (s_last_charge_toggle_tick == 0);  /* allow first toggle */
+
+    /* Charge termination strategy:
+     *   PRIMARY:   BQ25892 hardware DONE (chrg_status==3) — charger IC is authoritative
+     *   SECONDARY: SoC >= 100% AND Vbat >= PWR_BATT_CHARGE_MIN_STOP_MV
+     *   NEVER stop if Vbat < PWR_BATT_CHARGE_MIN_STOP_MV (BQ27441 SoC is unreliable
+     *   until a full charge-discharge calibration cycle has completed).
+     *
+     * Resume strategy:
+     *   SoC drops below PWR_BATT_CHARGE_RESUME_SOC_PCT  OR
+     *   Vbat drops below PWR_BATT_CHARGE_RESUME_MV
+     *
+     * Both directions require CHARGE_DEBOUNCE_COUNT consecutive readings.
      */
+    uint8_t chrg_status = (status) ? status->chrg_status : 0;
+
     if (s_charge_enabled_state) {
-        /* Charging is currently ON — stop when battery is full (100% SoC) */
-        if (soc_pct >= PWR_BATT_CHARGE_FULL_SOC_PCT) {
-            ESP_LOGI(TAG, "CHARGE_CTRL: Battery full (SoC=%u%% >= %u%%) — stopping charge",
-                     soc_pct, PWR_BATT_CHARGE_FULL_SOC_PCT);
-            s_charge_enabled_state = false;
-            pwr_source_set_charge_enable(false);
+        /* === Charging is ON — decide if we should STOP === */
+        bool should_stop = false;
+        const char *stop_reason = "";
+
+        if (chrg_status == 3) {
+            /* BQ25892 says charge DONE — hardware termination (most reliable) */
+            should_stop = true;
+            stop_reason = "BQ25892 DONE";
+        } else if (soc_pct >= PWR_BATT_CHARGE_FULL_SOC_PCT &&
+                   vbat_mv >= PWR_BATT_CHARGE_MIN_STOP_MV) {
+            /* SoC says full AND voltage confirms it */
+            should_stop = true;
+            stop_reason = "SoC+Voltage";
+        }
+
+        /* Safety: NEVER stop charging if voltage is below minimum */
+        if (should_stop && vbat_mv < PWR_BATT_CHARGE_MIN_STOP_MV) {
+            ESP_LOGW(TAG, "CHARGE_CTRL: Would stop (%s) but Vbat=%u mV < %u mV — keep charging",
+                     stop_reason, vbat_mv, PWR_BATT_CHARGE_MIN_STOP_MV);
+            should_stop = false;
+        }
+
+        if (should_stop) {
+            s_charge_stop_counter++;
+            s_charge_start_counter = 0;
+            if (s_charge_stop_counter >= CHARGE_DEBOUNCE_COUNT && toggle_allowed) {
+                ESP_LOGI(TAG, "CHARGE_CTRL: Battery full (%s, SoC=%u%%, Vbat=%u mV, %d consecutive) — stopping",
+                         stop_reason, soc_pct, vbat_mv, s_charge_stop_counter);
+                s_charge_enabled_state = false;
+                pwr_source_set_charge_enable(false);
+                s_charge_stop_counter = 0;
+                s_last_charge_toggle_tick = now;
+            } else {
+                ESP_LOGD(TAG, "CHARGE_CTRL: should_stop (%s) — debounce %d/%d%s",
+                        stop_reason, s_charge_stop_counter, CHARGE_DEBOUNCE_COUNT,
+                        toggle_allowed ? "" : " (cooldown)");
+            }
         } else {
-            ESP_LOGD(TAG, "CHARGE_CTRL: State=ON, SoC=%u%% (full_thres=%u%%, resume_hyst=%u%%)",
-                    soc_pct, PWR_BATT_CHARGE_FULL_SOC_PCT, PWR_BATT_CHARGE_RESUME_SOC_PCT);
+            s_charge_stop_counter = 0;
+            ESP_LOGD(TAG, "CHARGE_CTRL: ON, SoC=%u%% Vbat=%u mV chrg_st=%u",
+                    soc_pct, vbat_mv, chrg_status);
         }
     } else {
-        /* Charging is currently OFF — resume only if SoC drops enough (hysteresis) */
-        if (soc_pct <= PWR_BATT_CHARGE_RESUME_SOC_PCT) {
-            ESP_LOGI(TAG, "CHARGE_CTRL: SoC dropped to %u%% (below %u%% hyst) — resuming charge",
-                     soc_pct, PWR_BATT_CHARGE_RESUME_SOC_PCT);
-            s_charge_enabled_state = true;
-            pwr_source_set_charge_enable(true);
+        /* === Charging is OFF — decide if we should RESUME === */
+        bool should_resume = false;
+        const char *resume_reason = "";
+
+        /* Use VOLTAGE as the sole resume criterion.
+         *
+         * Why NOT SoC: After a full charge cycle (e.g. stopped at Vbat=4136 mV),
+         * the battery's open-circuit voltage settles to ~4075 mV once current drops
+         * to 0. The BQ27441 computes OCV-based SoC from this lower resting voltage
+         * and reports ~87%. Using SoC <= 95% as a resume trigger would immediately
+         * restart charging, creating an oscillation loop:
+         *   stop (4136 mV, SoC=100%) → rest (4075 mV, SoC=87%) → resume → repeat
+         *
+         * Voltage is the correct physical criterion: resume charging only when the
+         * battery has genuinely discharged below PWR_BATT_CHARGE_RESUME_MV.
+         * At Vbat=4075 mV OCV, the battery is still ~87-90% full — no need to charge.
+         */
+        if (vbat_mv > 0 && vbat_mv < PWR_BATT_CHARGE_RESUME_MV) {
+            should_resume = true;
+            resume_reason = "Voltage low";
+        }
+
+        if (should_resume) {
+            s_charge_start_counter++;
+            s_charge_stop_counter = 0;
+            if (s_charge_start_counter >= CHARGE_DEBOUNCE_COUNT && toggle_allowed) {
+                ESP_LOGI(TAG, "CHARGE_CTRL: %s (SoC=%u%%, Vbat=%u mV < %u mV, %d consecutive) — resuming",
+                         resume_reason, soc_pct, vbat_mv, PWR_BATT_CHARGE_RESUME_MV,
+                         s_charge_start_counter);
+                s_charge_enabled_state = true;
+                pwr_source_set_charge_enable(true);
+                s_charge_start_counter = 0;
+                s_last_charge_toggle_tick = now;
+            } else {
+                ESP_LOGD(TAG, "CHARGE_CTRL: should_resume (%s) — debounce %d/%d%s",
+                        resume_reason, s_charge_start_counter, CHARGE_DEBOUNCE_COUNT,
+                        toggle_allowed ? "" : " (cooldown)");
+            }
         } else {
-            ESP_LOGD(TAG, "CHARGE_CTRL: State=OFF, SoC=%u%% (waiting for hyst=%u%%)",
-                    soc_pct, PWR_BATT_CHARGE_RESUME_SOC_PCT);
+            s_charge_start_counter = 0;
+            ESP_LOGD(TAG, "CHARGE_CTRL: OFF, SoC=%u%% Vbat=%u mV (resume when Vbat < %u mV)",
+                    soc_pct, vbat_mv, PWR_BATT_CHARGE_RESUME_MV);
         }
     }
 
     /* Also handle low battery critical alert (independent of charging state) */
-    uint16_t vbat_mv = 0;
-    esp_err_t voltage_ret = bq27441_read_voltage_mv(&vbat_mv);
-    if (voltage_ret == ESP_OK && vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
+    if (vbat_mv > 0 && vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
         ESP_LOGW(TAG, "Critical low battery: %u mV <= %u mV",
                  vbat_mv, PWR_BATT_LOWER_THRESHOLD_MV);
     }
 
     return ESP_OK;
+}
+
+esp_err_t pwr_source_charge_monitor(void)
+{
+    /* Legacy API: read status and delegate */
+    pwr_source_status_t status = {0};
+    esp_err_t ret = pwr_source_get_status(&status);
+    if (ret != ESP_OK) return ret;
+    return pwr_source_charge_monitor_with_status(&status);
 }
 
 esp_err_t pwr_source_get_soc(uint8_t *soc_pct)

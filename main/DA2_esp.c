@@ -335,8 +335,8 @@ void app_main(void) {
 
   pwr_source_init();
   pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
-  hmi_handler_init();       /* HMI display: init state only  */
-  
+  hmi_task_init();       /* HMI display: init state only  */
+  hmi_task_enter_mode(); /* Route UART to HMI, init display */
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 

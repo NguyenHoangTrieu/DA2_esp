@@ -20,7 +20,7 @@
 #include "stack_handler.h"
 #include "pwr_source_handler.h"
 #include "pwr_monitor_task.h"
-#include "hmi_handler.h"
+#include "hmi_task.h"
 #include "pcf8563_rtc.h"
 extern TaskHandle_t main_task_handle;
 void server_connect_stop(config_server_type_t server_type);
