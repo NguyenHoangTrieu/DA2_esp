@@ -109,12 +109,24 @@ esp_err_t hmi_task_enter_mode(void)
     s_active = true;
     hmi_display_init();
 
-    /* 4. Spawn the RX task */
+    /* 4. Wait for display to finish booting (~500ms power-on time).
+     *    Then drain any boot garbage from RX buffer before configuring.
+     *    bkcmd=0 → no ACK responses (avoids RX flood).
+     *    recmod=0 → passive mode: auto-send touch events on press. */
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    hmi_bsp_drain();
+    hmi_display_send("bkcmd=0");
+    hmi_display_send("recmod=0");
+    vTaskDelay(pdMS_TO_TICKS(50));
+    hmi_bsp_drain();  /* discard any ACK from bkcmd/recmod itself */
+    ESP_LOGI(TAG, "Display init commands sent (bkcmd=0, recmod=0)");
+
+    /* 5. Spawn the RX task */
     xTaskCreate(rx_task_fn, "hmi_rx",
                 HMI_RX_TASK_STACK, NULL,
                 HMI_RX_TASK_PRIO, &s_rx_task);
 
-    /* 5. Navigate display to home page */
+    /* 6. Navigate display to home page */
     hmi_display_goto_page(HMI_PAGE_HOME);
 
     ESP_LOGI(TAG, "HMI mode active");

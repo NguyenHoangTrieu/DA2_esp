@@ -1,39 +1,44 @@
 ﻿/**
  * @file hmi_display.c
- * @brief HMI Middleware -- TJC3224K024_011 display protocol (320x240 landscape)
+ * @brief HMI Middleware -- TJC3224K024_011 (320x240 landscape)
  *
- * Physical module: TJC3224K024_011 (native 240x320) mounted LANDSCAPE (rotated 90 deg).
- * TJC Editor project must be set to LANDSCAPE, which gives usable area 320(W) x 240(H).
+ * Component-based home page: dynamic fields updated via named attribute commands
+ * (e.g. t_wifi_st.txt="Connected", t_wifi_dot.pco=2016). Static labels and
+ * separator lines are drawn by home_draw_seps() after each page home navigation.
+ * Battery indicator drawn via fill commands (no TJC progressbar component needed).
  *
- * All home-page content is drawn with xstr/fill/line UART commands -- no named
- * text component fields are needed on the home page. The TJC project only needs
- * 5 touch-button components across 4 pages:
+ * Detail pages pgWifi / pgLTE use xstr/fill with sta=1 (solid background).
  *
- *   Page 0 (home)  : comp 1 = b_wifi_cfg (x=4,y=172,w=150,h=36)
- *                    comp 2 = b_lte_cfg  (x=166,y=172,w=150,h=36)
- *   Page 1 (pgWifi): comp 1 = b_back     (x=4,y=196,w=312,h=36)
- *   Page 2 (pgLTE) : comp 1 = b_back     (x=4,y=196,w=312,h=36)
- *   Page 3 (pgKB)  : (empty, reserved)
+ * HOME PAGE COMPONENT NAMES (must match TJC Editor exactly):
  *
- * HOME PAGE LAYOUT (320 x 240 landscape):
+ *  BUTTONS (add FIRST so comp ID = 1 and 2):
+ *    b_wifi_cfg  Button  x=4,  y=172, w=150, h=36   Touch: page pgWifi
+ *    b_lte_cfg   Button  x=166,y=172, w=150, h=36   Touch: page pgLTE
  *
- *   y=  0..23   Title bar : "DA2 GW" | battery bar (x=88..161) | "85%" | "Chrg/Idle"
- *   y= 24       separator line (full width)
- *   y= 26..47   Section headers : "WiFi" (x=0..157) | "LTE" (x=162..319)
- *   y= 50..71   Status rows     : dot + "Connected"  | dot + "Connected"
- *   y= 74..91   SSID / APN row
- *   y= 94..111  Detail row (signal/auth | modem/CSQ)
- *   y=116       separator line (full width)
- *   y=119..137  Ethernet row : "ETH:" | dot | status | IP
- *   y=141       separator line (full width)
- *   y=172..207  TJC button components (drawn by display controller)
- *   Vertical divider: x=158, y=26..115
+ *  DYNAMIC TEXT (sta=1, bco=0):
+ *    t_bat_pct   x=166,y=2,   w=50, h=20   "93%"
+ *    t_bat_chrg  x=220,y=2,   w=70, h=20   "Idle"/"Chrg"
+ *    t_wifi_dot  x=4,  y=51,  w=14, h=20   "*"  (pco changes)
+ *    t_wifi_st   x=20, y=51,  w=92, h=20   "Connected"/"No WiFi"
+ *    t_wifi_ssid x=4,  y=75,  w=150,h=18   SSID
+ *    t_wifi_det  x=4,  y=97,  w=150,h=18   signal/auth
+ *    t_lte_dot   x=166,y=51,  w=14, h=20   "*"  (pco changes)
+ *    t_lte_st    x=182,y=51,  w=92, h=20   "Connected"/"No LTE"
+ *    t_lte_apn   x=166,y=75,  w=150,h=18   APN
+ *    t_lte_det   x=166,y=97,  w=150,h=18   modem/CSQ
+ *    t_eth_dot   x=48, y=120, w=14, h=18   "*"  (pco changes)
+ *    t_eth_st    x=64, y=120, w=90, h=18   "Connected"/"No ETH"
+ *    t_eth_ip    x=158,y=120, w=148,h=18   IP address
  *
- * xstr format: xstr x,y,w,h,fontid,pco,bco,xcen,ycen,sta,"text"
- *   sta=0 transparent bg   sta=1 solid bg
- *   xcen: 0=left 1=center 2=right   ycen: 0=top 1=center
+ *  STATIC TEXT (set in TJC Editor, never updated from ESP32; sta=1, bco=0):
+ *    t_title     x=2,  y=2,   w=82, h=20   "DA2 GW"  pco=65535
+ *    t_wifi_hdr  x=4,  y=27,  w=70, h=20   "WiFi"    pco=2047
+ *    t_lte_hdr   x=162,y=27,  w=70, h=20   "LTE"     pco=2047
+ *    t_eth_lbl   x=4,  y=120, w=40, h=18   "ETH:"    pco=2047
+ *
+ *  BATTERY BAR: x=88..161, y=6..17 -- leave EMPTY in TJC Editor.
+ *  SEPARATOR LINES: drawn via line commands (no TJC component needed).
  */
-
 #include "hmi_display.h"
 #include "hmi_handler.h"
 #include "esp_log.h"
@@ -45,7 +50,7 @@
 
 static const char *TAG = "HMI_DISP";
 
-static volatile uint8_t s_cur_page    = HMI_PAGE_HOME;
+static volatile uint8_t s_cur_page     = HMI_PAGE_HOME;
 static hmi_status_t     s_status_cache = {0};
 
 /* ------------------------------------------------------------------ */
@@ -54,8 +59,10 @@ static hmi_status_t     s_status_cache = {0};
 
 void hmi_display_send(const char *cmd)
 {
+    ESP_LOGD(TAG, ">> %s", cmd);
     hmi_bsp_write((const uint8_t *)cmd, strlen(cmd));
     hmi_bsp_write((const uint8_t *)HMI_TJC_TERM, HMI_TJC_TERM_LEN);
+    vTaskDelay(pdMS_TO_TICKS(2));
 }
 
 void hmi_display_sendf(const char *fmt, ...)
@@ -76,7 +83,7 @@ esp_err_t hmi_display_read_string(char *out, size_t out_size,
     while (xTaskGetTickCount() < deadline) {
         uint32_t rem_ms = (deadline - xTaskGetTickCount()) * portTICK_PERIOD_MS;
         if (rem_ms < 20) rem_ms = 20;
-        int len = hmi_bsp_read_frame(frame, sizeof(frame), rem_ms);
+        int len = hmi_bsp_read_frame(frame, sizeof(frame), (uint32_t)rem_ms);
         if (len <= 0) break;
         if (frame[0] == HMI_EVT_STRING) {
             int str_len = len - 4;
@@ -92,33 +99,24 @@ esp_err_t hmi_display_read_string(char *out, size_t out_size,
 }
 
 /* ------------------------------------------------------------------ */
-/*  Home page static frame (separators + section labels)               */
+/*  Home page: separator lines (redrawn after every page home nav)     */
 /* ------------------------------------------------------------------ */
 
-static void home_draw_static(void)
+static void home_draw_seps(void)
 {
-    /* Clear entire content area (y=0..171, above TJC button area) */
-    hmi_display_send("fill 0,0,320,172,0");
-
-    /* Separator lines */
-    hmi_display_sendf("line 0,24,319,24,%u",    HMI_COL_GRAY);  /* below title      */
-    hmi_display_sendf("line 158,26,158,115,%u", HMI_COL_GRAY);  /* WiFi|LTE divider */
-    hmi_display_sendf("line 0,116,319,116,%u",  HMI_COL_GRAY);  /* below WiFi/LTE   */
-    hmi_display_sendf("line 0,141,319,141,%u",  HMI_COL_GRAY);  /* below ETH row    */
-
-    /* Static section labels (never change) */
-    hmi_display_sendf("xstr 4,27,70,20,0,%u,0,0,1,0,\"WiFi\"",     HMI_COL_CYAN);
-    hmi_display_sendf("xstr 162,27,70,20,0,%u,0,0,1,0,\"LTE\"",    HMI_COL_CYAN);
-    hmi_display_sendf("xstr 4,120,40,18,0,%u,0,0,1,0,\"ETH:\"",    HMI_COL_CYAN);
+    hmi_display_sendf("line 0,24,319,24,%u",    HMI_COL_GRAY);
+    hmi_display_sendf("line 158,26,158,115,%u", HMI_COL_GRAY);
+    hmi_display_sendf("line 0,116,319,116,%u",  HMI_COL_GRAY);
+    hmi_display_sendf("line 0,141,319,141,%u",  HMI_COL_GRAY);
 }
 
 /* ------------------------------------------------------------------ */
-/*  WiFi / LTE detail pages (full-screen xstr, no named components)    */
+/*  Detail pages -- xstr-based with sta=1 (solid background, no pic)  */
 /* ------------------------------------------------------------------ */
 
 static void wifi_page_draw(void)
 {
-    hmi_display_send("fill 0,0,320,172,0");
+    hmi_display_send("fill 0,0,320,200,0");
     hmi_display_send("xstr 0,0,320,24,0,65535,0,1,1,1,\"WiFi Status\"");
 
     uint16_t col = s_status_cache.wifi_connected ? HMI_COL_GREEN : HMI_COL_RED;
@@ -139,7 +137,7 @@ static void wifi_page_draw(void)
 
 static void lte_page_draw(void)
 {
-    hmi_display_send("fill 0,0,320,172,0");
+    hmi_display_send("fill 0,0,320,200,0");
     hmi_display_send("xstr 0,0,320,24,0,65535,0,1,1,1,\"LTE Status\"");
 
     uint16_t col = s_status_cache.lte_connected ? HMI_COL_GREEN : HMI_COL_RED;
@@ -173,13 +171,15 @@ void hmi_display_goto_page(uint8_t page)
     static const char * const names[] = {"home", "pgWifi", "pgLTE", "pgKB"};
     if (page >= 4) return;
 
+    ESP_LOGI(TAG, "goto_page %u (%s)", page, names[page]);
+    hmi_bsp_drain();
     hmi_display_sendf("page %s", names[page]);
-    vTaskDelay(pdMS_TO_TICKS(60));  /* wait for display page clear to finish */
+    vTaskDelay(pdMS_TO_TICKS(150));
     s_cur_page = page;
 
     switch (page) {
     case HMI_PAGE_HOME:
-        home_draw_static();
+        home_draw_seps();
         hmi_display_refresh_status(&s_status_cache);
         break;
     case HMI_PAGE_WIFI:
@@ -199,14 +199,7 @@ uint8_t hmi_display_current_page(void)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Home page status refresh (landscape 320x240)                        */
-/*                                                                      */
-/*  Layout:                                                             */
-/*    y=  0..23   Title bar (fill + redraw each call)                  */
-/*    y= 26..47   "WiFi" / "LTE" section labels  (static, see above)   */
-/*    y= 50..115  WiFi (x=0..157) + LTE (x=162..319) dynamic content   */
-/*    y=119..138  ETH row dynamic content                               */
-/*    y=172..207  TJC button components (not touched by fill)           */
+/*  Home page status refresh -- named component attribute commands      */
 /* ------------------------------------------------------------------ */
 
 void hmi_display_refresh_status(const hmi_status_t *s)
@@ -214,67 +207,66 @@ void hmi_display_refresh_status(const hmi_status_t *s)
     if (!s || s_cur_page != HMI_PAGE_HOME) return;
     memcpy(&s_status_cache, s, sizeof(hmi_status_t));
 
-    char buf[128];
+    ESP_LOGI(TAG, "refresh bat=%u%% wifi=%d lte=%d eth=%d",
+             s->bat_soc, s->wifi_connected, s->lte_connected, s->eth_connected);
 
-    /* ---- Title bar (y=0..23) ---------------------------------------- */
+    char buf[32];
+
+    /* ---- Battery bar (fill) + text components ---- */
     uint16_t bat_col = (s->bat_soc >= 50) ? HMI_COL_GREEN  :
                        (s->bat_soc >= 20) ? HMI_COL_YELLOW :
                        (s->bat_soc >= 10) ? HMI_COL_ORANGE : HMI_COL_RED;
+    uint8_t  bar_w   = (uint8_t)((s->bat_soc * 72) / 100);
 
-    hmi_display_send("fill 0,0,320,24,0");
-    hmi_display_send("xstr 2,2,82,20,0,65535,0,0,1,0,\"DA2 GW\"");
-
-    /* Battery bar: gray bg at x=88..161 (74 px wide) */
-    uint8_t bar_w = (uint8_t)((s->bat_soc * 72) / 100);
     hmi_display_sendf("fill 88,6,74,12,%u", HMI_COL_GRAY);
     if (bar_w > 0) {
         hmi_display_sendf("fill 89,7,%u,10,%u", bar_w, bat_col);
     }
+    hmi_display_sendf("t_bat_pct.pco=%u", bat_col);
+    hmi_display_sendf("t_bat_pct.txt=\"%u%%\"", s->bat_soc);
+    hmi_display_sendf("t_bat_chrg.pco=%u", s->bat_is_charging ? HMI_COL_GREEN : HMI_COL_GRAY);
+    hmi_display_sendf("t_bat_chrg.txt=\"%s\"", s->bat_is_charging ? "Chrg" : "Idle");
 
-    snprintf(buf, sizeof(buf), "%u%%", s->bat_soc);
-    hmi_display_sendf("xstr 166,2,50,20,0,%u,0,1,1,0,\"%s\"", bat_col, buf);
-
-    const char *chrg_txt = s->bat_is_charging ? "Chrg" : "Idle";
-    uint16_t chrg_col = s->bat_is_charging ? HMI_COL_GREEN : HMI_COL_GRAY;
-    hmi_display_sendf("xstr 220,2,70,20,0,%u,0,0,1,0,\"%s\"", chrg_col, chrg_txt);
-
-    /* ---- WiFi column (x=0..157, dynamic rows y=50..115) -------------- */
+    /* ---- WiFi column ---- */
     uint16_t wifi_col = s->wifi_connected ? HMI_COL_GREEN : HMI_COL_RED;
-    hmi_display_send("fill 0,50,158,66,0");
-
-    hmi_display_sendf("xstr 4,51,14,20,0,%u,0,1,1,0,\"*\"", wifi_col);
-    hmi_display_sendf("xstr 20,51,92,20,0,%u,0,0,1,0,\"%s\"",
-                      wifi_col, s->wifi_connected ? "Connected" : "No WiFi");
-    hmi_display_sendf("xstr 4,75,150,18,0,65535,0,0,1,0,\"%.16s\"",
+    hmi_display_sendf("t_wifi_dot.pco=%u", wifi_col);
+    hmi_display_sendf("t_wifi_st.pco=%u",  wifi_col);
+    hmi_display_sendf("t_wifi_st.txt=\"%s\"",
+                      s->wifi_connected ? "Connected" : "No WiFi");
+    hmi_display_sendf("t_wifi_ssid.txt=\"%.16s\"",
                       s->wifi_connected ? s->wifi_ssid : "---");
     if (s->wifi_connected) {
         snprintf(buf, sizeof(buf), "%.9s %.9s", s->wifi_rssi_str, s->wifi_auth);
-        hmi_display_sendf("xstr 4,97,150,18,0,%u,0,0,1,0,\"%s\"", HMI_COL_GRAY, buf);
+        hmi_display_sendf("t_wifi_det.txt=\"%s\"", buf);
+    } else {
+        hmi_display_send("t_wifi_det.txt=\"\"");
     }
 
-    /* ---- LTE column (x=162..319, dynamic rows y=50..115) ------------- */
+    /* ---- LTE column ---- */
     uint16_t lte_col = s->lte_connected ? HMI_COL_GREEN : HMI_COL_RED;
-    hmi_display_send("fill 162,50,158,66,0");
-
-    hmi_display_sendf("xstr 166,51,14,20,0,%u,0,1,1,0,\"*\"", lte_col);
-    hmi_display_sendf("xstr 182,51,92,20,0,%u,0,0,1,0,\"%s\"",
-                      lte_col, s->lte_connected ? "Connected" : "No LTE");
-    hmi_display_sendf("xstr 166,75,150,18,0,65535,0,0,1,0,\"%.16s\"",
-                      s->lte_connected ? (strlen(s->lte_apn) ? s->lte_apn : "---") : "---");
+    hmi_display_sendf("t_lte_dot.pco=%u", lte_col);
+    hmi_display_sendf("t_lte_st.pco=%u",  lte_col);
+    hmi_display_sendf("t_lte_st.txt=\"%s\"",
+                      s->lte_connected ? "Connected" : "No LTE");
+    hmi_display_sendf("t_lte_apn.txt=\"%.16s\"",
+                      s->lte_connected ? s->lte_apn : "---");
     if (s->lte_connected) {
         snprintf(buf, sizeof(buf), "%.9s %s", s->lte_modem, s->lte_csq_str);
-        hmi_display_sendf("xstr 166,97,150,18,0,%u,0,0,1,0,\"%s\"", HMI_COL_GRAY, buf);
+        hmi_display_sendf("t_lte_det.txt=\"%s\"", buf);
+    } else {
+        hmi_display_send("t_lte_det.txt=\"\"");
     }
 
-    /* ---- ETH row (y=119..137) ---------------------------------------- */
+    /* ---- Ethernet row ---- */
     uint16_t eth_col = s->eth_connected ? HMI_COL_GREEN : HMI_COL_RED;
-    hmi_display_send("fill 46,119,270,20,0");
-
-    hmi_display_sendf("xstr 48,120,14,18,0,%u,0,1,1,0,\"*\"", eth_col);
-    hmi_display_sendf("xstr 64,120,90,18,0,%u,0,0,1,0,\"%s\"",
-                      eth_col, s->eth_connected ? "Connected" : "No ETH");
+    hmi_display_sendf("t_eth_dot.pco=%u", eth_col);
+    hmi_display_sendf("t_eth_st.pco=%u",  eth_col);
+    hmi_display_sendf("t_eth_st.txt=\"%s\"",
+                      s->eth_connected ? "Connected" : "No ETH");
     if (s->eth_connected) {
-        hmi_display_sendf("xstr 158,120,148,18,0,65535,0,0,1,0,\"%.15s\"", s->eth_ip);
+        hmi_display_sendf("t_eth_ip.txt=\"%.15s\"", s->eth_ip);
+    } else {
+        hmi_display_send("t_eth_ip.txt=\"\"");
     }
 }
 
@@ -294,34 +286,46 @@ void hmi_display_handle_frame(const uint8_t *frame, int len)
         {
             uint8_t page = frame[1];
             uint8_t comp = frame[2];
-            ESP_LOGD(TAG, "Touch page=%u comp=%u", page, comp);
-
+            ESP_LOGI(TAG, "Touch page=%u comp=%u", page, comp);
             if (page == HMI_PAGE_HOME) {
                 if (comp == HMI_HOME_COMP_WIFI_BTN)
                     hmi_display_goto_page(HMI_PAGE_WIFI);
                 else if (comp == HMI_HOME_COMP_LTE_BTN)
                     hmi_display_goto_page(HMI_PAGE_LTE);
-            }
-            else if (page == HMI_PAGE_WIFI || page == HMI_PAGE_LTE) {
-                if (comp == 1)   /* b_back */
+            } else if (page == HMI_PAGE_WIFI || page == HMI_PAGE_LTE) {
+                if (comp == 1)
                     hmi_display_goto_page(HMI_PAGE_HOME);
             }
         }
         break;
 
     case HMI_EVT_STARTUP:
-        ESP_LOGI(TAG, "Display startup -- going home");
+        ESP_LOGI(TAG, "Display startup event -- going home");
         hmi_display_goto_page(HMI_PAGE_HOME);
         break;
 
     case HMI_EVT_PAGE_CHG:
-        if (len >= 6) {
+        if (len >= 5) {
             s_cur_page = frame[1];
-            ESP_LOGD(TAG, "Page changed to %u", s_cur_page);
+            ESP_LOGI(TAG, "Page changed to %u", s_cur_page);
         }
         break;
 
+    case 0x01:  /* ACK success  */
+    case 0xFF:  /* stray 0xFF   */
+        break;
+
+    case 0x00:
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+    case 0x1A:
+        ESP_LOGW(TAG, "TJC error 0x%02x", frame[0]);
+        break;
+
     default:
+        ESP_LOGW(TAG, "Unknown TJC frame 0x%02x len=%d", frame[0], len);
         break;
     }
 }

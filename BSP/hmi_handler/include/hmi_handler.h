@@ -27,8 +27,8 @@ extern "C" {
 /* ------------------------------------------------------------------ */
 
 #define HMI_BSP_UART_NUM    2        /* UART_NUM_2                        */
-#define HMI_BSP_TX_PIN      41       /* Shared UART2 TX (PPP / LAN MCU)  */
-#define HMI_BSP_RX_PIN      42       /* Shared UART2 RX                  */
+#define HMI_BSP_TX_PIN      41       /* ESP32 TX → HMI RX (via UART switch) */
+#define HMI_BSP_RX_PIN      42       /* HMI TX → ESP32 RX (via UART switch) */
 #define HMI_BSP_BAUD        115200
 #define HMI_BSP_BUF_SIZE    1024     /* UART ring-buffer size in bytes    */
 

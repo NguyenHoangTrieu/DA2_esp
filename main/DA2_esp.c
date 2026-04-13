@@ -336,7 +336,7 @@ void app_main(void) {
   pwr_source_init();
   pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
   hmi_task_init();       /* HMI display: init state only  */
-  hmi_task_enter_mode(); /* Route UART to HMI, init display */
+  // hmi_task_enter_mode(); /* Route UART to HMI, init display */
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 
@@ -357,8 +357,6 @@ void app_main(void) {
 
   /* --- Operational tasks (NORMAL boot) -------------------------------- */
   config_internet_type_t current_internet_type = g_internet_type;
-
-  hmi_enter_mode();
 
   internet_connect_start(current_internet_type);
   vTaskDelay(pdMS_TO_TICKS(10000)); /* wait for internet link        */

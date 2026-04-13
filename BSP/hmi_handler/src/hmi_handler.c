@@ -56,7 +56,10 @@ void hmi_bsp_deinit(void)
 
 void hmi_bsp_write(const uint8_t *data, size_t len)
 {
-    uart_write_bytes(HMI_BSP_UART_NUM, (const char *)data, len);
+    int written = uart_write_bytes(HMI_BSP_UART_NUM, (const char *)data, len);
+    if (written < 0) {
+        ESP_LOGE(TAG, "uart_write_bytes error: %d", written);
+    }
 }
 
 int hmi_bsp_read_frame(uint8_t *buf, size_t buf_size, uint32_t timeout_ms)
@@ -75,7 +78,10 @@ int hmi_bsp_read_frame(uint8_t *buf, size_t buf_size, uint32_t timeout_ms)
         }
 
         if (byte == 0xFF) {
-            if (++ff_count >= 3) return idx;   /* complete TJC frame */
+            if (++ff_count >= 3) {
+                ESP_LOGD(TAG, "RX frame %d bytes, type=0x%02x", idx, buf[0]);
+                return idx;   /* complete TJC frame */
+            }
         } else {
             ff_count = 0;
         }

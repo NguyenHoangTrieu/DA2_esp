@@ -2,22 +2,23 @@
  * @file hmi_display.h
  * @brief HMI Middleware — TJC protocol, page management, display rendering
  *
- * Target display: TJC3224K024_011  —  240 x 320 px  portrait, 65 K colours,
- *                 USART HMI (Nextion-compatible), 115200 baud.
+ * Target display: TJC3224K024_011  —  240 x 320 px native, mounted LANDSCAPE,
+ *                 canvas 320(W) x 240(H), 65 K colours, USART HMI, 115200 baud.
  *
  * Layer responsibilities:
  *   • TJC command formatting  (text + 0xFF 0xFF 0xFF terminator)
  *   • Page-level navigation   (home / pgWifi / pgLTE / pgKB)
- *   • Component update functions (battery, WiFi, LTE, Ethernet)
+ *   • xstr/fill/line drawing  (all status text drawn by ESP32)
  *   • Touch-event dispatch table
- *   • WiFi / LTE config submission via config_handler queue
  *
- * Portrait home-page layout summary (pixel coordinates):
- *   y=  0..27   Title bar : "DA2 GW" | [j_bat 80px] | t_bat_pct | t_bat_status
- *   y= 28..103  WiFi block: hdr / dot+status+ssid / detail
- *   y=104..179  LTE block : hdr / dot+status+apn  / detail
- *   y=180..230  ETH block : hdr / dot+status+ip
- *   y=276..316  Buttons   : [b_wifi_cfg 110px] [b_lte_cfg 110px]
+ * Landscape home-page layout (320 x 240):
+ *   y=  0..23   Title bar : "DA2 GW" | battery bar (x=88..161) | "%" | Chrg/Idle
+ *   y= 24       separator
+ *   y= 26..115  WiFi (x=0..157) || LTE (x=162..319) two-column
+ *   y=116       separator
+ *   y=119..137  ETH row
+ *   y=141       separator
+ *   y=172..207  TJC buttons: [WiFi] comp1  |  [LTE] comp2
  */
 
 #ifndef HMI_DISPLAY_H
@@ -78,7 +79,7 @@ extern "C" {
 #define HMI_COL_GRAY       33808u
 #define HMI_COL_CYAN       2047u    /* 0x07FF — R=0  G=63 B=31 — bright cyan    */
 #define HMI_COL_GREEN      2016u    /* 0x07E0 — R=0  G=63 B=0  — bright green   */
-#define HMI_COL_RED        63494u
+#define HMI_COL_RED        63488u   /* 0xF800 — R=31 G=0  B=0  — pure red       */
 #define HMI_COL_YELLOW     65504u    /* 0xFFE0 — R=255 G=255 B=0   — pure yellow    */
 #define HMI_COL_ORANGE     64512u    /* 0xFC00 — R=255 G=128 B=0   — orange         */
 #define HMI_COL_BTN_BLUE   2624u
