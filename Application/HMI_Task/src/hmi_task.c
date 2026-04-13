@@ -121,13 +121,19 @@ esp_err_t hmi_task_enter_mode(void)
     hmi_bsp_drain();  /* discard any ACK from bkcmd/recmod itself */
     ESP_LOGI(TAG, "Display init commands sent (bkcmd=0, recmod=0)");
 
-    /* 5. Spawn the RX task */
+    /* 5. Navigate display to home page BEFORE spawning the RX task.
+     *    The RX task runs at a higher FreeRTOS priority than app_main (the
+     *    caller).  If the TJC display sends startup/page-change bytes while
+     *    goto_page is still running, the RX task preempts app_main on every
+     *    vTaskDelay() call, starving it — hmi_task_enter_mode() never returns
+     *    and pcf8563_init() is never reached.  Completing the page init first
+     *    avoids that race entirely. */
+    hmi_display_goto_page(HMI_PAGE_HOME);
+
+    /* 6. Spawn the RX task — display is now in a known state */
     xTaskCreate(rx_task_fn, "hmi_rx",
                 HMI_RX_TASK_STACK, NULL,
                 HMI_RX_TASK_PRIO, &s_rx_task);
-
-    /* 6. Navigate display to home page */
-    hmi_display_goto_page(HMI_PAGE_HOME);
 
     ESP_LOGI(TAG, "HMI mode active");
     return ESP_OK;
