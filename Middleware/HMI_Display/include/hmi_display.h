@@ -2,7 +2,7 @@
  * @file hmi_display.h
  * @brief HMI Middleware — TJC protocol, page management, display rendering
  *
- * Target display: TJC3224T024_011  —  240 x 320 px  portrait, 65 K colours,
+ * Target display: TJC3224K024_011  —  240 x 320 px  portrait, 65 K colours,
  *                 USART HMI (Nextion-compatible), 115200 baud.
  *
  * Layer responsibilities:
@@ -32,10 +32,10 @@ extern "C" {
 #endif
 
 /* ------------------------------------------------------------------ */
-/*  Display resolution (TJC3224T024_011 — portrait)                    */
+/*  Display resolution (TJC3224K024_011 — landscape / rotated 90°)     */
 /* ------------------------------------------------------------------ */
-#define HMI_DISP_W   240   /* pixels, horizontal */
-#define HMI_DISP_H   320   /* pixels, vertical   */
+#define HMI_DISP_W   320   /* pixels, horizontal (landscape) */
+#define HMI_DISP_H   240   /* pixels, vertical   (landscape) */
 
 /* ------------------------------------------------------------------ */
 /*  Page IDs                                                            */
@@ -54,29 +54,21 @@ extern "C" {
 #define HMI_EVT_STARTUP   0x88
 #define HMI_EVT_PAGE_CHG  0x66
 
-/* Home page touchable component IDs (auto-assigned by TJC Editor order) */
-#define HMI_HOME_COMP_WIFI_BTN   19   /* b_wifi_cfg */
-#define HMI_HOME_COMP_LTE_BTN    20   /* b_lte_cfg  */
+/*
+ * Home page: 2 button components only.
+ * MUST be the first 2 components added in TJC Editor (IDs 1 and 2).
+ * All status text is drawn by ESP32 via xstr/fill commands.
+ */
+#define HMI_HOME_COMP_WIFI_BTN   1    /* b_wifi_cfg -- comp 1 on home page */
+#define HMI_HOME_COMP_LTE_BTN    2    /* b_lte_cfg  -- comp 2 on home page */
 
-/* WiFi page (pgWifi) touchable component IDs */
-#define HMI_WIFI_COMP_BACK       1    /* b_back  -> home            */
-#define HMI_WIFI_COMP_SSID       4    /* t_ssid_val (xText)         */
-#define HMI_WIFI_COMP_PWD        6    /* t_pwd_val  (xText)         */
-#define HMI_WIFI_COMP_AUTH       8    /* b_auth_toggle              */
-#define HMI_WIFI_COMP_CANCEL     9    /* b_cancel   -> home         */
-#define HMI_WIFI_COMP_SET        10   /* b_set      -> submit       */
-
-/* LTE page (pgLTE) touchable component IDs */
-#define HMI_LTE_COMP_BACK        1    /* b_back     -> home         */
-#define HMI_LTE_COMP_APN         4    /* t_apn_val  (xText)         */
-#define HMI_LTE_COMP_USER        6    /* t_user_val (xText)         */
-#define HMI_LTE_COMP_PWD         8    /* t_pwd_val  (xText)         */
-#define HMI_LTE_COMP_CANCEL      9    /* b_cancel   -> home         */
-#define HMI_LTE_COMP_SET         10   /* b_set      -> submit       */
-
-/* KB page (pgKB) component IDs */
-#define HMI_KB_COMP_OK           50   /* b_ctrl_ok     -> confirm   */
-#define HMI_KB_COMP_CANCEL       51   /* b_ctrl_cancel -> discard   */
+/*
+ * WiFi / LTE status pages: 1 back-button component only (comp ID 1).
+ * Page content is drawn by ESP32 via xstr commands.
+ * WiFi/LTE configuration is done via BLE app or web interface.
+ */
+#define HMI_WIFI_COMP_BACK       1    /* b_back -> home */
+#define HMI_LTE_COMP_BACK        1    /* b_back -> home */
 
 /* ------------------------------------------------------------------ */
 /*  RGB565 colour palette (TJC decimal values)                          */
@@ -87,8 +79,8 @@ extern "C" {
 #define HMI_COL_CYAN       2047u    /* 0x07FF — R=0  G=63 B=31 — bright cyan    */
 #define HMI_COL_GREEN      2016u    /* 0x07E0 — R=0  G=63 B=0  — bright green   */
 #define HMI_COL_RED        63494u
-#define HMI_COL_YELLOW     64992u
-#define HMI_COL_ORANGE     64512u
+#define HMI_COL_YELLOW     65504u    /* 0xFFE0 — R=255 G=255 B=0   — pure yellow    */
+#define HMI_COL_ORANGE     64512u    /* 0xFC00 — R=255 G=128 B=0   — orange         */
 #define HMI_COL_BTN_BLUE   2624u
 #define HMI_COL_BTN_PRESS  4920u
 #define HMI_COL_TITLE_BG   1316u

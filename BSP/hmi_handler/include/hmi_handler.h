@@ -1,6 +1,6 @@
 /**
  * @file hmi_handler.h
- * @brief HMI BSP — Raw UART driver for TJC3224T024_011 (2.4" 240×320 USART HMI)
+ * @brief HMI BSP — Raw UART driver for TJC3224K024_011 (2.4" 240×320 USART HMI)
  *
  * BSP layer: UART2 driver install/uninstall and raw byte-level read/write.
  * Higher-level TJC protocol and page logic live in hmi_display.h (Middleware).
