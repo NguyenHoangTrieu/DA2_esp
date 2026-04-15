@@ -4,6 +4,7 @@
  */
 
 #include "DA2_esp.h"
+#include <esp_timer.h>
 
 /* ===== Module Tag ===================================================== */
 static const char *TAG = "MAIN";
@@ -30,17 +31,44 @@ typedef enum {
 
 static app_mode_t current_mode = APP_MODE_NORMAL;
 static int requested_mode = -1; /* set by uart_mode_switch_callback */
-static uint32_t last_isr_tick = 0;
-static uint32_t last_gpio3_tick = 0;
+
+/* Debounce timers + state */
+static esp_timer_handle_t gpio0_debounce_timer = NULL;
+static esp_timer_handle_t gpio3_debounce_timer = NULL;
+static bool debounce_gpio0_active = false;
+static bool debounce_gpio3_active = false;
+
+#define GPIO0_DEBOUNCE_MS 50      /* GPIO0 debounce window (ms) */
+#define GPIO3_DEBOUNCE_MS 50      /* GPIO3 debounce window (ms) */
+#define GPIO_STABLE_SAMPLES 3     /* Number of stable readings before accept */
+
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 
 /**
- * @brief GPIO0 ISR - Button press
+ * @brief GPIO0 debounce timer callback - confirm button press after stable reads
  */
-static void gpio0_isr_handler(void *arg) {
-  uint32_t now = xTaskGetTickCountFromISR();
-  if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
-    last_isr_tick = now;
+static void gpio0_debounce_callback(void *arg) {
+  int stable_count = 0;
+  int pin_state = -1;
+  
+  /* Sample GPIO0 multiple times to ensure stable state */
+  for (int i = 0; i < GPIO_STABLE_SAMPLES; i++) {
+    int current_read = gpio_get_level(0);
+    if (pin_state == -1) {
+      pin_state = current_read;
+    }
+    if (current_read == pin_state) {
+      stable_count++;
+    } else {
+      break; /* pin is bouncing, abort debounce */
+    }
+    if (i < GPIO_STABLE_SAMPLES - 1) {
+      vTaskDelay(pdMS_TO_TICKS(2)); /* small delay between samples */
+    }
+  }
+  
+  /* If pin remained stable and is LOW (pressed), post notification */
+  if (stable_count >= GPIO_STABLE_SAMPLES && pin_state == 0) {
     BaseType_t xTaskWoken = pdFALSE;
     if (main_task_handle) {
       xTaskNotifyFromISR(main_task_handle, NOTIFY_BUTTON_PRESS,
@@ -50,15 +78,37 @@ static void gpio0_isr_handler(void *arg) {
       portYIELD_FROM_ISR();
     }
   }
+  
+  /* Re-enable GPIO0 interrupt for next press */
+  debounce_gpio0_active = false;
+  gpio_intr_enable(0);
 }
 
 /**
- * @brief GPIO3 ISR - Toggle battery source enable/disable
+ * @brief GPIO3 debounce timer callback - confirm power button press after stable reads
  */
-static void gpio3_isr_handler(void *arg) {
-  uint32_t now = xTaskGetTickCountFromISR();
-  if ((now - last_gpio3_tick) >= pdMS_TO_TICKS(300)) {
-    last_gpio3_tick = now;
+static void gpio3_debounce_callback(void *arg) {
+  int stable_count = 0;
+  int pin_state = -1;
+  
+  /* Sample GPIO3 multiple times to ensure stable state */
+  for (int i = 0; i < GPIO_STABLE_SAMPLES; i++) {
+    int current_read = gpio_get_level(GPIO3_POWER_RGB_CTRL);
+    if (pin_state == -1) {
+      pin_state = current_read;
+    }
+    if (current_read == pin_state) {
+      stable_count++;
+    } else {
+      break; /* pin is bouncing, abort debounce */
+    }
+    if (i < GPIO_STABLE_SAMPLES - 1) {
+      vTaskDelay(pdMS_TO_TICKS(2)); /* small delay between samples */
+    }
+  }
+  
+  /* If pin remained stable and is LOW (pressed), post notification */
+  if (stable_count >= GPIO_STABLE_SAMPLES && pin_state == 0) {
     BaseType_t xTaskWoken = pdFALSE;
     if (main_task_handle) {
       xTaskNotifyFromISR(main_task_handle, NOTIFY_GPIO3_PRESS,
@@ -68,6 +118,36 @@ static void gpio3_isr_handler(void *arg) {
       portYIELD_FROM_ISR();
     }
   }
+  
+  /* Re-enable GPIO3 interrupt for next press */
+  debounce_gpio3_active = false;
+  gpio_intr_enable(GPIO3_POWER_RGB_CTRL);
+}
+
+/**
+ * @brief GPIO0 ISR - Start debounce timer
+ */
+static void gpio0_isr_handler(void *arg) {
+  if (debounce_gpio0_active) return; /* debounce already active */
+  
+  debounce_gpio0_active = true;
+  gpio_intr_disable(0); /* disable interrupt during debounce */
+  
+  /* Start debounce timer */
+  esp_timer_start_once(gpio0_debounce_timer, GPIO0_DEBOUNCE_MS * 1000);
+}
+
+/**
+ * @brief GPIO3 ISR - Start debounce timer
+ */
+static void gpio3_isr_handler(void *arg) {
+  if (debounce_gpio3_active) return; /* debounce already active */
+  
+  debounce_gpio3_active = true;
+  gpio_intr_disable(GPIO3_POWER_RGB_CTRL); /* disable interrupt during debounce */
+  
+  /* Start debounce timer */
+  esp_timer_start_once(gpio3_debounce_timer, GPIO3_DEBOUNCE_MS * 1000);
 }
 
 void setup_gpio0_interrupt(void) {
@@ -79,7 +159,14 @@ void setup_gpio0_interrupt(void) {
   ESP_ERROR_CHECK(gpio_config(&gpio0_cfg));
   ESP_ERROR_CHECK(gpio_isr_handler_add(0, gpio0_isr_handler, NULL));
 
-  ESP_LOGI(TAG, "GPIO0 button interrupt configured");
+  /* Create debounce timer for GPIO0 (one-shot, not started yet) */
+  esp_timer_create_args_t timer_args = {
+    .callback = gpio0_debounce_callback,
+    .name = "gpio0_debounce"
+  };
+  ESP_ERROR_CHECK(esp_timer_create(&timer_args, &gpio0_debounce_timer));
+
+  ESP_LOGI(TAG, "GPIO0 button interrupt configured (debounce %d ms)", GPIO0_DEBOUNCE_MS);
 }
 
 void setup_gpio3_interrupt(void) {
@@ -91,7 +178,14 @@ void setup_gpio3_interrupt(void) {
   ESP_ERROR_CHECK(gpio_config(&gpio3_cfg));
   ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO3_POWER_RGB_CTRL, gpio3_isr_handler, NULL));
 
-  ESP_LOGI(TAG, "GPIO3 power/RGB interrupt configured");
+  /* Create debounce timer for GPIO3 (one-shot, not started yet) */
+  esp_timer_create_args_t timer_args = {
+    .callback = gpio3_debounce_callback,
+    .name = "gpio3_debounce"
+  };
+  ESP_ERROR_CHECK(esp_timer_create(&timer_args, &gpio3_debounce_timer));
+
+  ESP_LOGI(TAG, "GPIO3 power/RGB interrupt configured (debounce %d ms)", GPIO3_DEBOUNCE_MS);
 }
 
 /* =====================================================================
@@ -325,12 +419,12 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
   stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
-  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
+  // stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
+  // stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
+  // stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
+  // stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
+  // stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
+  // stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   pwr_source_init();
