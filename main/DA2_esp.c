@@ -419,12 +419,12 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
   stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
-  // stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
-  // stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
-  // stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
-  // stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
-  // stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
-  // stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, false); /* P10 = EN_3V3 */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* P11 = EN_5V */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true); /* P12 = RLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true); /* P13 = GLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true); /* P14 = BLED off */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, false); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   pwr_source_init();
