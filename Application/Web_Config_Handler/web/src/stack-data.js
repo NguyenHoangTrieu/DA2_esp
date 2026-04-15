@@ -19,10 +19,12 @@ export const LAN_STACK_MAP = {
 };
 
 export const WAN_STACK_MAP = {
-  '001': { type: 'QUECTEL', label: 'Quectel (AC76001) / LTE', modem: 'AC76001', comm_type: 'UART', pwr_pin: '05', rst_pin: '06' },
-  '100': { type: 'NONE',    label: 'No WAN adapter',   modem: '',        comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
-  '101': { type: 'QUECTEL', label: 'Quectel (A7600)',   modem: 'A7600C1', comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
-  '102': { type: 'SIMCOM',  label: 'SIMCom (SIM7600)',  modem: 'SIM7600', comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
+  '000': { type: 'LTE',      label: 'SIMCom SIM7600G-H-PCIE / LTE', modem: 'SIM7600G', comm_type: 'USB',  pwr_pin: '05', rst_pin: '06' },
+  '001': { type: 'QUECTEL', label: 'Quectel (AC76001) / LTE',        modem: 'AC76001',  comm_type: 'UART', pwr_pin: '05', rst_pin: '06' },
+  '015': { type: 'ETHERNET', label: 'Ethernet Adapter',               modem: '',         comm_type: 'ETH',  pwr_pin: '05', rst_pin: '06' },
+  '100': { type: 'NONE',    label: 'No WAN adapter',                  modem: '',         comm_type: 'USB',  pwr_pin: '05', rst_pin: '06' },
+  '101': { type: 'QUECTEL', label: 'Quectel (A7600)',                  modem: 'A7600C1',  comm_type: 'USB',  pwr_pin: '05', rst_pin: '06' },
+  '102': { type: 'SIMCOM',  label: 'SIMCom (SIM7600)',                 modem: 'SIM7600',  comm_type: 'USB',  pwr_pin: '05', rst_pin: '06' },
 };
 
 export const PIN_OPTIONS = ['04', '05', '06', '07', '11', '12', '13', '14', '15', '16', '17'];

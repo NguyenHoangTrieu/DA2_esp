@@ -11,6 +11,7 @@ import { toast } from '../main.js';
 export function renderWifi(container, config) {
   container.innerHTML = '';
   const w = config?.wifi || {};
+  const wan = config?.wan || {};
 
   container.innerHTML = `
     <div class="card">
@@ -48,7 +49,12 @@ export function renderWifi(container, config) {
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-set" id="wfSetBtn">✅ Set WiFi Config</button>
+      <button class="btn btn-set" id="wfSetBtn">&#x2705; Set WiFi Config</button>
+    </div>
+    <div class="card">
+      <div class="form-group">
+        <label class="checkbox-row"><input type="checkbox" id="wfFallback" ${wan.internet_fallback ? 'checked' : ''}> Enable LTE/Ethernet fallback when WiFi fails</label>
+      </div>
     </div>
   `;
 
@@ -75,6 +81,10 @@ export function renderWifi(container, config) {
           password: passIn.value,
           auth_mode: authSel.value,
           username: container.querySelector('#wfUser').value,
+        },
+        wan: {
+          internet_type: 'WIFI',
+          internet_fallback: container.querySelector('#wfFallback')?.checked ? 1 : 0,
         }
       });
       toast('WiFi config set');

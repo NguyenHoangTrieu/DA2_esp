@@ -15,7 +15,9 @@ static const char *TAG = "CONFIG_NVS";
 #define NVS_NAMESPACE "gateway_cfg"
 
 /* NVS Keys */
-#define NVS_KEY_INTERNET_TYPE "inet_type"
+#define NVS_KEY_INTERNET_TYPE    "inet_type"
+#define NVS_KEY_INET_FALLBACK    "inet_fallback"
+#define NVS_KEY_INET_FB_TYPE     "inet_fb_type"
 #define NVS_KEY_SERVER_TYPE "srv_type"
 #define NVS_KEY_WIFI_CONFIG "wifi_cfg"
 #define NVS_KEY_LTE_CONFIG "lte_cfg"
@@ -61,6 +63,8 @@ extern config_internet_type_t g_internet_type;
 extern config_server_type_t g_server_type;
 extern http_config_data_t g_http_cfg;
 extern coap_config_data_t g_coap_cfg;
+extern bool g_internet_fallback;
+extern config_internet_type_t g_internet_fallback_type;
 
 /**
  * @brief Open NVS handle
@@ -106,6 +110,22 @@ static esp_err_t load_internet_config_from_nvs(void) {
     ESP_LOGE(TAG, "Error reading internet type: %s", esp_err_to_name(err));
   }
 
+  /* Load fallback enabled flag */
+  uint8_t fb_enabled = 0;
+  if (nvs_get_u8(nvs_handle, NVS_KEY_INET_FALLBACK, &fb_enabled) == ESP_OK) {
+    g_internet_fallback = (fb_enabled != 0);
+  }
+
+  /* Load fallback type */
+  uint8_t fb_type = CONFIG_INTERNET_WIFI;
+  if (nvs_get_u8(nvs_handle, NVS_KEY_INET_FB_TYPE, &fb_type) == ESP_OK &&
+      fb_type < CONFIG_INTERNET_COUNT) {
+    g_internet_fallback_type = (config_internet_type_t)fb_type;
+  }
+
+  ESP_LOGI(TAG, "Fallback: enabled=%d, type=%d", g_internet_fallback, g_internet_fallback_type);
+
+
   nvs_close(nvs_handle);
   return err;
 }
@@ -131,6 +151,11 @@ esp_err_t save_internet_config_to_nvs(void) {
     nvs_close(nvs_handle);
     return err;
   }
+
+  /* Save fallback settings */
+  nvs_set_u8(nvs_handle, NVS_KEY_INET_FALLBACK, (uint8_t)g_internet_fallback);
+  nvs_set_u8(nvs_handle, NVS_KEY_INET_FB_TYPE,  (uint8_t)g_internet_fallback_type);
+
 
   // Commit changes
   err = nvs_commit(nvs_handle);

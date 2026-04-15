@@ -135,6 +135,12 @@ extern bool is_internet_connected;
 extern QueueHandle_t g_config_handler_queue;
 extern config_internet_type_t g_internet_type;
 extern config_server_type_t g_server_type;
+
+/** Whether internet fallback is enabled (persisted in NVS). */
+extern bool g_internet_fallback;
+/** Fallback connection type (auto-computed from primary, persisted in NVS). */
+extern config_internet_type_t g_internet_fallback_type;
+
 // Function prototypes
 void config_handler_task_start(void);
 void config_handler_task_stop(void);

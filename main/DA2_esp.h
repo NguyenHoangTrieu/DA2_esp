@@ -13,6 +13,7 @@
 #include "mcu_lan_handler.h"
 #include "fota_ap.h"
 #include "web_config_handler.h"
+#include "internet_monitor.h"
 #include "i2c_dev_support.h"
 #include "tca_handler.h"
 #include "stack_handler.h"

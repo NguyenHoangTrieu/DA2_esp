@@ -135,6 +135,16 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON *jwan = cJSON_AddObjectToObject(root, "wan");
     cJSON_AddStringToObject(jwan, "stack_wan_id",
                             (wan_stack_id && wan_stack_id[0]) ? wan_stack_id : "100");
+    cJSON_AddBoolToObject(jwan, "internet_fallback", g_internet_fallback);
+    {
+        const char *fb_str;
+        switch (g_internet_fallback_type) {
+        case CONFIG_INTERNET_LTE:      fb_str = "LTE";      break;
+        case CONFIG_INTERNET_ETHERNET: fb_str = "ETHERNET"; break;
+        default:                       fb_str = "WIFI";     break;
+        }
+        cJSON_AddStringToObject(jwan, "internet_fallback_type", fb_str);
+    }
 
     /* LAN stack IDs — query LAN MCU via SPI (2 s timeout) */
     char lan_s1[4] = "000";
@@ -406,6 +416,38 @@ static esp_err_t build_internet_cmd(const cJSON *obj)
     return enqueue_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len);
 }
 
+/* ----------------------------------------------------------------
+ * build_wan_cmd — handles "wan" JSON object from web POST.
+ * Fields:
+ *   internet_type    (string: "WIFI" / "LTE" / "ETHERNET")
+ *   internet_fallback (number: 0 or 1, optional)
+ * Builds: "IN:TYPE", "IN:TYPE:1", or "IN:TYPE:0"
+ * ---------------------------------------------------------------- */
+static esp_err_t build_wan_cmd(const cJSON *obj)
+{
+    const cJSON *itype = cJSON_GetObjectItem(obj, "internet_type");
+    if (!cJSON_IsString(itype)) return ESP_ERR_INVALID_ARG;
+
+    const char *type_str = itype->valuestring;
+    /* Validate type string */
+    if (strcmp(type_str, "WIFI")     != 0 &&
+        strcmp(type_str, "LTE")      != 0 &&
+        strcmp(type_str, "ETHERNET") != 0 &&
+        strcmp(type_str, "NBIOT")    != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const cJSON *jfb = cJSON_GetObjectItem(obj, "internet_fallback");
+    char wire[24];
+    int len;
+    if (cJSON_IsNumber(jfb)) {
+        len = snprintf(wire, sizeof(wire), "IN:%s:%d", type_str, jfb->valueint ? 1 : 0);
+    } else {
+        len = snprintf(wire, sizeof(wire), "IN:%s", type_str);
+    }
+    return enqueue_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len);
+}
+
 static esp_err_t build_server_type_cmd(const cJSON *obj)
 {
     /* obj is a number: 0=MQTT, 1=CoAP, 2=HTTP */
@@ -489,6 +531,9 @@ esp_err_t api_config_post_handler(void *arg)
 
     item = cJSON_GetObjectItem(root, "internet_type");
     if (item) { (build_internet_cmd(item) == ESP_OK) ? queued++ : errors++; }
+
+    item = cJSON_GetObjectItem(root, "wan");
+    if (item) { (build_wan_cmd(item) == ESP_OK) ? queued++ : errors++; }
 
     item = cJSON_GetObjectItem(root, "server_type");
     if (item) { (build_server_type_cmd(item) == ESP_OK) ? queued++ : errors++; }

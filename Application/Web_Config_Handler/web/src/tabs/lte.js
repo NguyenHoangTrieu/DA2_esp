@@ -98,7 +98,12 @@ export function renderLte(container, config) {
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-set" id="ltSetBtn">✅ Set LTE Config</button>
+        <button class="btn btn-set" id="ltSetBtn">&#x2705; Set LTE Config</button>
+      </div>
+      <div class="card">
+        <div class="form-group">
+          <label class="checkbox-row"><input type="checkbox" id="ltFallback" ${wan.internet_fallback ? 'checked' : ''}> Enable WiFi fallback when LTE fails</label>
+        </div>
       </div>
     `;
   } else {
@@ -131,7 +136,12 @@ export function renderLte(container, config) {
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-set" id="ltSetBtn">✅ Set LTE Config</button>
+        <button class="btn btn-set" id="ltSetBtn">&#x2705; Set LTE Config</button>
+      </div>
+      <div class="card">
+        <div class="form-group">
+          <label class="checkbox-row"><input type="checkbox" id="ltFallback" ${wan.internet_fallback ? 'checked' : ''}> Enable WiFi fallback when LTE fails</label>
+        </div>
       </div>
     `;
   }
@@ -155,6 +165,10 @@ export function renderLte(container, config) {
         apn,
         username: container.querySelector('#ltUser').value,
         password: passIn.value,
+      },
+      wan: {
+        internet_type: 'LTE',
+        internet_fallback: container.querySelector('#ltFallback')?.checked ? 1 : 0,
       }
     };
 

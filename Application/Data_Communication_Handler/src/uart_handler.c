@@ -26,6 +26,8 @@ extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 extern config_internet_type_t g_internet_type;
+extern bool g_internet_fallback;
+extern config_internet_type_t g_internet_fallback_type;
 extern config_server_type_t g_server_type;
 extern http_config_data_t g_http_cfg;
 extern coap_config_data_t g_coap_cfg;
@@ -135,6 +137,14 @@ static void handle_cfsc_command(void) {
                               : (g_internet_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
                               : "UNKNOWN";
   uart_send_kv("internet_type", inet_type_str);
+
+  /* Fallback settings */
+  uart_send_kv("internet_fallback", g_internet_fallback ? "1" : "0");
+  const char *fb_type_str = (g_internet_fallback_type == CONFIG_INTERNET_WIFI)     ? "WIFI"
+                           : (g_internet_fallback_type == CONFIG_INTERNET_LTE)      ? "LTE"
+                           : (g_internet_fallback_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
+                           : "UNKNOWN";
+  uart_send_kv("internet_fallback_type", fb_type_str);
 
   // WiFi settings - thread-safe read
   wifi_config_context_t wifi_cfg;

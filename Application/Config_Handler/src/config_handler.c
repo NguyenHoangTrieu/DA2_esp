@@ -47,6 +47,10 @@ config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE;
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;  /* default to MQTT */
 bool is_internet_connected = false;
 
+/* Internet fallback globals — persisted to NVS in config_load_save.c */
+bool g_internet_fallback = false;                             /* disabled by default */
+config_internet_type_t g_internet_fallback_type = CONFIG_INTERNET_WIFI; /* WiFi fallback */
+
 static bool config_handler_running = false;
 static TaskHandle_t config_handler_task_handle = NULL;
 
@@ -675,38 +679,71 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_d
 }
 
 /**
- * @brief Parse Internet configuration from command string
- * Format: "IN:TYPE"
- * Example: "IN:WIFI"
- * @param data Raw command data
- * @param len Command length
- * @param type Output Internet type enum
- * @return ESP_OK on success, ESP_FAIL on error
+ * @brief Parse Internet configuration from command string.
+ * Format: "IN:TYPE" or "IN:TYPE:FALLBACK"
+ * Examples:
+ *   "IN:WIFI"    — set WiFi, keep fallback state
+ *   "IN:LTE:1"   — set LTE, enable fallback (→WIFI)
+ *   "IN:LTE:0"   — set LTE, disable fallback
+ *   "IN:ETHERNET:1" — set Ethernet, enable fallback (→WIFI)
+ *
+ * When a non-WiFi type is set, g_internet_fallback_type is auto-set to WIFI.
+ * When WiFi is set, g_internet_fallback_type is set to LTE (if APN configured)
+ * else ETHERNET.
  */
 static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
     if (!data || !type || len < 5) {
         return ESP_FAIL;
     }
-    
-    // Simple parsing: "IN:TYPE"
-    const char *ptr = data + 3; // Skip "IN:"
-    if (strncmp(ptr, "WIFI", 4) == 0) {
+
+    const char *ptr = data + 3; /* skip "IN:" */
+    const char *end = data + len;
+
+    /* Extract type token up to optional ':' */
+    const char *colon = memchr(ptr, ':', end - ptr);
+    int type_len = colon ? (int)(colon - ptr) : (int)(end - ptr);
+
+    if (type_len >= 4 && strncmp(ptr, "WIFI", 4) == 0) {
         *type = CONFIG_INTERNET_WIFI;
-    } else if (strncmp(ptr, "LTE", 3) == 0) {
+    } else if (type_len >= 3 && strncmp(ptr, "LTE", 3) == 0) {
         *type = CONFIG_INTERNET_LTE;
-    } else if (strncmp(ptr, "ETHERNET", 8) == 0) {
+    } else if (type_len >= 8 && strncmp(ptr, "ETHERNET", 8) == 0) {
         *type = CONFIG_INTERNET_ETHERNET;
-    } else if (strncmp(ptr, "NBIOT", 5) == 0) {
+    } else if (type_len >= 5 && strncmp(ptr, "NBIOT", 5) == 0) {
         *type = CONFIG_INTERNET_NBIOT;
     } else {
         *type = CONFIG_INTERNET_TYPE_UNKNOWN;
-        ESP_LOGE(TAG, "Internet config type unknown");
+        ESP_LOGE(TAG, "Internet config type unknown: %.*s", type_len, ptr);
         return ESP_FAIL;
     }
-    
-    ESP_LOGI(TAG, "Parsed Internet config type: %d", *type);
+
+    /* Auto-compute fallback type */
+    if (*type == CONFIG_INTERNET_LTE || *type == CONFIG_INTERNET_ETHERNET) {
+        g_internet_fallback_type = CONFIG_INTERNET_WIFI;
+    } else if (*type == CONFIG_INTERNET_WIFI) {
+        /* Use LTE as fallback if it has a valid APN, else Ethernet */
+        g_internet_fallback_type = (g_lte_ctx.apn[0] != '\0')
+                                   ? CONFIG_INTERNET_LTE
+                                   : CONFIG_INTERNET_ETHERNET;
+    }
+
+    /* Optional second field: 1=enable fallback, 0=disable */
+    if (colon && colon + 1 < end) {
+        char fb_ch = *(colon + 1);
+        if (fb_ch == '1') {
+            g_internet_fallback = true;
+            ESP_LOGI(TAG, "Fallback ENABLED (type=%d)", g_internet_fallback_type);
+        } else if (fb_ch == '0') {
+            g_internet_fallback = false;
+            ESP_LOGI(TAG, "Fallback DISABLED");
+        }
+    }
+
+    ESP_LOGI(TAG, "Parsed Internet type: %d, fallback: %d (type=%d)",
+             *type, g_internet_fallback, g_internet_fallback_type);
     return ESP_OK;
 }
+
 
 /**
  * @brief Parse server type from command string

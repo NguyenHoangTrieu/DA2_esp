@@ -446,6 +446,7 @@ void app_main(void) {
 
   internet_connect_start(current_internet_type);
   vTaskDelay(pdMS_TO_TICKS(10000)); /* wait for internet link        */
+  internet_monitor_task_start();    /* start fallback monitor if enabled */
   server_connect_start(g_server_type);
 
   /* Start web config portal — browser-accessible at http://gateway.local/
