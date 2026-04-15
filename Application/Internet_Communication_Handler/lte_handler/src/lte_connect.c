@@ -19,9 +19,9 @@
 #include <time.h>
 
 /* ==================== Default Configuration ==================== */
-/* NOTE: All LTE config fields default to empty / zero.
- * The LTE task will NOT start until apn is set via the
- * "LT:MODEM_NAME:APN:..." command. */
+/* Default APN for Vietnamobile (v-internet).
+ * The LTE task will start with this APN unless config_handler overrides it. */
+#define LTE_DEFAULT_APN  "v-internet"
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
@@ -31,7 +31,7 @@ static bool g_lte_sntp_started = false;
 /* ==================== LTE Config Context ==================== */
 lte_config_context_t g_lte_ctx = {
     .modem_name              = "",
-    .apn                     = "",    /* empty → LTE task will not start */
+    .apn                     = LTE_DEFAULT_APN,  /* Default Vietnamobile v-internet */
     .username                = "",
     .password                = "",
     .max_reconnect_attempts  = 0,     /* 0 = infinite once configured      */
@@ -249,14 +249,14 @@ void lte_connect_task_start(void) {
     return;
   }
 
-  /* Refuse to start if APN has not been configured yet */
+  /* Log the APN being used (default or configured) */
   if (g_lte_ctx.apn[0] == '\0') {
-    ESP_LOGW(TAG, "LTE task not started: APN is empty. "
+    ESP_LOGE(TAG, "LTE task not started: APN is empty. "
                   "Send \"LT:MODEM_NAME:APN:...\" command to configure.");
     return;
   }
 
-  ESP_LOGI(TAG, "Starting LTE connect...");
+  ESP_LOGI(TAG, "Starting LTE connect with APN: %s", g_lte_ctx.apn);
 
   g_lte_ctx.task_running = true;
   g_lte_ctx.initialized = false;

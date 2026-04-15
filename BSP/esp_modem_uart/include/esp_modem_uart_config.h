@@ -11,11 +11,11 @@
  * Common APNs:
  * - China Mobile: "CMNET" or "CMWAP"
  * - Viettel (Vietnam): "v-internet" or "e-connect"
- * - Vinaphone (Vietnam): "m3-world"
+ * - Vietnamobile (Vietnam): "v-internet"
  * - Mobifone (Vietnam): "m-wap"
  */
 #ifndef CONFIG_COMPONENT_MODEM_APN
-#define CONFIG_COMPONENT_MODEM_APN "m3-world"
+#define CONFIG_COMPONENT_MODEM_APN "v-internet"
 #endif
 
 /**

@@ -270,7 +270,11 @@ static esp_err_t build_lte_cmd(const cJSON *obj)
     /* LT:MODEM:APN:USER:PASS:COMM:AUTO:TIMEOUT:MAXRETRY:PWR:RST */
     const cJSON *modem = cJSON_GetObjectItem(obj, "modem_name");
     const cJSON *apn   = cJSON_GetObjectItem(obj, "apn");
-    if (!cJSON_IsString(apn)) return ESP_ERR_INVALID_ARG;
+    
+    /* Use default APN (Vietnamobile v-internet) if not provided or empty */
+    const char *apn_str = (apn && cJSON_IsString(apn) && apn->valuestring[0] != '\0')
+                          ? apn->valuestring
+                          : "v-internet";
 
     const char *mn = cJSON_IsString(modem) ? modem->valuestring : "A7600C1";
     const char *us = "", *pw = "";
@@ -308,7 +312,7 @@ static esp_err_t build_lte_cmd(const cJSON *obj)
     char wire[512];
     int len = snprintf(wire, sizeof(wire),
                        "LT:%s:%s:%s:%s:%s:%s:%lu:%lu:%s:%s",
-                       mn, apn->valuestring, us, pw,
+                       mn, apn_str, us, pw,
                        comm, arec,
                        (unsigned long)timeout, (unsigned long)maxr,
                        ppin, rpin);
@@ -437,10 +441,14 @@ static esp_err_t build_wan_cmd(const cJSON *obj)
         return ESP_ERR_INVALID_ARG;
     }
 
-    const cJSON *jfb = cJSON_GetObjectItem(obj, "internet_fallback");
-    char wire[24];
+    const cJSON *jfb      = cJSON_GetObjectItem(obj, "internet_fallback");
+    const cJSON *jfb_type = cJSON_GetObjectItem(obj, "internet_fallback_type");
+    char wire[32];
     int len;
-    if (cJSON_IsNumber(jfb)) {
+    if (cJSON_IsNumber(jfb) && jfb->valueint != 0 && cJSON_IsString(jfb_type)) {
+        /* Full explicit form: IN:TYPE:1:FALLBACK_TYPE */
+        len = snprintf(wire, sizeof(wire), "IN:%s:1:%s", type_str, jfb_type->valuestring);
+    } else if (cJSON_IsNumber(jfb)) {
         len = snprintf(wire, sizeof(wire), "IN:%s:%d", type_str, jfb->valueint ? 1 : 0);
     } else {
         len = snprintf(wire, sizeof(wire), "IN:%s", type_str);
@@ -526,23 +534,27 @@ esp_err_t api_config_post_handler(void *arg)
     int queued = 0;
     int errors = 0;
 
-    /* Each key triggers the matching command builder */
+    /* Each key triggers the matching command builder.
+     * IMPORTANT: LTE (CFLT) must be sent BEFORE WAN (CFIN) for proper sequencing.
+     */
     cJSON *item;
 
     item = cJSON_GetObjectItem(root, "internet_type");
     if (item) { (build_internet_cmd(item) == ESP_OK) ? queued++ : errors++; }
 
+    item = cJSON_GetObjectItem(root, "wifi");
+    if (item) { (build_wifi_cmd(item) == ESP_OK) ? queued++ : errors++; }
+
+    /* CFLT (LTE config) MUST be sent before CFIN (WAN/internet type) */
+    item = cJSON_GetObjectItem(root, "lte");
+    if (item) { (build_lte_cmd(item) == ESP_OK) ? queued++ : errors++; }
+
+    /* Now send CFIN after CFLT is queued */
     item = cJSON_GetObjectItem(root, "wan");
     if (item) { (build_wan_cmd(item) == ESP_OK) ? queued++ : errors++; }
 
     item = cJSON_GetObjectItem(root, "server_type");
     if (item) { (build_server_type_cmd(item) == ESP_OK) ? queued++ : errors++; }
-
-    item = cJSON_GetObjectItem(root, "wifi");
-    if (item) { (build_wifi_cmd(item) == ESP_OK) ? queued++ : errors++; }
-
-    item = cJSON_GetObjectItem(root, "lte");
-    if (item) { (build_lte_cmd(item) == ESP_OK) ? queued++ : errors++; }
 
     item = cJSON_GetObjectItem(root, "mqtt");
     if (item) { (build_mqtt_cmd(item) == ESP_OK) ? queued++ : errors++; }

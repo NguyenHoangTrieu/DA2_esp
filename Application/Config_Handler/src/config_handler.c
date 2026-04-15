@@ -680,16 +680,17 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len, mqtt_config_d
 
 /**
  * @brief Parse Internet configuration from command string.
- * Format: "IN:TYPE" or "IN:TYPE:FALLBACK"
+ * Format: "IN:TYPE" or "IN:TYPE:FALLBACK_ENABLE" or "IN:TYPE:FALLBACK_ENABLE:FALLBACK_TYPE"
  * Examples:
- *   "IN:WIFI"    — set WiFi, keep fallback state
- *   "IN:LTE:1"   — set LTE, enable fallback (→WIFI)
- *   "IN:LTE:0"   — set LTE, disable fallback
- *   "IN:ETHERNET:1" — set Ethernet, enable fallback (→WIFI)
+ *   "IN:WIFI"         — set WiFi, keep fallback state
+ *   "IN:LTE:1"        — set LTE, enable fallback (auto→WIFI)
+ *   "IN:LTE:0"        — set LTE, disable fallback
+ *   "IN:LTE:1:WIFI"   — set LTE, enable fallback, explicitly fallback to WIFI
+ *   "IN:WIFI:1:LTE"   — set WiFi, enable fallback, explicitly fallback to LTE
  *
- * When a non-WiFi type is set, g_internet_fallback_type is auto-set to WIFI.
- * When WiFi is set, g_internet_fallback_type is set to LTE (if APN configured)
- * else ETHERNET.
+ * When no explicit fallback type given, it is auto-computed:
+ *   LTE / ETHERNET primary  →  fallback = WIFI
+ *   WIFI primary            →  fallback = LTE (if APN configured) else ETHERNET
  */
 static esp_err_t config_parse_internet(const char *data, uint16_t len, config_internet_type_t *type) {
     if (!data || !type || len < 5) {
@@ -727,15 +728,34 @@ static esp_err_t config_parse_internet(const char *data, uint16_t len, config_in
                                    : CONFIG_INTERNET_ETHERNET;
     }
 
-    /* Optional second field: 1=enable fallback, 0=disable */
+    /* Optional 2nd field: '1'=enable fallback, '0'=disable */
     if (colon && colon + 1 < end) {
         char fb_ch = *(colon + 1);
         if (fb_ch == '1') {
             g_internet_fallback = true;
-            ESP_LOGI(TAG, "Fallback ENABLED (type=%d)", g_internet_fallback_type);
+            ESP_LOGI(TAG, "Fallback ENABLED (type=%d, auto)", g_internet_fallback_type);
         } else if (fb_ch == '0') {
             g_internet_fallback = false;
             ESP_LOGI(TAG, "Fallback DISABLED");
+        }
+
+        /* Optional 3rd field: explicit fallback type string (WIFI / LTE / ETHERNET) */
+        const char *colon2 = memchr(colon + 1, ':', end - (colon + 1));
+        if (colon2 && colon2 + 1 < end) {
+            const char *fb_ptr = colon2 + 1;
+            int fb_len = (int)(end - fb_ptr);
+            if (fb_len >= 4 && strncmp(fb_ptr, "WIFI", 4) == 0) {
+                g_internet_fallback_type = CONFIG_INTERNET_WIFI;
+                ESP_LOGI(TAG, "Fallback type explicitly set to WIFI");
+            } else if (fb_len >= 3 && strncmp(fb_ptr, "LTE", 3) == 0) {
+                g_internet_fallback_type = CONFIG_INTERNET_LTE;
+                ESP_LOGI(TAG, "Fallback type explicitly set to LTE");
+            } else if (fb_len >= 8 && strncmp(fb_ptr, "ETHERNET", 8) == 0) {
+                g_internet_fallback_type = CONFIG_INTERNET_ETHERNET;
+                ESP_LOGI(TAG, "Fallback type explicitly set to ETHERNET");
+            } else {
+                ESP_LOGW(TAG, "Unknown explicit fallback type — keeping auto value");
+            }
         }
     }
 

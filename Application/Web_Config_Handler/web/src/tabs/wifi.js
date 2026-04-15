@@ -85,6 +85,7 @@ export function renderWifi(container, config) {
         wan: {
           internet_type: 'WIFI',
           internet_fallback: container.querySelector('#wfFallback')?.checked ? 1 : 0,
+          internet_fallback_type: 'LTE',
         }
       });
       toast('WiFi config set');

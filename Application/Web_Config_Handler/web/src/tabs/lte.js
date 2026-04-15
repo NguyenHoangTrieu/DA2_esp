@@ -157,8 +157,12 @@ export function renderLte(container, config) {
 
   // Set button
   container.querySelector('#ltSetBtn').addEventListener('click', async () => {
-    const apn = container.querySelector('#ltAPN').value.trim();
-    if (!apn) { toast('APN is required', 'err'); return; }
+    let apn = container.querySelector('#ltAPN').value.trim();
+    if (!apn) { 
+      apn = 'v-internet';
+      container.querySelector('#ltAPN').value = apn;
+      toast('Using default APN: ' + apn, 'info');
+    }
 
     const payload = {
       lte: {
@@ -169,6 +173,7 @@ export function renderLte(container, config) {
       wan: {
         internet_type: 'LTE',
         internet_fallback: container.querySelector('#ltFallback')?.checked ? 1 : 0,
+        internet_fallback_type: 'WIFI',
       }
     };
 
