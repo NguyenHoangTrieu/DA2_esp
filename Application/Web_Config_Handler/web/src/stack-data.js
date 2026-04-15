@@ -64,19 +64,19 @@ export const FUNCTION_GROUPS = {
 
 export const PRESETS = {
   BLE: [
-    { label: 'BLE (STM32WB55)', module_id: '002', module_name: 'STM32WB_BLE_Gateway' },
-    { label: 'BLE (Custom)',     module_id: '004', module_name: 'Custom_BLE_Module' },
+    { label: 'BLE (STM32WB55)', module_id: '002', module_name: 'STM32WB_BLE_Gateway', is_crlf_terminated: true },
+    { label: 'BLE (Custom)',     module_id: '004', module_name: 'Custom_BLE_Module',    is_crlf_terminated: true },
   ],
   LORA: [
-    { label: 'LoRa (RAK3172)',    module_id: '003', module_name: 'RAK3172_LoRa' },
-    { label: 'LoRa (Wio-E5 mini)', module_id: '006', module_name: 'WioE5_LoRa' },
+    { label: 'LoRa (RAK3172)',     module_id: '003', module_name: 'RAK3172_LoRa', is_crlf_terminated: true },
+    { label: 'LoRa (Wio-E5 mini)', module_id: '006', module_name: 'WioE5_LoRa',   is_crlf_terminated: true },
   ],
   ZIGBEE: [
-    { label: 'Zigbee (E180-ZG120B)', module_id: '001', module_name: 'E180_Zigbee_Gateway' },
-    { label: 'Zigbee (STM32WB55)',   module_id: '005', module_name: 'STM32WB_Zigbee_Gateway' },
+    { label: 'Zigbee (E180-ZG120B)', module_id: '001', module_name: 'E180_Zigbee_Gateway',      is_crlf_terminated: false },
+    { label: 'Zigbee (STM32WB55)',   module_id: '005', module_name: 'STM32WB_Zigbee_Gateway',   is_crlf_terminated: true  },
   ],
   RS485: [
-    { label: 'RS485 Module', module_id: '007', module_name: 'RS485_GPIO_Module' },
+    { label: 'RS485 Module', module_id: '007', module_name: 'RS485_GPIO_Module', is_crlf_terminated: false },
   ],
 };
 
@@ -91,9 +91,10 @@ function defaultFn(name) {
   };
 }
 
-function defaultCfg(id, type, name, fns) {
+function defaultCfg(id, type, name, fns, isCrlf = true) {
   return {
     module_id: id, module_type: type, module_name: name,
+    is_crlf_terminated: isCrlf,
     module_communication: { port_type: 'uart', parameters: { baudrate: 115200, parity: 'none', stopbit: 1 } },
     functions: fns.map(defaultFn),
   };
@@ -104,11 +105,14 @@ export function getDefaultConfig(moduleType, presetIndex = 0) {
   const preset = (PRESETS[moduleType] || [])[presetIndex];
   if (!preset) return null;
 
+  const isCrlf = preset.is_crlf_terminated !== undefined ? preset.is_crlf_terminated : true;
+
   // RS485 uses GPIO-only functions (no AT command fields, no module_communication)
   if (moduleType === 'RS485') {
     return structuredClone({
       module_id: preset.module_id,
       module_type: 'RS485',
+      is_crlf_terminated: isCrlf,
       stack_id: 0,
       functions: [
         {
@@ -130,7 +134,7 @@ export function getDefaultConfig(moduleType, presetIndex = 0) {
   }
 
   const allFns = (FUNCTION_GROUPS[moduleType] || []).flatMap(g => g.functions);
-  return structuredClone(defaultCfg(preset.module_id, moduleType, preset.module_name, allFns));
+  return structuredClone(defaultCfg(preset.module_id, moduleType, preset.module_name, allFns, isCrlf));
 }
 
 // ── BLE Quick-control commands (basic tab) ────────────────────────────────────

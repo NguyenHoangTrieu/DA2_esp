@@ -18,7 +18,7 @@ TaskHandle_t main_task_handle = NULL;
 #define ADAPTER_RESET_GPIO GPIO_NUM_48 /* Output: reset adapter IOX at boot */
 /* ===== Task Notification Values ======================================= */
 /* Each must be a unique value — eSetValueWithOverwrite overwrites        */
-#define NOTIFY_BUTTON_PRESS 1     /* GPIO45: toggle CONFIG/NORMAL       */
+#define NOTIFY_BUTTON_PRESS 1     /* GPIO0: toggle CONFIG/NORMAL       */
 #define NOTIFY_GPIO3_PRESS 2      /* GPIO3: toggle power/RGB            */
 #define NOTIFY_UART_MODE_SWITCH 3 /* UART callback: CONFIG or NORMAL    */
 
@@ -35,9 +35,9 @@ static uint32_t last_gpio3_tick = 0;
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 
 /**
- * @brief GPIO45 ISR - Button press
+ * @brief GPIO0 ISR - Button press
  */
-static void gpio45_isr_handler(void *arg) {
+static void gpio0_isr_handler(void *arg) {
   uint32_t now = xTaskGetTickCountFromISR();
   if ((now - last_isr_tick) >= pdMS_TO_TICKS(500)) {
     last_isr_tick = now;
@@ -70,16 +70,16 @@ static void gpio3_isr_handler(void *arg) {
   }
 }
 
-void setup_gpio45_interrupt(void) {
-  gpio_config_t gpio45_cfg = {.pin_bit_mask = BIT64(45),
+void setup_gpio0_interrupt(void) {
+  gpio_config_t gpio0_cfg = {.pin_bit_mask = BIT64(0),
                               .mode = GPIO_MODE_INPUT,
                               .pull_up_en = GPIO_PULLUP_ENABLE,
                               .intr_type = GPIO_INTR_NEGEDGE};
 
-  ESP_ERROR_CHECK(gpio_config(&gpio45_cfg));
-  ESP_ERROR_CHECK(gpio_isr_handler_add(45, gpio45_isr_handler, NULL));
+  ESP_ERROR_CHECK(gpio_config(&gpio0_cfg));
+  ESP_ERROR_CHECK(gpio_isr_handler_add(0, gpio0_isr_handler, NULL));
 
-  ESP_LOGI(TAG, "GPIO45 button interrupt configured");
+  ESP_LOGI(TAG, "GPIO0 button interrupt configured");
 }
 
 void setup_gpio3_interrupt(void) {
@@ -342,7 +342,7 @@ void app_main(void) {
 
   /* Assign handle BEFORE enabling interrupts (ISR must not see NULL)  */
   main_task_handle = xTaskGetCurrentTaskHandle();
-  setup_gpio45_interrupt();
+  setup_gpio0_interrupt();
   setup_gpio3_interrupt();
 
   /* --- ESP-IDF network stack ------------------------------------------ */
@@ -371,7 +371,7 @@ void app_main(void) {
   }
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
-  ESP_LOGI(TAG, "  GPIO45 = toggle CONFIG/NORMAL");
+  ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");
   // ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
 
   /* --- Main event loop ------------------------------------------------ */
@@ -379,7 +379,7 @@ void app_main(void) {
     uint32_t notif = 0;
     xTaskNotifyWait(0, 0xFFFFFFFF, &notif, portMAX_DELAY);
 
-    /* GPIO45 — toggle CONFIG / NORMAL */
+    /* GPIO0 — toggle CONFIG / NORMAL */
     if (notif == NOTIFY_BUTTON_PRESS) {
       if (current_mode == APP_MODE_NORMAL) {
         switch_to_config_mode(&current_internet_type);

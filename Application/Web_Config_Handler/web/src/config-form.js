@@ -89,6 +89,7 @@ export function renderConfigForm(container, config, moduleType) {
     modIdInput.value = p.module_id;
     modNameInput.value = p.module_name;
     cfgData = getDefaultConfig(moduleType, presetIdx) || cfgData;
+    crlfChk.checked = cfgData.is_crlf_terminated !== false;
     rebuildFunctions();
     updatePreview();
   });
@@ -101,6 +102,7 @@ export function renderConfigForm(container, config, moduleType) {
     cfgData = getDefaultConfig(moduleType, presetIdx) || cfgData;
     modIdInput.value = cfgData.module_id;
     modNameInput.value = cfgData.module_name;
+    crlfChk.checked = cfgData.is_crlf_terminated !== false;
     rebuildComm();
     rebuildFunctions();
     updatePreview();
@@ -116,7 +118,15 @@ export function renderConfigForm(container, config, moduleType) {
   modNameInput.addEventListener('input', () => { cfgData.module_name = modNameInput.value; updatePreview(); });
   const modNameGroup = el('div', { className: 'form-group' }, [el('label', { textContent: 'Module Name' }), modNameInput]);
 
-  hGrid.append(slotGroup, presetGroup, modIdGroup, modNameGroup);
+  // CRLF Terminated toggle
+  const crlfChk = el('input', { type: 'checkbox' });
+  crlfChk.checked = cfgData.is_crlf_terminated !== false;
+  crlfChk.addEventListener('change', () => { cfgData.is_crlf_terminated = crlfChk.checked; updatePreview(); });
+  const crlfGroup = el('div', { className: 'form-group' }, [
+    el('div', { className: 'checkbox-row' }, [crlfChk, el('label', { textContent: 'CRLF Terminated' })]),
+  ]);
+
+  hGrid.append(slotGroup, presetGroup, modIdGroup, modNameGroup, crlfGroup);
   headerCard.append(hGrid, el('div', { className: 'btn-row' }, [reloadBtn]));
 
   // ── Communication Section ─────────────────────────────────────────────────
@@ -379,6 +389,8 @@ export function renderConfigForm(container, config, moduleType) {
       cfgData = data;
       modIdInput.value = data.module_id || '';
       modNameInput.value = data.module_name || '';
+      crlfChk.checked = data.is_crlf_terminated !== false;
+      cfgData.is_crlf_terminated = crlfChk.checked;
       rebuildComm();
       rebuildFunctions();
       updatePreview();
