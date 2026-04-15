@@ -150,6 +150,13 @@ static void lte_task(void *arg) {
 
   uint32_t reconnect_count = 0;
 
+  /* Wait for modem power-on before initializing (module needs ~15s after VCC) */
+  ESP_LOGI(TAG, "LTE: waiting 15 s for modem power-on...");
+  for (int i = 15; i > 0 && g_lte_ctx.task_running; i--) {
+    ESP_LOGI(TAG, "LTE modem startup: %d s remaining...", i);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+
   /* Initial connection */
   lte_init_with_config();
 

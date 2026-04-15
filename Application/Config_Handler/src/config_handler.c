@@ -43,7 +43,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;  
+config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE;  
 config_server_type_t g_server_type = CONFIG_SERVERTYPE_MQTT;  /* default to MQTT */
 bool is_internet_connected = false;
 
@@ -366,23 +366,27 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 /**
  * @brief Parse LTE configuration from command string
  * Format: "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
- * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE"
+ * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:05:06"
  * Note: USERNAME and PASSWORD can be empty (consecutive colons allowed).
- *       PWR_PIN / RST_PIN are TCA pin labels: "WK"="WAKE#"(11), "PE"="PERST#"(12),
- *       or "01".."11" for numbered GPIO pins (0-10).  Omit or use "" to keep default.
+ *       PWR_PIN / RST_PIN are TCA port-pin labels: "04"–"07" (P04–P07, port 0)
+ *       or "11"–"17" (P11–P17, port 1). Index = port*8 + bit.
+ *       P10 is reserved. Omit or use "" to keep default (05 / 06).
  * @param data Raw command data
  * @param len Command length
  * @param cfg Output LTE config structure
  * @return ESP_OK on success, ESP_FAIL on error
  */
 static uint8_t parse_tca_pin_label(const char *s, int len) {
-    if (len == 2) {
-        if ((s[0] == 'W' || s[0] == 'w') && (s[1] == 'K' || s[1] == 'k')) return 11; /* STACK_GPIO_PIN_WAKE  */
-        if ((s[0] == 'P' || s[0] == 'p') && (s[1] == 'E' || s[1] == 'e')) return 12; /* STACK_GPIO_PIN_PERST */
-        /* "01" - "11" -> index 0-10 */
-        if (s[0] == '0' || s[0] == '1') {
-            int num = (s[0] - '0') * 10 + (s[1] - '0');
-            if (num >= 1 && num <= 11) return (uint8_t)(num - 1);
+    /* Accept 2-digit TCA port-pin notation: "04"–"07", "11"–"17"
+     * Encoding: port = s[0]-'0' (0 or 1), bit = s[1]-'0' (0-7)
+     * Stack enum index = port * 8 + bit
+     * Valid set: {4,5,6,7,9,10,11,12,13,14,15} (P04–P07, P11–P17; P10 excluded)
+     */
+    if (len == 2 && (s[0] == '0' || s[0] == '1') && (s[1] >= '0' && s[1] <= '7')) {
+        uint8_t idx = (uint8_t)((s[0] - '0') * 8 + (s[1] - '0'));
+        static const uint8_t valid[] = {4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15};
+        for (int i = 0; i < (int)(sizeof(valid) / sizeof(valid[0])); i++) {
+            if (idx == valid[i]) return idx;
         }
     }
     return 0xFF; /* STACK_GPIO_PIN_NONE */
@@ -394,9 +398,9 @@ static esp_err_t config_parse_lte(const char *data, uint16_t len, lte_config_dat
     }
 
     memset(cfg, 0, sizeof(lte_config_data_t));
-    /* Default TCA pins if not supplied in command */
-    cfg->pwr_pin = 11; /* STACK_GPIO_PIN_WAKE  */
-    cfg->rst_pin = 12; /* STACK_GPIO_PIN_PERST */
+    /* Default TCA pins if not supplied in command: P05, P06 */
+    cfg->pwr_pin = 5;  /* STACK_GPIO_PIN_05 (P05) */
+    cfg->rst_pin = 6;  /* STACK_GPIO_PIN_06 (P06) */
 
     /* Parse format:
      * "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"

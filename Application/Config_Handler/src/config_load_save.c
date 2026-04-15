@@ -802,7 +802,7 @@ esp_err_t config_init(void) {
  * For WAN the hardware module always reports "001" (single stack).
  */
 esp_err_t config_init_wan_stack_id(void) {
-    const char *cur_id = stack_handler_get_module_id(0);  /* always "001" */
+    const char *cur_id = stack_handler_get_module_id(1);  /* adapter IOX 0x21 — P00-P03 = DEV_ID */
 
     nvs_handle_t h;
     char old_id[8] = "000";

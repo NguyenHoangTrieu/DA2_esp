@@ -19,13 +19,13 @@ export const LAN_STACK_MAP = {
 };
 
 export const WAN_STACK_MAP = {
-  '001': { type: 'QUECTEL', label: 'Quectel (AC76001) / LTE', modem: 'AC76001', comm_type: 'UART', pwr_pin: 'WK', rst_pin: 'PE' },
-  '100': { type: 'NONE',    label: 'No WAN adapter',   modem: '',        comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },
-  '101': { type: 'QUECTEL', label: 'Quectel (A7600)',   modem: 'A7600C1', comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },
-  '102': { type: 'SIMCOM',  label: 'SIMCom (SIM7600)',  modem: 'SIM7600', comm_type: 'USB', pwr_pin: 'WK', rst_pin: 'PE' },
+  '001': { type: 'QUECTEL', label: 'Quectel (AC76001) / LTE', modem: 'AC76001', comm_type: 'UART', pwr_pin: '05', rst_pin: '06' },
+  '100': { type: 'NONE',    label: 'No WAN adapter',   modem: '',        comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
+  '101': { type: 'QUECTEL', label: 'Quectel (A7600)',   modem: 'A7600C1', comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
+  '102': { type: 'SIMCOM',  label: 'SIMCom (SIM7600)',  modem: 'SIM7600', comm_type: 'USB', pwr_pin: '05', rst_pin: '06' },
 };
 
-export const PIN_OPTIONS = ['WK', 'PE', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'];
+export const PIN_OPTIONS = ['04', '05', '06', '07', '11', '12', '13', '14', '15', '16', '17'];
 
 // ── Function Groups (per module type — same as Python config_form.py) ─────
 

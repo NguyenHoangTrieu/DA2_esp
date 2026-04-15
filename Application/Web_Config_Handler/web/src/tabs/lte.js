@@ -88,11 +88,11 @@ export function renderLte(container, config) {
         <div class="form-grid">
           <div class="form-group">
             <label>PWR Pin</label>
-            <select id="ltPwr">${PIN_OPTIONS.map(p => `<option value="${p}" ${(lte.pwr_pin||wanInfo.pwr_pin||'WK')===p?'selected':''}>${p}</option>`).join('')}</select>
+            <select id="ltPwr">${PIN_OPTIONS.map(p => `<option value="${p}" ${(lte.pwr_pin||wanInfo.pwr_pin||'05')===p?'selected':''}>${p}</option>`).join('')}</select>
           </div>
           <div class="form-group">
             <label>RST Pin</label>
-            <select id="ltRst">${PIN_OPTIONS.map(p => `<option value="${p}" ${(lte.rst_pin||wanInfo.rst_pin||'PE')===p?'selected':''}>${p}</option>`).join('')}</select>
+            <select id="ltRst">${PIN_OPTIONS.map(p => `<option value="${p}" ${(lte.rst_pin||wanInfo.rst_pin||'06')===p?'selected':''}>${p}</option>`).join('')}</select>
           </div>
         </div>
       </div>

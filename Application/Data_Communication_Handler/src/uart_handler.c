@@ -79,14 +79,15 @@ static void uart_send_kv_ulong(const char *key, unsigned long value) {
 }
 
 /**
- * @brief Convert TCA pin index back to label string for CFSC response
- * 11 -> "WK", 12 -> "PE", 0..10 -> "01".."11", else ""
+ * @brief Convert TCA stack-enum index to port-pin label: index -> "PxBit"
+ * Examples: 5 -> "05" (P05), 6 -> "06" (P06), 11 -> "11" (P11)
  */
 static void tca_pin_to_label(uint8_t pin, char *out, size_t size) {
-  if (pin == 11)      { strncpy(out, "WK", size); }
-  else if (pin == 12) { strncpy(out, "PE", size); }
-  else if (pin <= 10) { snprintf(out, size, "%02d", pin + 1); }
-  else                { strncpy(out, "", size); }
+  if (pin < 16) {
+    snprintf(out, size, "%d%d", pin / 8, pin % 8);
+  } else {
+    strncpy(out, "", size);
+  }
 }
 
 /**
@@ -129,10 +130,10 @@ static void handle_cfsc_command(void) {
   uart_println("[WAN_CONFIG]");
 
   // Internet type
-  const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI) ? "WIFI"
-                              : (g_internet_type == CONFIG_INTERNET_LTE)
-                                  ? "LTE"
-                                  : "UNKNOWN";
+  const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI)     ? "WIFI"
+                              : (g_internet_type == CONFIG_INTERNET_LTE)      ? "LTE"
+                              : (g_internet_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
+                              : "UNKNOWN";
   uart_send_kv("internet_type", inet_type_str);
 
   // WiFi settings - thread-safe read

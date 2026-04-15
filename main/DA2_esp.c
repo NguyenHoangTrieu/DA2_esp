@@ -317,13 +317,6 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
 
   ESP_LOGI(TAG, "==> Entering CONFIG mode");
 
-  /* When LTE is active the modem owns the USB bus — stop it first */
-  if (*internet_type == CONFIG_INTERNET_LTE) {
-    ESP_LOGI(TAG, "Stopping LTE task before USB switch");
-    lte_connect_task_stop();
-    vTaskDelay(pdMS_TO_TICKS(10000)); /* wait for modem to release USB */
-  }
-
   /* Stop Ethernet driver before entering CONFIG mode */
   if (*internet_type == CONFIG_INTERNET_ETHERNET) {
     ESP_LOGI(TAG, "Stopping Ethernet task before CONFIG mode");
@@ -331,7 +324,6 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   }
 
   vTaskDelay(pdMS_TO_TICKS(100));
-  jtag_task_start();
 
   /* Start WiFi AP + web portal + captive DNS for browser-based config
    * Connect to SSID "DA2-Gateway-Config" (pass: datn1234) then open
@@ -419,12 +411,12 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
   stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, false); /* P10 = EN_3V3 */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* P11 = EN_5V */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true); /* P12 = RLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true); /* P13 = GLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true); /* P14 = BLED off */
-  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, false); /* ADAPTER POWER ON */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   pwr_source_init();
@@ -459,10 +451,6 @@ void app_main(void) {
   /* Start web config portal — browser-accessible at http://gateway.local/
    * (STA: user's browser on same LAN; LTE/Ethernet: binds to that IP)   */
   web_config_handler_start(WEB_MODE_STA);
-
-  if (g_internet_type != CONFIG_INTERNET_LTE) {
-    jtag_task_start();
-  }
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");

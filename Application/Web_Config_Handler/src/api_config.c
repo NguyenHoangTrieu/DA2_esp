@@ -93,8 +93,12 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON_AddBoolToObject(jl,   "auto_reconnect", lte.auto_reconnect);
     cJSON_AddNumberToObject(jl, "reconnect_timeout_ms",    (double)lte.reconnect_timeout_ms);
     cJSON_AddNumberToObject(jl, "max_reconnect_attempts",  (double)lte.max_reconnect_attempts);
-    cJSON_AddNumberToObject(jl, "pwr_pin",     lte.pwr_pin);
-    cJSON_AddNumberToObject(jl, "rst_pin",     lte.rst_pin);
+    /* Convert numeric stack enum index to TCA port-pin label ("04"–"17") */
+    char ppin_str[4], rpin_str[4];
+    snprintf(ppin_str, sizeof(ppin_str), "%d%d", lte.pwr_pin / 8, lte.pwr_pin % 8);
+    snprintf(rpin_str, sizeof(rpin_str), "%d%d", lte.rst_pin / 8, lte.rst_pin % 8);
+    cJSON_AddStringToObject(jl, "pwr_pin", ppin_str);
+    cJSON_AddStringToObject(jl, "rst_pin", rpin_str);
 
     /* MQTT */
     cJSON *jm = cJSON_AddObjectToObject(root, "mqtt");
@@ -126,8 +130,8 @@ esp_err_t api_config_get_handler(void *arg)
     cJSON_AddNumberToObject(jc, "max_retransmit", g_coap_cfg.max_retransmit);
     cJSON_AddNumberToObject(jc, "rpc_poll_interval_ms", (double)g_coap_cfg.rpc_poll_interval_ms);
 
-    /* WAN stack ID (local read — no SPI needed) */
-    const char *wan_stack_id = stack_handler_get_module_id(0);
+    /* WAN stack ID — read from adapter IOX (0x21, stack 1, P00-P03 = DEV_ID) */
+    const char *wan_stack_id = stack_handler_get_module_id(1);
     cJSON *jwan = cJSON_AddObjectToObject(root, "wan");
     cJSON_AddStringToObject(jwan, "stack_wan_id",
                             (wan_stack_id && wan_stack_id[0]) ? wan_stack_id : "100");
@@ -280,17 +284,15 @@ static esp_err_t build_lte_cmd(const cJSON *obj)
 
     const cJSON *pp  = cJSON_GetObjectItem(obj, "pwr_pin");
     const cJSON *rp  = cJSON_GetObjectItem(obj, "rst_pin");
-    const char *ppin = "WK", *rpin = "PE";
+    const char *ppin = "05", *rpin = "06";
     char ppin_buf[4] = {0}, rpin_buf[4] = {0};
-    if (cJSON_IsNumber(pp)) {
-        if (pp->valueint == 11)      ppin = "WK";
-        else if (pp->valueint == 12) ppin = "PE";
-        else { snprintf(ppin_buf, sizeof(ppin_buf), "%02d", pp->valueint); ppin = ppin_buf; }
+    if (cJSON_IsString(pp) && strlen(pp->valuestring) == 2) {
+        strncpy(ppin_buf, pp->valuestring, 3);
+        ppin = ppin_buf;
     }
-    if (cJSON_IsNumber(rp)) {
-        if (rp->valueint == 12)      rpin = "PE";
-        else if (rp->valueint == 11) rpin = "WK";
-        else { snprintf(rpin_buf, sizeof(rpin_buf), "%02d", rp->valueint); rpin = rpin_buf; }
+    if (cJSON_IsString(rp) && strlen(rp->valuestring) == 2) {
+        strncpy(rpin_buf, rp->valuestring, 3);
+        rpin = rpin_buf;
     }
 
     char wire[512];

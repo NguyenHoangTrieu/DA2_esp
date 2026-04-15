@@ -1,8 +1,6 @@
 #ifndef DA2_ESP_H
 #define DA2_ESP_H
 
-#include "usb_handler.h"
-
 #include "wifi_connect.h"
 #include "fota_handler.h"
 #include "uart_handler.h"
