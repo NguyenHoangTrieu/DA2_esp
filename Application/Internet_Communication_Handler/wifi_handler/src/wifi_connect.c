@@ -7,16 +7,17 @@
 #include "wifi_connect.h"
 #include "config_handler.h"
 #include "esp_sntp.h"
-#include "pcf8563_rtc.h"
 #include "fota_ap.h"
+#include "pcf8563_rtc.h"
+
 
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
 #define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
-#define WIFI_ESP_MAXIMUM_RETRY 10000
+#define WIFI_ESP_MAXIMUM_RETRY 3
 
 // Adjust for the security/auth your AP uses
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
@@ -50,7 +51,7 @@ static wifi_config_t s_pending_config; // Staging area for new WiFi config
 static SemaphoreHandle_t g_wifi_reconfig_mutex = NULL;
 static bool wifi_connect_task_close = false;
 static bool g_sntp_synced = false;
-static bool g_wifi_sntp_started = false;  // Flag to prevent re-init SNTP
+static bool g_wifi_sntp_started = false; // Flag to prevent re-init SNTP
 
 // Network interface handle (global)
 esp_netif_t *g_wifi_netif = NULL;
@@ -129,28 +130,33 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    // Check if this is a requested reconnection with new credentials (thread-safe)
+    // Check if this is a requested reconnection with new credentials
+    // (thread-safe)
     bool should_reconnect = false;
     wifi_config_t temp_config;
-    
-    if (g_wifi_reconfig_mutex && xSemaphoreTake(g_wifi_reconfig_mutex, 0) == pdTRUE) {
+
+    if (g_wifi_reconfig_mutex &&
+        xSemaphoreTake(g_wifi_reconfig_mutex, 0) == pdTRUE) {
       if (s_reconnect_request) {
         s_reconnect_request = 0; // Reset flag
         s_retry_num = 0;         // Reset retry counter for new connection
-        temp_config = s_pending_config;  // Copy under lock
+        temp_config = s_pending_config; // Copy under lock
         should_reconnect = true;
       }
       xSemaphoreGive(g_wifi_reconfig_mutex);
     }
-    
+
     /* While the FOTA AP is serving the LAN MCU, the WiFi radio is in APSTA
      * mode.  Calling esp_wifi_connect() here would trigger a STA scan / channel
      * switch that suspends AP beacons and drops the LAN MCU's WiFi association,
-     * aborting its OTA.  Suppress STA reconnects until the FOTA AP is stopped. */
+     * aborting its OTA.  Suppress STA reconnects until the FOTA AP is stopped.
+     */
     if (fota_ap_is_running()) {
-      ESP_LOGW(TAG, "FOTA AP active — deferring STA reconnect to avoid disrupting LAN MCU");
+      ESP_LOGW(TAG, "FOTA AP active — deferring STA reconnect to avoid "
+                    "disrupting LAN MCU");
     } else if (should_reconnect) {
-      // Apply the new configuration (outside lock to avoid holding mutex during operation)
+      // Apply the new configuration (outside lock to avoid holding mutex during
+      // operation)
       ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &temp_config));
       esp_wifi_connect();
       ESP_LOGI(TAG, "Connecting to new AP: %s", temp_config.sta.ssid);
@@ -232,27 +238,34 @@ static esp_err_t wifi_configure_enterprise(const char *username,
 void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
                    const char *custom_username,
                    wifi_conf_auth_mode_t auth_mode) {
-  s_wifi_event_group = xEventGroupCreate();
+  if (g_wifi_netif == NULL) {
+    s_wifi_event_group = xEventGroupCreate();
+    g_wifi_netif = esp_netif_create_default_wifi_sta();
 
-  if (auth_mode == WIFI_AUTH_MODE_ENTERPRISE) {
-    ESP_LOGI(TAG, "CONNECTING TO WIFI (ENTERPRISE) SSID:%s USERNAME:%s",
-             custom_ssid, custom_username);
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    
+    /* 
+     * Optimize Wi-Fi DMA memory footprint to allow USB Host (LTE) enough contiguous memory!
+     * Default Wi-Fi DMA usage is ~100KB, which starves the USB Host pipe allocations.
+     */
+    cfg.static_rx_buf_num = 4;      // Default 10
+    cfg.dynamic_rx_buf_num = 16;    // Default 32
+    cfg.dynamic_tx_buf_num = 16;    // Default 32
+    cfg.mgmt_sbuf_num = 16;         // Default 32
+    
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                               &event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                               &event_handler, NULL));
   } else {
-    ESP_LOGI(TAG, "CONNECTING TO WIFI (PERSONAL) SSID:%s PASSWORD:%s",
-             custom_ssid, custom_pass);
+    // Re-create event group if it was deleted
+    if (s_wifi_event_group == NULL) {
+        s_wifi_event_group = xEventGroupCreate();
+    }
+    ESP_LOGI(TAG, "WiFi driver already initialized, reusing existing stack");
   }
-
-  g_wifi_netif = esp_netif_create_default_wifi_sta();
-
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-  esp_event_handler_instance_t instance_any_id;
-  esp_event_handler_instance_t instance_got_ip;
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(
-      WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, &instance_any_id));
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(
-      IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, &instance_got_ip));
 
   wifi_config_t wifi_config = {0};
   strncpy((char *)wifi_config.sta.ssid, custom_ssid,
@@ -386,8 +399,8 @@ static void wifi_config_task(void *arg) {
                 ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD;
             s_pending_config.sta.sae_pwe_h2e = ESP_WIFI_SAE_MODE;
             strncpy((char *)s_pending_config.sta.sae_h2e_identifier,
-                  EXAMPLE_H2E_IDENTIFIER,
-                  sizeof(s_pending_config.sta.sae_h2e_identifier));
+                    EXAMPLE_H2E_IDENTIFIER,
+                    sizeof(s_pending_config.sta.sae_h2e_identifier));
 
 #ifdef ESP_WIFI_WPA3_COMPATIBLE_SUPPORT
             s_pending_config.sta.disable_wpa3_compatible_mode = 0;
@@ -397,10 +410,12 @@ static void wifi_config_task(void *arg) {
           }
 
           // Thread-safe config update - set reconnect flag under mutex
-          if (g_wifi_reconfig_mutex && xSemaphoreTake(g_wifi_reconfig_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+          if (g_wifi_reconfig_mutex &&
+              xSemaphoreTake(g_wifi_reconfig_mutex, pdMS_TO_TICKS(1000)) ==
+                  pdTRUE) {
             s_reconnect_request = 1;
             xSemaphoreGive(g_wifi_reconfig_mutex);
-            
+
             ESP_LOGI(TAG, "WiFi config updated, triggering reconnect");
             if (s_wifi_connected) {
               esp_err_t ret = esp_wifi_disconnect();
@@ -443,8 +458,11 @@ static void wifi_connect_init_task(void *arg) {
 
   // Start the config task to listen for WiFi credentials from queue
   if (!wifi_connect_task_close) {
-    xTaskCreate(wifi_config_task, "wifi_config_task", 8192, NULL, 5, NULL);
-    ESP_LOGI(TAG, "WiFi config task created");
+    if (xTaskCreate(wifi_config_task, "wifi_config_task", 4096, NULL, 5, NULL) != pdPASS) {
+      ESP_LOGE(TAG, "Failed to create wifi config task (Out of contiguous heap?)");
+    } else {
+      ESP_LOGI(TAG, "WiFi config task created");
+    }
   }
 
   vTaskDelete(NULL);
@@ -452,7 +470,9 @@ static void wifi_connect_init_task(void *arg) {
 
 void wifi_connect_task_start(void) {
   wifi_connect_task_close = false;
-  xTaskCreate(wifi_connect_init_task, "wifi_init_task", 8192, NULL, 5, NULL);
+  if (xTaskCreate(wifi_connect_init_task, "wifi_init_task", 4096, NULL, 5, NULL) != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create wifi init task (Out of contiguous heap?)");
+  }
 }
 
 void wifi_connect_task_stop(void) {
@@ -462,23 +482,17 @@ void wifi_connect_task_stop(void) {
 
   wifi_connect_task_close = true;
   ESP_LOGI(TAG, "Stopping WiFi connection task");
+  
+  if (g_wifi_netif == NULL) {
+    ESP_LOGW(TAG, "WiFi not running, skipping teardown");
+    return;
+  }
 
   // Disable enterprise mode if enabled
   esp_wifi_sta_enterprise_disable();
 
   ESP_ERROR_CHECK(esp_wifi_stop());
-  ESP_ERROR_CHECK(esp_wifi_deinit());
-
-  esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                        &event_handler);
-  esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                        &event_handler);
-
-  if (g_wifi_netif) {
-    esp_netif_destroy(g_wifi_netif);
-    g_wifi_netif = NULL;
-  }
-
+  
   if (s_wifi_event_group) {
     vEventGroupDelete(s_wifi_event_group);
     s_wifi_event_group = NULL;
@@ -497,56 +511,56 @@ void wifi_connect_task_stop(void) {
  * mode the stack is fully torn down first via wifi_connect_task_stop().
  * ========================================================================== */
 
-#define CONFIG_AP_SSID        "DA2-Gateway-Config"
-#define CONFIG_AP_PASSWORD    "datn1234"
-#define CONFIG_AP_CHANNEL     1
-#define CONFIG_AP_MAX_CONN    4
+#define CONFIG_AP_SSID "DA2-Gateway-Config"
+#define CONFIG_AP_PASSWORD "datn1234"
+#define CONFIG_AP_CHANNEL 1
+#define CONFIG_AP_MAX_CONN 4
 
 static esp_netif_t *s_ap_netif = NULL;
 
-void wifi_ap_start(void)
-{
-    /* Tear down STA stack if it was running */
-    if (g_wifi_netif != NULL) {
-        ESP_LOGI(TAG, "wifi_ap_start: stopping STA...");
-        wifi_connect_task_stop();
-        vTaskDelay(pdMS_TO_TICKS(300));
-    }
+void wifi_ap_start(void) {
+  /* Tear down STA stack if it was running */
+  if (g_wifi_netif != NULL) {
+    ESP_LOGI(TAG, "wifi_ap_start: stopping STA...");
+    wifi_connect_task_stop();
+    vTaskDelay(pdMS_TO_TICKS(300));
+  }
 
-    /* Create AP netif once */
-    if (!s_ap_netif) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-    }
+  /* Create AP netif once */
+  if (!s_ap_netif) {
+    s_ap_netif = esp_netif_create_default_wifi_ap();
+  }
 
-    /* Fresh WiFi stack init with reduced buffer counts to lower peak
-     * internal-RAM usage. Default values (rx=10, dyn_rx=32, dyn_tx=32)
-     * can consume ~80 KB; reducing them allows init after LTE teardown. */
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    cfg.static_rx_buf_num  = 4;   /* default 10 */
-    cfg.dynamic_rx_buf_num = 8;   /* default 32 */
-    cfg.dynamic_tx_buf_num = 8;   /* default 32 */
-    esp_err_t wifi_init_err = esp_wifi_init(&cfg);
-    if (wifi_init_err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_init failed: %s — CONFIG AP not available",
-                 esp_err_to_name(wifi_init_err));
-        return;
-    }
+  /* Fresh WiFi stack init with reduced buffer counts to lower peak
+   * internal-RAM usage. Default values (rx=10, dyn_rx=32, dyn_tx=32)
+   * can consume ~80 KB; reducing them allows init after LTE teardown. */
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  cfg.static_rx_buf_num = 4;  /* default 10 */
+  cfg.dynamic_rx_buf_num = 8; /* default 32 */
+  cfg.dynamic_tx_buf_num = 8; /* default 32 */
+  esp_err_t wifi_init_err = esp_wifi_init(&cfg);
+  if (wifi_init_err != ESP_OK) {
+    ESP_LOGE(TAG, "esp_wifi_init failed: %s — CONFIG AP not available",
+             esp_err_to_name(wifi_init_err));
+    return;
+  }
 
-    wifi_config_t ap_config = {
-        .ap = {
-            .ssid           = CONFIG_AP_SSID,
-            .ssid_len       = (uint8_t)strlen(CONFIG_AP_SSID),
-            .channel        = CONFIG_AP_CHANNEL,
-            .password       = CONFIG_AP_PASSWORD,
-            .max_connection = CONFIG_AP_MAX_CONN,
-            .authmode       = WIFI_AUTH_WPA2_PSK,
-        },
-    };
+  wifi_config_t ap_config = {
+      .ap =
+          {
+              .ssid = CONFIG_AP_SSID,
+              .ssid_len = (uint8_t)strlen(CONFIG_AP_SSID),
+              .channel = CONFIG_AP_CHANNEL,
+              .password = CONFIG_AP_PASSWORD,
+              .max_connection = CONFIG_AP_MAX_CONN,
+              .authmode = WIFI_AUTH_WPA2_PSK,
+          },
+  };
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+  ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "Config AP: SSID=" CONFIG_AP_SSID
-             "  Pass=" CONFIG_AP_PASSWORD "  IP=192.168.4.1");
+  ESP_LOGI(TAG, "Config AP: SSID=" CONFIG_AP_SSID "  Pass=" CONFIG_AP_PASSWORD
+                "  IP=192.168.4.1");
 }

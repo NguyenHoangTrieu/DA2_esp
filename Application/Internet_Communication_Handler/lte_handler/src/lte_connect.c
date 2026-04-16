@@ -20,7 +20,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-
 /* ==================== Default Configuration ==================== */
 /* Default APN for Vietnamobile (m-wap).
  * The LTE task will start with this APN unless config_handler overrides it. */
@@ -165,10 +164,15 @@ static void lte_task(void *arg) {
 
   /* Wait for modem power-on before initializing (module needs ~15s after VCC)
    */
-  ESP_LOGI(TAG, "LTE: waiting 15 s for modem power-on...");
-  for (int i = 15; i > 0 && g_lte_ctx.task_running; i--) {
-    ESP_LOGD(TAG, "LTE modem startup: %d s remaining...", i);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+  extern config_internet_type_t g_internet_type;
+  if (g_internet_type == CONFIG_INTERNET_LTE) {
+    ESP_LOGI(TAG, "LTE: waiting 15 s for modem power-on...");
+    for (int i = 15; i > 0 && g_lte_ctx.task_running; i--) {
+      ESP_LOGD(TAG, "LTE modem startup: %d s remaining...", i);
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  } else {
+    ESP_LOGI(TAG, "LTE: Fallback mode - skipping 15s power-on wait");
   }
 
   /* Initial connection */

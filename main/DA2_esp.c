@@ -13,7 +13,7 @@ static const char *TAG = "MAIN";
 TaskHandle_t main_task_handle = NULL;
 
 /* ===== GPIO =========================================================== */
-#define GPIO3_POWER_RGB_CTRL GPIO_NUM_3  /* Toggle power rails + RGB LED */
+#define GPIO3_POWER_RGB_CTRL GPIO_NUM_3 /* Toggle power rails + RGB LED */
 #define UART_SWITCH_SEL_GPIO                                                   \
   GPIO_NUM_46 // UART_SEL: LOW=LAN MCU (SW1), HIGH=HMI LCD (SW2)
 #define ADAPTER_RESET_GPIO GPIO_NUM_48 /* Output: reset adapter IOX at boot */
@@ -38,19 +38,20 @@ static esp_timer_handle_t gpio3_debounce_timer = NULL;
 static bool debounce_gpio0_active = false;
 static bool debounce_gpio3_active = false;
 
-#define GPIO0_DEBOUNCE_MS 50      /* GPIO0 debounce window (ms) */
-#define GPIO3_DEBOUNCE_MS 50      /* GPIO3 debounce window (ms) */
-#define GPIO_STABLE_SAMPLES 3     /* Number of stable readings before accept */
+#define GPIO0_DEBOUNCE_MS 50  /* GPIO0 debounce window (ms) */
+#define GPIO3_DEBOUNCE_MS 50  /* GPIO3 debounce window (ms) */
+#define GPIO_STABLE_SAMPLES 3 /* Number of stable readings before accept */
 
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 
 /**
- * @brief GPIO0 debounce timer callback - confirm button press after stable reads
+ * @brief GPIO0 debounce timer callback - confirm button press after stable
+ * reads
  */
 static void gpio0_debounce_callback(void *arg) {
   int stable_count = 0;
   int pin_state = -1;
-  
+
   /* Sample GPIO0 multiple times to ensure stable state */
   for (int i = 0; i < GPIO_STABLE_SAMPLES; i++) {
     int current_read = gpio_get_level(0);
@@ -66,7 +67,7 @@ static void gpio0_debounce_callback(void *arg) {
       vTaskDelay(pdMS_TO_TICKS(2)); /* small delay between samples */
     }
   }
-  
+
   /* If pin remained stable and is LOW (pressed), post notification */
   if (stable_count >= GPIO_STABLE_SAMPLES && pin_state == 0) {
     BaseType_t xTaskWoken = pdFALSE;
@@ -78,19 +79,20 @@ static void gpio0_debounce_callback(void *arg) {
       portYIELD_FROM_ISR();
     }
   }
-  
+
   /* Re-enable GPIO0 interrupt for next press */
   debounce_gpio0_active = false;
   gpio_intr_enable(0);
 }
 
 /**
- * @brief GPIO3 debounce timer callback - confirm power button press after stable reads
+ * @brief GPIO3 debounce timer callback - confirm power button press after
+ * stable reads
  */
 static void gpio3_debounce_callback(void *arg) {
   int stable_count = 0;
   int pin_state = -1;
-  
+
   /* Sample GPIO3 multiple times to ensure stable state */
   for (int i = 0; i < GPIO_STABLE_SAMPLES; i++) {
     int current_read = gpio_get_level(GPIO3_POWER_RGB_CTRL);
@@ -106,7 +108,7 @@ static void gpio3_debounce_callback(void *arg) {
       vTaskDelay(pdMS_TO_TICKS(2)); /* small delay between samples */
     }
   }
-  
+
   /* If pin remained stable and is LOW (pressed), post notification */
   if (stable_count >= GPIO_STABLE_SAMPLES && pin_state == 0) {
     BaseType_t xTaskWoken = pdFALSE;
@@ -118,7 +120,7 @@ static void gpio3_debounce_callback(void *arg) {
       portYIELD_FROM_ISR();
     }
   }
-  
+
   /* Re-enable GPIO3 interrupt for next press */
   debounce_gpio3_active = false;
   gpio_intr_enable(GPIO3_POWER_RGB_CTRL);
@@ -128,11 +130,12 @@ static void gpio3_debounce_callback(void *arg) {
  * @brief GPIO0 ISR - Start debounce timer
  */
 static void gpio0_isr_handler(void *arg) {
-  if (debounce_gpio0_active) return; /* debounce already active */
-  
+  if (debounce_gpio0_active)
+    return; /* debounce already active */
+
   debounce_gpio0_active = true;
   gpio_intr_disable(0); /* disable interrupt during debounce */
-  
+
   /* Start debounce timer */
   esp_timer_start_once(gpio0_debounce_timer, GPIO0_DEBOUNCE_MS * 1000);
 }
@@ -141,32 +144,33 @@ static void gpio0_isr_handler(void *arg) {
  * @brief GPIO3 ISR - Start debounce timer
  */
 static void gpio3_isr_handler(void *arg) {
-  if (debounce_gpio3_active) return; /* debounce already active */
-  
+  if (debounce_gpio3_active)
+    return; /* debounce already active */
+
   debounce_gpio3_active = true;
-  gpio_intr_disable(GPIO3_POWER_RGB_CTRL); /* disable interrupt during debounce */
-  
+  gpio_intr_disable(
+      GPIO3_POWER_RGB_CTRL); /* disable interrupt during debounce */
+
   /* Start debounce timer */
   esp_timer_start_once(gpio3_debounce_timer, GPIO3_DEBOUNCE_MS * 1000);
 }
 
 void setup_gpio0_interrupt(void) {
   gpio_config_t gpio0_cfg = {.pin_bit_mask = BIT64(0),
-                              .mode = GPIO_MODE_INPUT,
-                              .pull_up_en = GPIO_PULLUP_ENABLE,
-                              .intr_type = GPIO_INTR_NEGEDGE};
+                             .mode = GPIO_MODE_INPUT,
+                             .pull_up_en = GPIO_PULLUP_ENABLE,
+                             .intr_type = GPIO_INTR_NEGEDGE};
 
   ESP_ERROR_CHECK(gpio_config(&gpio0_cfg));
   ESP_ERROR_CHECK(gpio_isr_handler_add(0, gpio0_isr_handler, NULL));
 
   /* Create debounce timer for GPIO0 (one-shot, not started yet) */
-  esp_timer_create_args_t timer_args = {
-    .callback = gpio0_debounce_callback,
-    .name = "gpio0_debounce"
-  };
+  esp_timer_create_args_t timer_args = {.callback = gpio0_debounce_callback,
+                                        .name = "gpio0_debounce"};
   ESP_ERROR_CHECK(esp_timer_create(&timer_args, &gpio0_debounce_timer));
 
-  ESP_LOGI(TAG, "GPIO0 button interrupt configured (debounce %d ms)", GPIO0_DEBOUNCE_MS);
+  ESP_LOGI(TAG, "GPIO0 button interrupt configured (debounce %d ms)",
+           GPIO0_DEBOUNCE_MS);
 }
 
 void setup_gpio3_interrupt(void) {
@@ -176,16 +180,16 @@ void setup_gpio3_interrupt(void) {
                              .intr_type = GPIO_INTR_NEGEDGE};
 
   ESP_ERROR_CHECK(gpio_config(&gpio3_cfg));
-  ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO3_POWER_RGB_CTRL, gpio3_isr_handler, NULL));
+  ESP_ERROR_CHECK(
+      gpio_isr_handler_add(GPIO3_POWER_RGB_CTRL, gpio3_isr_handler, NULL));
 
   /* Create debounce timer for GPIO3 (one-shot, not started yet) */
-  esp_timer_create_args_t timer_args = {
-    .callback = gpio3_debounce_callback,
-    .name = "gpio3_debounce"
-  };
+  esp_timer_create_args_t timer_args = {.callback = gpio3_debounce_callback,
+                                        .name = "gpio3_debounce"};
   ESP_ERROR_CHECK(esp_timer_create(&timer_args, &gpio3_debounce_timer));
 
-  ESP_LOGI(TAG, "GPIO3 power/RGB interrupt configured (debounce %d ms)", GPIO3_DEBOUNCE_MS);
+  ESP_LOGI(TAG, "GPIO3 power/RGB interrupt configured (debounce %d ms)",
+           GPIO3_DEBOUNCE_MS);
 }
 
 /* =====================================================================
@@ -326,16 +330,16 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   ESP_LOGI(TAG, "CONFIG mode: server stopped");
 
   switch (*internet_type) {
-    case CONFIG_INTERNET_LTE:
-      lte_connect_task_stop();
-      ESP_LOGI(TAG, "CONFIG mode: LTE stopped");
-      break;
-    case CONFIG_INTERNET_ETHERNET:
-      eth_connect_task_stop();
-      ESP_LOGI(TAG, "CONFIG mode: Ethernet stopped");
-      break;
-    default:
-      break;
+  case CONFIG_INTERNET_LTE:
+    lte_connect_task_stop();
+    ESP_LOGI(TAG, "CONFIG mode: LTE stopped");
+    break;
+  case CONFIG_INTERNET_ETHERNET:
+    eth_connect_task_stop();
+    ESP_LOGI(TAG, "CONFIG mode: Ethernet stopped");
+    break;
+  default:
+    break;
   }
 
   /* Give TCP/IP stack time to release PPP buffers and close sockets */
@@ -350,7 +354,6 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   ESP_LOGI(TAG, "Web portal: connect to \"DA2-Gateway-Config\" "
                 "then open http://192.168.4.1/");
 
-  
   current_mode = APP_MODE_CONFIG;
   ESP_LOGI(TAG, "CONFIG mode active");
 }
@@ -396,11 +399,12 @@ void app_main(void) {
 
   /* Configure both IOX reset pins as outputs, and assert reset (active-low) */
   gpio_config_t iox_rst_cfg = {
-      .pin_bit_mask = (1ULL << TCA6416A_RESET_PIN) | (1ULL << ADAPTER_RESET_GPIO),
-      .mode         = GPIO_MODE_OUTPUT,
-      .pull_up_en   = GPIO_PULLUP_DISABLE,
+      .pin_bit_mask =
+          (1ULL << TCA6416A_RESET_PIN) | (1ULL << ADAPTER_RESET_GPIO),
+      .mode = GPIO_MODE_OUTPUT,
+      .pull_up_en = GPIO_PULLUP_DISABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type    = GPIO_INTR_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
   };
   gpio_config(&iox_rst_cfg);
   /* Pulse reset (active-high on this PCB): assert HIGH, then release LOW */
@@ -410,11 +414,12 @@ void app_main(void) {
   /* Deassert reset — bring LOW so devices enter normal operation */
   gpio_set_level(TCA6416A_RESET_PIN, 0);
   gpio_set_level(ADAPTER_RESET_GPIO, 0);
-  vTaskDelay(pdMS_TO_TICKS(50)); /* Allow TCA6416A to complete power-on sequence */
-  tca_init();               /* Init on-board TCA6416A @0x20 */
-  i2c_dev_support_scan();   /* Both IOXes should now appear  */
+  vTaskDelay(
+      pdMS_TO_TICKS(50)); /* Allow TCA6416A to complete power-on sequence */
+  tca_init();             /* Init on-board TCA6416A @0x20 */
+  i2c_dev_support_scan(); /* Both IOXes should now appear  */
 
-  stack_handler_init();     /* Init on-board (0x20) + probe adapter (0x21) */
+  stack_handler_init(); /* Init on-board (0x20) + probe adapter (0x21) */
 
   /* Turn on DC Fan via IOX P15 */
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_15, true);
@@ -427,18 +432,18 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
   stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true); /* P11 = EN_5V */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true);  /* P10 = EN_3V3 */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true);  /* P11 = EN_5V */
   stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
   stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
   stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
-  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true);  /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   pwr_source_init();
   pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
-  hmi_task_init();       /* HMI display: init state only  */
-  hmi_task_enter_mode(); /* Route UART to HMI, init display */
+  hmi_task_init();          /* HMI display: init state only  */
+  hmi_task_enter_mode();    /* Route UART to HMI, init display */
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 
@@ -462,35 +467,43 @@ void app_main(void) {
 
   internet_connect_start(current_internet_type);
 
-  /* Wait until the internet link is UP and time is synced before starting
-   * server connections. This prevents MQTT/CoAP/HTTP from trying to resolve
-   * hostnames before the network interface (and DNS) is ready.
-   * Timeout: 90 s — LTE modem hardware init alone can take 35 s before PPP
-   * even begins negotiation. 40 s was too short for slow modem enumeration.
-   * After timeout, servers start anyway; MQTT/CoAP/HTTP have built-in retry. */
+  /* Wait until the internet link is UP and time is synced before starting */
   {
-    const int timeout_s = 90;
-    ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...", timeout_s);
+    const int timeout_s = 30;
+    ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...",
+             timeout_s);
     for (int waited = 0; waited < timeout_s; waited++) {
       bool synced = false;
       switch (current_internet_type) {
-        case CONFIG_INTERNET_LTE:      synced = lte_is_sntp_synced();  break;
-        case CONFIG_INTERNET_WIFI:     synced = wifi_is_sntp_synced(); break;
-        case CONFIG_INTERNET_ETHERNET: synced = eth_is_sntp_synced();  break;
-        default:                       synced = true;                  break;
+      case CONFIG_INTERNET_LTE:
+        synced = lte_is_sntp_synced();
+        break;
+      case CONFIG_INTERNET_WIFI:
+        synced = wifi_is_sntp_synced();
+        break;
+      case CONFIG_INTERNET_ETHERNET:
+        synced = eth_is_sntp_synced();
+        break;
+      default:
+        synced = true;
+        break;
       }
       if (is_internet_connected && synced) {
-        ESP_LOGI(TAG, "Internet connected and time synced after %d s — starting servers", waited);
+        ESP_LOGI(
+            TAG,
+            "Internet connected and time synced after %d s — starting servers",
+            waited);
         break;
       }
       if (waited == timeout_s - 1) {
-        ESP_LOGW(TAG, "Timed out waiting for connection/time sync — starting servers anyway");
+        ESP_LOGW(TAG, "Timed out waiting for connection/time sync — starting "
+                      "servers anyway");
       }
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
   }
 
-  internet_monitor_task_start();    /* start fallback monitor if enabled */
+  internet_monitor_task_start(); /* start fallback monitor if enabled */
 
   /* Start web config portal BEFORE protocol handlers — httpd needs to
    * allocate its task stack from internal RAM, which is more constrained
@@ -521,13 +534,20 @@ void app_main(void) {
     if (notif == NOTIFY_GPIO3_PRESS) {
       battery_source_enabled = !battery_source_enabled;
       pwr_source_set_battery_enable(battery_source_enabled);
-      ESP_LOGI(TAG, "Battery source -> %s", battery_source_enabled ? "ENABLED" : "DISABLED");
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_10, battery_source_enabled); /* P10 = EN_3V3 */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_11, battery_source_enabled); /* P11 = EN_5V */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_12, !battery_source_enabled); /* P12 = RLED off */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_13, !battery_source_enabled); /* P13 = GLED off */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_14, !battery_source_enabled); /* P14 = BLED off */
-      stack_handler_gpio_write(1, STACK_GPIO_PIN_04, battery_source_enabled); /* ADAPTER POWER*/
+      ESP_LOGI(TAG, "Battery source -> %s",
+               battery_source_enabled ? "ENABLED" : "DISABLED");
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_10,
+                               battery_source_enabled); /* P10 = EN_3V3 */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_11,
+                               battery_source_enabled); /* P11 = EN_5V */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_12,
+                               !battery_source_enabled); /* P12 = RLED off */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_13,
+                               !battery_source_enabled); /* P13 = GLED off */
+      stack_handler_gpio_write(0, STACK_GPIO_PIN_14,
+                               !battery_source_enabled); /* P14 = BLED off */
+      stack_handler_gpio_write(1, STACK_GPIO_PIN_04,
+                               battery_source_enabled); /* ADAPTER POWER*/
     }
 
     /* UART command — CONFIG or NORMAL */

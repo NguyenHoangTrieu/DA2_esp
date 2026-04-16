@@ -224,7 +224,34 @@ static void internet_monitor_task(void *arg) {
                 for (int i = 0; i < (INTERNET_MONITOR_RESTORE_DELAY_MS / 1000) && s_monitor_running; i++) {
                     vTaskDelay(pdMS_TO_TICKS(1000));
                 }
-                bool primary_ok = internet_monitor_check_connectivity();
+                bool primary_ok = false;
+                bool primary_connected = false;
+
+                switch (g_internet_type) {
+                case CONFIG_INTERNET_WIFI:
+                    primary_connected = (wifi_get_connection_status() != 0);
+                    break;
+                case CONFIG_INTERNET_LTE: {
+                    extern bool lte_is_sntp_synced(void);
+                    primary_connected = lte_is_sntp_synced();
+                    break;
+                }
+                case CONFIG_INTERNET_ETHERNET: {
+                    extern bool eth_is_sntp_synced(void); // Wait, eth_is_connected probably
+                    extern bool eth_is_connected(void);
+                    primary_connected = eth_is_connected();
+                    break;
+                }
+                default: 
+                    break;
+                }
+
+                if (primary_connected) {
+                    primary_ok = internet_monitor_check_connectivity();
+                } else {
+                    ESP_LOGW(TAG, "Primary interface not connected yet");
+                }
+
                 if (primary_ok) {
                     ESP_LOGI(TAG, "Primary restored — switching off fallback");
                     stop_connection(g_internet_fallback_type);

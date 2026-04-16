@@ -4,12 +4,13 @@
 
 #include "uart_handler.h"
 #include "config_handler.h"
+#include "esp_log.h"
 #include "lte_connect.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
 #include "wifi_connect.h"
-#include "esp_log.h"
 #include <string.h>
+
 
 #define DEFAULT_UART_PORT_NUM UART_NUM_0
 #define DEFAULT_UART_BAUD_RATE 115200
@@ -132,18 +133,20 @@ static void handle_cfsc_command(void) {
   uart_println("[WAN_CONFIG]");
 
   // Internet type
-  const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI)     ? "WIFI"
-                              : (g_internet_type == CONFIG_INTERNET_LTE)      ? "LTE"
-                              : (g_internet_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
-                              : "UNKNOWN";
+  const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI) ? "WIFI"
+                              : (g_internet_type == CONFIG_INTERNET_LTE) ? "LTE"
+                              : (g_internet_type == CONFIG_INTERNET_ETHERNET)
+                                  ? "ETHERNET"
+                                  : "UNKNOWN";
   uart_send_kv("internet_type", inet_type_str);
 
   /* Fallback settings */
   uart_send_kv("internet_fallback", g_internet_fallback ? "1" : "0");
-  const char *fb_type_str = (g_internet_fallback_type == CONFIG_INTERNET_WIFI)     ? "WIFI"
-                           : (g_internet_fallback_type == CONFIG_INTERNET_LTE)      ? "LTE"
-                           : (g_internet_fallback_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
-                           : "UNKNOWN";
+  const char *fb_type_str =
+      (g_internet_fallback_type == CONFIG_INTERNET_WIFI)       ? "WIFI"
+      : (g_internet_fallback_type == CONFIG_INTERNET_LTE)      ? "LTE"
+      : (g_internet_fallback_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
+                                                               : "UNKNOWN";
   uart_send_kv("internet_fallback_type", fb_type_str);
 
   // WiFi settings - thread-safe read
@@ -185,10 +188,11 @@ static void handle_cfsc_command(void) {
   }
 
   // Server settings
-  const char *srv_type_str = (g_server_type == CONFIG_SERVERTYPE_MQTT) ? "MQTT"
-                             : (g_server_type == CONFIG_SERVERTYPE_COAP) ? "COAP"
-                             : (g_server_type == CONFIG_SERVERTYPE_HTTP) ? "HTTP"
-                             : "UNKNOWN";
+  const char *srv_type_str =
+      (g_server_type == CONFIG_SERVERTYPE_MQTT)   ? "MQTT"
+      : (g_server_type == CONFIG_SERVERTYPE_COAP) ? "COAP"
+      : (g_server_type == CONFIG_SERVERTYPE_HTTP) ? "HTTP"
+                                                  : "UNKNOWN";
   uart_send_kv("server_type", srv_type_str);
 
   // MQTT settings - thread-safe read
@@ -207,24 +211,25 @@ static void handle_cfsc_command(void) {
   }
 
   // HTTP settings (plain global — only written by config_handler task)
-  uart_send_kv("http_url",           g_http_cfg.server_url);
+  uart_send_kv("http_url", g_http_cfg.server_url);
   uart_send_kv("http_auth_token",
                strlen(g_http_cfg.auth_token) > 0 ? "***HIDDEN***" : "");
-  uart_send_kv_int("http_port",      g_http_cfg.port);
-  uart_send_kv_int("http_use_tls",   g_http_cfg.use_tls ? 1 : 0);
+  uart_send_kv_int("http_port", g_http_cfg.port);
+  uart_send_kv_int("http_use_tls", g_http_cfg.use_tls ? 1 : 0);
   uart_send_kv_int("http_verify_server", g_http_cfg.verify_server ? 1 : 0);
   uart_send_kv_ulong("http_timeout_ms", g_http_cfg.timeout_ms);
 
   // CoAP settings (plain global — only written by config_handler task)
-  uart_send_kv("coap_host",          g_coap_cfg.host);
+  uart_send_kv("coap_host", g_coap_cfg.host);
   uart_send_kv("coap_resource_path", g_coap_cfg.resource_path);
   uart_send_kv("coap_device_token",
                strlen(g_coap_cfg.device_token) > 0 ? "***HIDDEN***" : "");
-  uart_send_kv_int("coap_port",      g_coap_cfg.port);
-  uart_send_kv_int("coap_use_dtls",  g_coap_cfg.use_dtls ? 1 : 0);
+  uart_send_kv_int("coap_port", g_coap_cfg.port);
+  uart_send_kv_int("coap_use_dtls", g_coap_cfg.use_dtls ? 1 : 0);
   uart_send_kv_ulong("coap_ack_timeout_ms", g_coap_cfg.ack_timeout_ms);
   uart_send_kv_int("coap_max_retransmit", g_coap_cfg.max_retransmit);
-  uart_send_kv_ulong("coap_rpc_poll_interval_ms", g_coap_cfg.rpc_poll_interval_ms);
+  uart_send_kv_ulong("coap_rpc_poll_interval_ms",
+                     g_coap_cfg.rpc_poll_interval_ms);
 
   // WAN hardware stack ID (identifies which LTE adapter is connected)
   uart_send_kv("stack_wan_id", config_get_wan_stack_id());
@@ -238,7 +243,7 @@ static void handle_cfsc_command(void) {
   uint16_t lan_config_len = 0;
 
   esp_err_t ret = mcu_lan_handler_request_config_async(
-    lan_config_buffer, &lan_config_len, sizeof(lan_config_buffer), 3000);
+      lan_config_buffer, &lan_config_len, sizeof(lan_config_buffer), 3000);
 
   if (ret == ESP_OK && lan_config_len > 0) {
     // Parse LAN config: format is "key=value|key=value|key=value"
@@ -322,77 +327,79 @@ static int check_mode_command(const char *data, int len) {
  * @brief Process one complete (newline-terminated) UART command line.
  *        line must be null-terminated and already trimmed of \r/\n.
  */
-static void process_uart_line(char *line, int line_len)
-{
-    ESP_LOGI(TAG, "Processing line: %s (len=%d)", line, line_len);
+static void process_uart_line(char *line, int line_len) {
+  ESP_LOGI(TAG, "Processing line: %s (len=%d)", line, line_len);
 
-    // Mode switch commands (CONFIG / NORMAL)
-    int mode_cmd = check_mode_command(line, line_len);
-    if (mode_cmd != -1) {
-        ESP_LOGI(TAG, "Mode switch: %s", line);
-        if (s_mode_switch_callback) {
-            s_mode_switch_callback(mode_cmd);
-        }
-        uart_println(mode_cmd == 0 ? "OK:CONFIG_MODE" : "OK:NORMAL_MODE");
-        return;
+  // Mode switch commands (CONFIG / NORMAL)
+  int mode_cmd = check_mode_command(line, line_len);
+  if (mode_cmd != -1) {
+    ESP_LOGI(TAG, "Mode switch: %s", line);
+    if (s_mode_switch_callback) {
+      s_mode_switch_callback(mode_cmd);
+    }
+    uart_println(mode_cmd == 0 ? "OK:CONFIG_MODE" : "OK:NORMAL_MODE");
+    return;
+  }
+
+  // CFSC — config scan
+  if (strncasecmp(line, "CFSC", 4) == 0) {
+    handle_cfsc_command();
+    return;
+  }
+
+  // All other config commands start with "CF"
+  if (line_len >= 2 && line[0] == 'C' && line[1] == 'F') {
+    if (line_len <= 2)
+      return; // bare "CF" with no payload
+
+    const char *cmd_data = line + 2;
+    int cmd_len = line_len - 2;
+
+    if (cmd_len > (UART_BUF_SIZE - 2)) {
+      ESP_LOGE(TAG, "Config too large: %d bytes", cmd_len);
+      uart_println("ERROR:CONFIG_TOO_LARGE");
+      return;
     }
 
-    // CFSC — config scan
-    if (strncasecmp(line, "CFSC", 4) == 0) {
-        handle_cfsc_command();
-        return;
+    config_type_t type = config_parse_type(cmd_data, cmd_len);
+    if (type == CONFIG_TYPE_UNKNOWN) {
+      ESP_LOGW(TAG, "Unknown command type for: %s", cmd_data);
+      uart_println("ERROR:UNKNOWN_CMD");
+      return;
     }
 
-    // All other config commands start with "CF"
-    if (line_len >= 2 && line[0] == 'C' && line[1] == 'F') {
-        if (line_len <= 2) return; // bare "CF" with no payload
+    config_command_t *cmd =
+        (config_command_t *)malloc(sizeof(config_command_t));
+    if (cmd == NULL) {
+      ESP_LOGE(TAG, "Failed to allocate config command buffer");
+      uart_println("ERROR:OUT_OF_MEMORY");
+      return;
+    }
 
-        const char *cmd_data = line + 2;
-        int cmd_len = line_len - 2;
+    cmd->type = type;
+    cmd->data_len = cmd_len;
+    cmd->source = CMD_SOURCE_UART;
+    memcpy(cmd->raw_data, cmd_data, cmd_len);
+    cmd->raw_data[cmd_len] = '\0';
 
-        if (cmd_len > (UART_BUF_SIZE - 2)) {
-            ESP_LOGE(TAG, "Config too large: %d bytes", cmd_len);
-            uart_println("ERROR:CONFIG_TOO_LARGE");
-            return;
-        }
-
-        config_type_t type = config_parse_type(cmd_data, cmd_len);
-        if (type == CONFIG_TYPE_UNKNOWN) {
-            ESP_LOGW(TAG, "Unknown command type for: %s", cmd_data);
-            uart_println("ERROR:UNKNOWN_CMD");
-            return;
-        }
-
-        config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
-        if (cmd == NULL) {
-            ESP_LOGE(TAG, "Failed to allocate config command buffer");
-            uart_println("ERROR:OUT_OF_MEMORY");
-            return;
-        }
-
-        cmd->type     = type;
-        cmd->data_len = cmd_len;
-        cmd->source   = CMD_SOURCE_UART;
-        memcpy(cmd->raw_data, cmd_data, cmd_len);
-        cmd->raw_data[cmd_len] = '\0';
-
-        if (g_config_handler_queue) {
-            if (xQueueSend(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
-                ESP_LOGI(TAG, "Command forwarded to config handler");
-                uart_println("OK:CMD_QUEUED");
-            } else {
-                ESP_LOGW(TAG, "Config queue full");
-                uart_println("ERROR:QUEUE_FULL");
-                free(cmd);
-            }
-        } else {
-            uart_println("ERROR:NO_HANDLER");
-            free(cmd);
-        }
+    if (g_config_handler_queue) {
+      if (xQueueSend(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) ==
+          pdTRUE) {
+        ESP_LOGI(TAG, "Command forwarded to config handler");
+        uart_println("OK:CMD_QUEUED");
+      } else {
+        ESP_LOGW(TAG, "Config queue full");
+        uart_println("ERROR:QUEUE_FULL");
+        free(cmd);
+      }
     } else {
-        uart_println("ERROR:INVALID_CMD");
-        ESP_LOGD(TAG, "Invalid command: %s", line);
+      uart_println("ERROR:NO_HANDLER");
+      free(cmd);
     }
+  } else {
+    uart_println("ERROR:INVALID_CMD");
+    ESP_LOGD(TAG, "Invalid command: %s", line);
+  }
 }
 
 /**
@@ -407,7 +414,8 @@ static void uart_handler_task(void *arg) {
   // Raw receive buffer
   uint8_t *data = (uint8_t *)malloc(UART_BUF_SIZE);
   if (data == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate UART rx buffer (%d bytes)", UART_BUF_SIZE);
+    ESP_LOGE(TAG, "Failed to allocate UART rx buffer (%d bytes)",
+             UART_BUF_SIZE);
     vTaskDelete(NULL);
     return;
   }
@@ -415,7 +423,8 @@ static void uart_handler_task(void *arg) {
   // Line-assembly buffer — accumulates bytes until '\n'
   char *line_buf = (char *)malloc(UART_BUF_SIZE);
   if (line_buf == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate UART line buffer (%d bytes)", UART_BUF_SIZE);
+    ESP_LOGE(TAG, "Failed to allocate UART line buffer (%d bytes)",
+             UART_BUF_SIZE);
     free(data);
     vTaskDelete(NULL);
     return;
@@ -433,7 +442,8 @@ static void uart_handler_task(void *arg) {
     int len = uart_read_bytes(DEFAULT_UART_PORT_NUM, data, UART_BUF_SIZE - 1,
                               pdMS_TO_TICKS(100));
 
-    if (len <= 0) continue;
+    if (len <= 0)
+      continue;
 
     // Feed each received byte into the line assembler
     for (int i = 0; i < len; i++) {
@@ -442,8 +452,8 @@ static void uart_handler_task(void *arg) {
       if (c == '\n') {
         // End of line — null-terminate and trim trailing '\r' / spaces
         line_buf[line_len] = '\0';
-        while (line_len > 0 &&
-               (line_buf[line_len - 1] == '\r' || line_buf[line_len - 1] == ' ')) {
+        while (line_len > 0 && (line_buf[line_len - 1] == '\r' ||
+                                line_buf[line_len - 1] == ' ')) {
           line_buf[--line_len] = '\0';
         }
 
@@ -459,7 +469,8 @@ static void uart_handler_task(void *arg) {
         if (line_len < UART_BUF_SIZE - 1) {
           line_buf[line_len++] = c;
         } else {
-          ESP_LOGE(TAG, "UART line buffer overflow, discarding %d bytes", line_len);
+          ESP_LOGE(TAG, "UART line buffer overflow, discarding %d bytes",
+                   line_len);
           uart_println("ERROR:CMD_TOO_LARGE");
           line_len = 0;
         }

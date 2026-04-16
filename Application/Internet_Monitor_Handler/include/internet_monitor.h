@@ -24,14 +24,14 @@
 /** Check interval between connectivity probes (ms) */
 #define INTERNET_MONITOR_CHECK_INTERVAL_MS  10000
 /** Initial delay before first probe — allows primary to establish (ms) */
-#define INTERNET_MONITOR_INITIAL_DELAY_MS   20000
+#define INTERNET_MONITOR_INITIAL_DELAY_MS   5000
 /** Settle time after switching to fallback before first probe (ms)
  *  Fallback (e.g. LTE) needs time for modem startup + PPP before probing */
-#define INTERNET_MONITOR_FALLBACK_SETTLE_MS 90000
+#define INTERNET_MONITOR_FALLBACK_SETTLE_MS 60000
 /** Number of consecutive failures before switching to fallback */
 #define INTERNET_MONITOR_FAIL_THRESHOLD     3
 /** Consecutive successes on fallback before attempting primary restore */
-#define INTERNET_MONITOR_RECOVER_THRESHOLD  12  /* 12 × 10 s = 2 min */
+#define INTERNET_MONITOR_RECOVER_THRESHOLD  6  /* 12 × 10 s = 2 min */
 /** TCP probe target: Google Public DNS */
 #define INTERNET_MONITOR_PROBE_HOST         "8.8.4.4"
 #define INTERNET_MONITOR_PROBE_PORT         53
@@ -41,7 +41,7 @@
 /** TCP connect timeout per probe attempt (s) */
 #define INTERNET_MONITOR_PROBE_TIMEOUT_S    2
 /** Delay given to primary to re-establish when retrying from fallback (ms) */
-#define INTERNET_MONITOR_RESTORE_DELAY_MS   60000
+#define INTERNET_MONITOR_RESTORE_DELAY_MS   20000
 
 /**
  * @brief Start the internet monitor task.

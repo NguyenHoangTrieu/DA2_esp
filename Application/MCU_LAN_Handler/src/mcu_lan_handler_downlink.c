@@ -45,7 +45,7 @@ typedef struct {
   uint32_t config_length;
   bool has_config;
   bool is_fota;
-  command_source_t source;  // Track command source for ACK routing
+  command_source_t source; // Track command source for ACK routing
 } config_cache_t;
 
 // ===== Config Request Async Structure =====
@@ -65,7 +65,7 @@ static QueueHandle_t g_downlink_queue = NULL;
 SemaphoreHandle_t g_config_mutex = NULL;
 static config_cache_t g_config_cache = {0};
 bool g_config_cache_has_config = false; // Exposed to uplink
-bool g_fota_request_pending = false; // Exposed to uplink
+bool g_fota_request_pending = false;    // Exposed to uplink
 
 // Pending downlink (accessed by uplink task)
 extern downlink_item_t g_pending_downlink;
@@ -390,8 +390,9 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
       g_fota_request_pending = true;
     }
 
-    const char *src_str = (source == CMD_SOURCE_UART) ? "UART" :
-                          (source == CMD_SOURCE_USB)  ? "USB"  : "SERVER";
+    const char *src_str = (source == CMD_SOURCE_UART)  ? "UART"
+                          : (source == CMD_SOURCE_USB) ? "USB"
+                                                       : "SERVER";
     ESP_LOGI(TAG, "Config cached: %u bytes, FOTA=%s, source=%s", length,
              is_fota ? "YES" : "NO", src_str);
     signal_data_ready();
@@ -401,7 +402,8 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     } else if (length == 0) {
       ESP_LOGE(TAG, "Config length is 0");
     } else if (length > sizeof(g_config_cache.config_data)) {
-      ESP_LOGE(TAG, "Config too large: %u bytes (max %u)", length, sizeof(g_config_cache.config_data));
+      ESP_LOGE(TAG, "Config too large: %u bytes (max %u)", length,
+               sizeof(g_config_cache.config_data));
     }
   }
 
