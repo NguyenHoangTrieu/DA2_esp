@@ -297,7 +297,7 @@ Then CFIN:WIFI (after 1s) | AUTH_MODE: PERSONAL or ENTERPRISE
 └──────────────────────────────────────────────────────────-┘
 
 ┌─ APN Settings ────────────────────────────────────────────┐
-│  APN:        [v-internet___________________]               │
+│  APN:        [m3-world___________________]               │
 │  Username:   [_________________________________]           │
 │  Password:   [***********************] [☐ Show]          │
 └──────────────────────────────────────────────────────────-┘
@@ -317,7 +317,7 @@ Then CFIN:WIFI (after 1s) | AUTH_MODE: PERSONAL or ENTERPRISE
 
 ──────────────────────────────────────────────────────────
 Cmd: CFLT:MODEM:APN:USER:PASS:COMM:AUTO:TIMEOUT_MS:MAX_RETRY:PWR_PIN:RST_PIN
-Example: CFLT:A7600C1:v-internet:::USB:true:30000:0:WK:PE
+Example: CFLT:A7600C1:m3-world:::USB:true:30000:0:WK:PE
 ```
 
 | Field | Widget | Values / Default |

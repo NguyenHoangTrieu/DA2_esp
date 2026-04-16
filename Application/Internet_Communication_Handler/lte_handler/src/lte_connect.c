@@ -14,14 +14,16 @@
 #include "pcf8563_rtc.h"
 #include "usbh_modem_board.h"
 #include "stack_handler.h"
+#include "lwip/dns.h"
+#include "lwip/ip_addr.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
 /* ==================== Default Configuration ==================== */
-/* Default APN for Vietnamobile (v-internet).
+/* Default APN for Vietnamobile (m3-world).
  * The LTE task will start with this APN unless config_handler overrides it. */
-#define LTE_DEFAULT_APN  "v-internet"
+#define LTE_DEFAULT_APN  "m3-world"
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
@@ -31,7 +33,7 @@ static bool g_lte_sntp_started = false;
 /* ==================== LTE Config Context ==================== */
 lte_config_context_t g_lte_ctx = {
     .modem_name              = "",
-    .apn                     = LTE_DEFAULT_APN,  /* Default Vietnamobile v-internet */
+    .apn                     = LTE_DEFAULT_APN,  /* Default Vietnamobile m3-world */
     .username                = "",
     .password                = "",
     .max_reconnect_attempts  = 0,     /* 0 = infinite once configured      */
@@ -115,7 +117,7 @@ static void lte_init_sntp_once(void) {
 
   ESP_LOGI(TAG, "Initializing SNTP (LTE)");
 
-  // TZ VN
+  /* TZ VN */
   setenv("TZ", "ICT-7", 1);
   tzset();
 
@@ -128,7 +130,11 @@ static void lte_init_sntp_once(void) {
   esp_sntp_setservername(2, "pool.ntp.org");   /* hostname fallback */
 
   esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
+  /* Set timeout so SNTP doesn't block indefinitely. After 30 s of retries,
+   * SNTP will give up and periodic retries will continue in background.
+   * This prevents the boot from hanging if NTP is unreachable.           */
   esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+  sntp_set_sync_interval(30 * 1000);  /* Start periodic retry after 30 s */
 
   esp_sntp_init();
   g_lte_sntp_started = true;
@@ -196,6 +202,18 @@ static void lte_task(void *arg) {
           is_internet_connected = true;
           lte_init_sntp_once();
           reconnect_count = 0; // Reset on successful connection
+
+          /* Re-apply public DNS on every monitoring cycle while connected.
+           * The PPP stack or lte_handler_init() may re-apply carrier DNS
+           * during connection setup. Periodic re-application ensures
+           * getaddrinfo() always uses 8.8.8.8 rather than the carrier
+           * DNS that returns SERVFAIL for external hostnames (EAI_FAIL 202). */
+          ip_addr_t dns_a;
+          IP4_ADDR(&dns_a.u_addr.ip4, 8, 8, 8, 8);
+          dns_a.type = IPADDR_TYPE_V4;
+          dns_setserver(0, &dns_a);
+          IP4_ADDR(&dns_a.u_addr.ip4, 1, 1, 1, 1);
+          dns_setserver(1, &dns_a);
         } else {
           // Active recovery
           ESP_LOGW(TAG, "Not connected - State: %d", lte_handler_get_state());

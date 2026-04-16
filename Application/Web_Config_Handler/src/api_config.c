@@ -271,10 +271,10 @@ static esp_err_t build_lte_cmd(const cJSON *obj)
     const cJSON *modem = cJSON_GetObjectItem(obj, "modem_name");
     const cJSON *apn   = cJSON_GetObjectItem(obj, "apn");
     
-    /* Use default APN (Vietnamobile v-internet) if not provided or empty */
+    /* Use default APN (Vietnamobile m3-world) if not provided or empty */
     const char *apn_str = (apn && cJSON_IsString(apn) && apn->valuestring[0] != '\0')
                           ? apn->valuestring
-                          : "v-internet";
+                          : "m3-world";
 
     const char *mn = cJSON_IsString(modem) ? modem->valuestring : "A7600C1";
     const char *us = "", *pw = "";

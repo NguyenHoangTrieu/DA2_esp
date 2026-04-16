@@ -176,6 +176,30 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "Netmask : " IPSTR, IP2STR(&event->ip_info.netmask));
     ESP_LOGI(TAG, "Gateway : " IPSTR, IP2STR(&event->ip_info.gw));
 
+    /* CRITICAL: Override DNS using dns_setserver() directly — not via
+     * esp_netif_set_dns_info(), which only updates the global lwIP DNS table
+     * when esp_netif_is_netif_up() is true. During IP_EVENT_PPP_GOT_IP the
+     * netif may not yet be marked "up", so esp_netif_set_dns_info() silently
+     * stores the value in the netif struct but never calls dns_setserver().
+     * Direct dns_setserver() always updates the table used by getaddrinfo(). */
+    ip_addr_t dns_addr;
+    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
+    dns_addr.type = IPADDR_TYPE_V4;
+    dns_setserver(0, &dns_addr);
+    ESP_LOGI(TAG, "Main DNS set to 8.8.8.8");
+
+    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
+    dns_setserver(1, &dns_addr);
+    ESP_LOGI(TAG, "Backup DNS set to 1.1.1.1");
+
+    /* Also update esp_netif DNS cache so info is consistent */
+    esp_netif_dns_info_t pub_dns;
+    pub_dns.ip.type = ESP_IPADDR_TYPE_V4;
+    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
+    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &pub_dns);
+    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("1.1.1.1");
+    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &pub_dns);
+
     if (ctx) {
       snprintf(ctx->network_info.ip, sizeof(ctx->network_info.ip), IPSTR,
                IP2STR(&event->ip_info.ip));
@@ -194,23 +218,6 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
 
       ctx->network_info_valid = true;
       set_state(LTE_STATE_CONNECTED);
-
-      /* Override both DNS slots with reliable public resolvers.
-       * lwIP does NOT fall back to the backup server when the primary
-       * returns SERVFAIL (EAI_FAIL / error 202) — it fails immediately.
-       * The carrier DNS (e.g. 10.202.116.254 on Vietnamobile) intermittently
-       * returns SERVFAIL for external hostnames, so we put 8.8.8.8 in the
-       * primary slot and 1.1.1.1 as backup.                               */
-      esp_netif_dns_info_t pub_dns;
-      pub_dns.ip.type = ESP_IPADDR_TYPE_V4;
-      pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
-      if (esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &pub_dns) == ESP_OK) {
-        ESP_LOGI(TAG, "Main DNS overridden to 8.8.8.8");
-      }
-      pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("1.1.1.1");
-      if (esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &pub_dns) == ESP_OK) {
-        ESP_LOGI(TAG, "Backup DNS overridden to 1.1.1.1");
-      }
 
       if (ctx->event_group) {
         xEventGroupSetBits(ctx->event_group, CONNECT_BIT);
@@ -231,6 +238,20 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
 static void on_ppp_changed(void *arg, esp_event_base_t event_base,
                            int32_t event_id, void *event_data) {
   ESP_LOGI(TAG, "PPP state changed: %d", event_id);
+
+  /* NETIF_PPP_ERRORNONE (event_id == 0) fires AFTER the PPP stack finishes
+   * IPCP negotiation and may re-apply the carrier's DNS servers (overwriting
+   * our dns_setserver() from on_ip_event). Re-apply 8.8.8.8 here to ensure
+   * public DNS is always the final value written to the lwIP DNS table.  */
+  if (event_id == 0) {
+    ip_addr_t dns_addr;
+    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
+    dns_addr.type = IPADDR_TYPE_V4;
+    dns_setserver(0, &dns_addr);
+    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
+    dns_setserver(1, &dns_addr);
+    ESP_LOGI(TAG, "DNS re-confirmed after PPP ready: 8.8.8.8 / 1.1.1.1");
+  }
 }
 
 /**

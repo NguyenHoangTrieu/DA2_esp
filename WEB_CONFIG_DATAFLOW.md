@@ -71,7 +71,7 @@ WAN MCU → App:
   wifi_password=***HIDDEN***
   wifi_username=
   wifi_auth_mode=0
-  lte_apn=v-internet
+  lte_apn=m3-world
   lte_username=
   lte_password=***HIDDEN***
   lte_comm_type=USB
@@ -141,7 +141,7 @@ Wire format:
   CFLT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT_MS:MAX_RECONNECT:PWR_PIN:RST_PIN
 
 Example:
-  CFLT:A7600C1:v-internet:user:pass:USB:true:30000:0:WK:PE
+  CFLT:A7600C1:m3-world:user:pass:USB:true:30000:0:WK:PE
 
 Parsed by: config_parse_lte()  (config_handler.c)
 Stored in: g_lte_ctx  (lte_connect.c)

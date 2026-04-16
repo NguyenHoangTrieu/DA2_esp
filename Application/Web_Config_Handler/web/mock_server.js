@@ -23,7 +23,7 @@ let state = {
   lte: {
     modem_name: 'A7600C1',
     comm_type: 0,
-    apn: 'v-internet',
+    apn: 'm3-world',
     username: '',
     password: '',
     auto_reconnect: true,

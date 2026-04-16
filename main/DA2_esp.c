@@ -317,13 +317,29 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
 
   ESP_LOGI(TAG, "==> Entering CONFIG mode");
 
-  /* Stop Ethernet driver before entering CONFIG mode */
-  if (*internet_type == CONFIG_INTERNET_ETHERNET) {
-    ESP_LOGI(TAG, "Stopping Ethernet task before CONFIG mode");
-    eth_connect_task_stop();
+  /* IMPORTANT: Stop all running server handlers and the active internet
+   * connection BEFORE starting WiFi AP. The WiFi driver needs ~80 KB of
+   * internal RAM for its init. After LTE PPP + MQTT are running this RAM
+   * is exhausted, causing esp_wifi_init() to return ESP_ERR_NO_MEM and
+   * the ESP_ERROR_CHECK to abort/crash.                                  */
+  server_connect_stop(g_server_type);
+  ESP_LOGI(TAG, "CONFIG mode: server stopped");
+
+  switch (*internet_type) {
+    case CONFIG_INTERNET_LTE:
+      lte_connect_task_stop();
+      ESP_LOGI(TAG, "CONFIG mode: LTE stopped");
+      break;
+    case CONFIG_INTERNET_ETHERNET:
+      eth_connect_task_stop();
+      ESP_LOGI(TAG, "CONFIG mode: Ethernet stopped");
+      break;
+    default:
+      break;
   }
 
-  vTaskDelay(pdMS_TO_TICKS(100));
+  /* Give TCP/IP stack time to release PPP buffers and close sockets */
+  vTaskDelay(pdMS_TO_TICKS(500));
 
   /* Start WiFi AP + web portal + captive DNS for browser-based config
    * Connect to SSID "DA2-Gateway-Config" (pass: datn1234) then open
@@ -448,11 +464,12 @@ void app_main(void) {
 
   /* Wait until the internet link is UP and time is synced before starting
    * server connections. This prevents MQTT/CoAP/HTTP from trying to resolve
-   * hostnames before the network interface (and DNS) is ready — especially
-   * critical for LTE which needs 30-40 s to complete PPP + SNTP sync.
-   * Timeout: 2 minutes; after that, servers start anyway (best-effort). */
+   * hostnames before the network interface (and DNS) is ready.
+   * Timeout: 90 s — LTE modem hardware init alone can take 35 s before PPP
+   * even begins negotiation. 40 s was too short for slow modem enumeration.
+   * After timeout, servers start anyway; MQTT/CoAP/HTTP have built-in retry. */
   {
-    const int timeout_s = 120;
+    const int timeout_s = 90;
     ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...", timeout_s);
     for (int waited = 0; waited < timeout_s; waited++) {
       bool synced = false;

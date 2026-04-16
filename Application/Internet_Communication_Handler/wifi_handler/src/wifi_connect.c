@@ -518,9 +518,19 @@ void wifi_ap_start(void)
         s_ap_netif = esp_netif_create_default_wifi_ap();
     }
 
-    /* Fresh WiFi stack init */
+    /* Fresh WiFi stack init with reduced buffer counts to lower peak
+     * internal-RAM usage. Default values (rx=10, dyn_rx=32, dyn_tx=32)
+     * can consume ~80 KB; reducing them allows init after LTE teardown. */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    cfg.static_rx_buf_num  = 4;   /* default 10 */
+    cfg.dynamic_rx_buf_num = 8;   /* default 32 */
+    cfg.dynamic_tx_buf_num = 8;   /* default 32 */
+    esp_err_t wifi_init_err = esp_wifi_init(&cfg);
+    if (wifi_init_err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_init failed: %s — CONFIG AP not available",
+                 esp_err_to_name(wifi_init_err));
+        return;
+    }
 
     wifi_config_t ap_config = {
         .ap = {

@@ -370,7 +370,7 @@ static esp_err_t config_parse_wifi(const char *data, uint16_t len, wifi_config_d
 /**
  * @brief Parse LTE configuration from command string
  * Format: "LT:MODEM_NAME:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
- * Example: "LT:A7600C1:v-internet:user:pass:USB:true:30000:0:05:06"
+ * Example: "LT:A7600C1:m3-world:user:pass:USB:true:30000:0:05:06"
  * Note: USERNAME and PASSWORD can be empty (consecutive colons allowed).
  *       PWR_PIN / RST_PIN are TCA port-pin labels: "04"–"07" (P04–P07, port 0)
  *       or "11"–"17" (P11–P17, port 1). Index = port*8 + bit.
