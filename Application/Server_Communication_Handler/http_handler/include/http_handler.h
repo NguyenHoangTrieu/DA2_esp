@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 // Publish queue item
 // ---------------------------------------------------------------------------
-#define HTTP_PUBLISH_DATA_MAX_LEN 2048
+#define HTTP_PUBLISH_DATA_MAX_LEN 512
 
 typedef struct {
     uint8_t data[HTTP_PUBLISH_DATA_MAX_LEN];

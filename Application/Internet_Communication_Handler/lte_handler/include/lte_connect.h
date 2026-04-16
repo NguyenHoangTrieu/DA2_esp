@@ -41,4 +41,9 @@ void lte_connect_task_start(void);
  */
 void lte_connect_task_stop(void);
 
+/**
+ * @brief Returns true after the first successful SNTP synchronisation over LTE.
+ */
+bool lte_is_sntp_synced(void);
+
 #endif /* LTE_CONNECT_H */

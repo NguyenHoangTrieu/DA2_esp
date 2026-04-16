@@ -120,9 +120,12 @@ static void lte_init_sntp_once(void) {
   tzset();
 
   esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-  esp_sntp_setservername(0, "pool.ntp.org");
-  esp_sntp_setservername(1, "time.google.com");
-  esp_sntp_setservername(2, "time.cloudflare.com");
+  /* Use hardcoded IP addresses so SNTP never needs DNS resolution.
+   * If the carrier DNS is slow/unreliable, hostname-based servers put
+   * SNTP into its exponential retry loop (15 s → 30 s → …).          */
+  esp_sntp_setservername(0, "216.239.35.0");   /* time1.google.com */
+  esp_sntp_setservername(1, "162.159.200.1");  /* time.cloudflare.com */
+  esp_sntp_setservername(2, "pool.ntp.org");   /* hostname fallback */
 
   esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
   esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);

@@ -41,18 +41,19 @@ char g_stack_id_wan[8] = "000";
 #define MQTT_DEFAULT_KEEPALIVE_S  120
 #define MQTT_DEFAULT_TIMEOUT_MS   10000
 
-/* Default values for HTTP/CoAP */
-#define HTTP_DEFAULT_URL        "http://192.168.1.100:8080/api/v1/{token}/telemetry"
-#define HTTP_DEFAULT_TOKEN      "Zfdvk6M9rEmw5fBj7TzP"
-#define HTTP_DEFAULT_PORT       8080
+/* Default values for HTTP */
+#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io/api/v1/38kozd1weulcnl6ytz8f/telemetry"
+#define HTTP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
+#define HTTP_DEFAULT_PORT       80
 #define HTTP_DEFAULT_TIMEOUT_MS 10000
 
-#define COAP_DEFAULT_HOST       "192.168.1.100"
-#define COAP_DEFAULT_RESOURCE   "/api/v1/{token}/telemetry"
-#define COAP_DEFAULT_TOKEN      "Zfdvk6M9rEmw5fBj7TzP"
-#define COAP_DEFAULT_PORT       5683
-#define COAP_DEFAULT_ACK_TO_MS  2000
-#define COAP_DEFAULT_MAX_RTX    4
+/* Default values for CoAP */
+#define COAP_DEFAULT_HOST        "demo.thingsboard.io"
+#define COAP_DEFAULT_RESOURCE    "api/v1/38kozd1weulcnl6ytz8f/telemetry"
+#define COAP_DEFAULT_TOKEN       "38kozd1weulcnl6ytz8f"
+#define COAP_DEFAULT_PORT        5683
+#define COAP_DEFAULT_ACK_TO_MS   2000
+#define COAP_DEFAULT_MAX_RTX     4
 #define COAP_DEFAULT_RPC_POLL_MS 1500
 
 /* External global variables from your modules */

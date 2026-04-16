@@ -445,13 +445,42 @@ void app_main(void) {
   config_internet_type_t current_internet_type = g_internet_type;
 
   internet_connect_start(current_internet_type);
-  vTaskDelay(pdMS_TO_TICKS(10000)); /* wait for internet link        */
-  internet_monitor_task_start();    /* start fallback monitor if enabled */
-  server_connect_start(g_server_type);
 
-  /* Start web config portal — browser-accessible at http://gateway.local/
-   * (STA: user's browser on same LAN; LTE/Ethernet: binds to that IP)   */
+  /* Wait until the internet link is UP and time is synced before starting
+   * server connections. This prevents MQTT/CoAP/HTTP from trying to resolve
+   * hostnames before the network interface (and DNS) is ready — especially
+   * critical for LTE which needs 30-40 s to complete PPP + SNTP sync.
+   * Timeout: 2 minutes; after that, servers start anyway (best-effort). */
+  {
+    const int timeout_s = 120;
+    ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...", timeout_s);
+    for (int waited = 0; waited < timeout_s; waited++) {
+      bool synced = false;
+      switch (current_internet_type) {
+        case CONFIG_INTERNET_LTE:      synced = lte_is_sntp_synced();  break;
+        case CONFIG_INTERNET_WIFI:     synced = wifi_is_sntp_synced(); break;
+        case CONFIG_INTERNET_ETHERNET: synced = eth_is_sntp_synced();  break;
+        default:                       synced = true;                  break;
+      }
+      if (is_internet_connected && synced) {
+        ESP_LOGI(TAG, "Internet connected and time synced after %d s — starting servers", waited);
+        break;
+      }
+      if (waited == timeout_s - 1) {
+        ESP_LOGW(TAG, "Timed out waiting for connection/time sync — starting servers anyway");
+      }
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
+
+  internet_monitor_task_start();    /* start fallback monitor if enabled */
+
+  /* Start web config portal BEFORE protocol handlers — httpd needs to
+   * allocate its task stack from internal RAM, which is more constrained
+   * once a connected LTE PPP stack + MQTT tasks are running.            */
   web_config_handler_start(WEB_MODE_STA);
+
+  server_connect_start(g_server_type);
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");

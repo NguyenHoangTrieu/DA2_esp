@@ -9,6 +9,7 @@
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
 #include "esp_netif_defaults.h"
+#include "lwip/dns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
@@ -193,6 +194,23 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
 
       ctx->network_info_valid = true;
       set_state(LTE_STATE_CONNECTED);
+
+      /* Override both DNS slots with reliable public resolvers.
+       * lwIP does NOT fall back to the backup server when the primary
+       * returns SERVFAIL (EAI_FAIL / error 202) — it fails immediately.
+       * The carrier DNS (e.g. 10.202.116.254 on Vietnamobile) intermittently
+       * returns SERVFAIL for external hostnames, so we put 8.8.8.8 in the
+       * primary slot and 1.1.1.1 as backup.                               */
+      esp_netif_dns_info_t pub_dns;
+      pub_dns.ip.type = ESP_IPADDR_TYPE_V4;
+      pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
+      if (esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &pub_dns) == ESP_OK) {
+        ESP_LOGI(TAG, "Main DNS overridden to 8.8.8.8");
+      }
+      pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("1.1.1.1");
+      if (esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &pub_dns) == ESP_OK) {
+        ESP_LOGI(TAG, "Backup DNS overridden to 1.1.1.1");
+      }
 
       if (ctx->event_group) {
         xEventGroupSetBits(ctx->event_group, CONNECT_BIT);

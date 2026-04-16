@@ -619,6 +619,10 @@ void http_handler_task_stop(void) {
     s_task_handle = NULL;
     s_polling_running = false;
     s_polling_task_handle = NULL;
+    if (g_http_publish_queue) {
+        vQueueDelete(g_http_publish_queue);
+        g_http_publish_queue = NULL;
+    }
     ESP_LOGI(TAG, "HTTP handler tasks stopped");
 }
 

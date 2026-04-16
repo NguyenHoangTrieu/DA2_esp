@@ -20,7 +20,11 @@
 // ---------------------------------------------------------------------------
 // Publish queue item
 // ---------------------------------------------------------------------------
-#define COAP_PUBLISH_DATA_MAX_LEN 2048
+/* Inline queue item payload. Kept small (512 B) so the full queue
+ * (COAP_QUEUE_SIZE × sizeof(coap_publish_data_t) ≈ 4 KB) can always be
+ * allocated from internal RAM even under heap pressure.  Telemetry JSON
+ * is typically <256 B; 512 B is a safe ceiling.                          */
+#define COAP_PUBLISH_DATA_MAX_LEN 512
 
 typedef struct {
     uint8_t data[COAP_PUBLISH_DATA_MAX_LEN];

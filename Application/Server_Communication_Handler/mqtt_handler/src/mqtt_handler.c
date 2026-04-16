@@ -509,7 +509,7 @@ static void mqtt_reinit(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
-  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 120;
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
   uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
 
   esp_mqtt_client_config_t mqtt_cfg = {
@@ -534,11 +534,11 @@ static void mqtt_reinit(void) {
               .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
-              .reconnect_timeout_ms = 30000, // 30s between retries to reduce log noise
+              .reconnect_timeout_ms = 30000,
           },
       .buffer =
           {
-              .size = 65536, // 64KB
+              .size = 65536,
               .out_size = 65536,
           },
   };
@@ -554,7 +554,6 @@ static void mqtt_reinit(void) {
     ESP_LOGE(TAG, "Failed to reinitialize MQTT client");
   }
 }
-
 /**
  * @brief FreeRTOS task to monitor config queue.
  */
@@ -617,7 +616,7 @@ static void mqtt_config_task(void *arg) {
 void mqtt_handler_task_start(void) {
   mqtt_task_close = false;
 
-  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 120;
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
   uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
 
   esp_mqtt_client_config_t mqtt_cfg = {
@@ -642,7 +641,7 @@ void mqtt_handler_task_start(void) {
               .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
-              .reconnect_timeout_ms = 30000, // 30s between retries to reduce log noise
+              .reconnect_timeout_ms = 30000,
           },
       .buffer =
           {
@@ -693,12 +692,15 @@ void mqtt_handler_task_stop(void) {
     m_client = NULL;
   }
 
-  // Clear queue if exists
+  // Clear and DELETE the queue so its internal-RAM storage is returned to
+  // the heap before the next protocol handler (e.g. CoAP) tries to allocate.
   if (g_mqtt_publish_queue) {
     mqtt_publish_data_t dummy;
     while (xQueueReceive(g_mqtt_publish_queue, &dummy, 0) == pdTRUE) {
       // Drain queue
     }
+    vQueueDelete(g_mqtt_publish_queue);
+    g_mqtt_publish_queue = NULL;
   }
 
   ESP_LOGI(TAG, "MQTT handler stopped");

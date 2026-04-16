@@ -567,6 +567,14 @@ void coap_handler_task_stop(void) {
     s_task_handle = NULL;
     s_polling_running = false;
     s_polling_task_handle = NULL;
+    /* Delete the queue so its internal-RAM storage is returned to the heap.
+     * Without this, the next handler that calls xQueueCreate() may fail even
+     * though total RAM is plentiful, because the old queue still holds the
+     * internal-RAM allocation.                                              */
+    if (g_coap_publish_queue) {
+        vQueueDelete(g_coap_publish_queue);
+        g_coap_publish_queue = NULL;
+    }
     ESP_LOGI(TAG, "CoAP handler tasks stopped");
 }
 
