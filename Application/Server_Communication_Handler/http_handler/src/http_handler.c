@@ -137,6 +137,7 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
         }
     } else {
         ESP_LOGE(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
     }
 
     esp_http_client_cleanup(client);
@@ -278,9 +279,9 @@ static esp_err_t http_poll_rpc(void) {
     int bytes_read = resp_ctx.offset;
 
     int status = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP RPC: status=%d, body_len=%d", status, bytes_read);
+    ESP_LOGD(TAG, "HTTP RPC: status=%d, body_len=%d", status, bytes_read);
     if (bytes_read > 0) {
-        ESP_LOGI(TAG, "RPC Body: %.*s", bytes_read > 120 ? 120 : bytes_read, http_response);
+        ESP_LOGD(TAG, "RPC Body: %.*s", bytes_read > 120 ? 120 : bytes_read, http_response);
     }
 
     if (status == 200 && bytes_read > 0) {

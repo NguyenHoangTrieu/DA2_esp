@@ -606,7 +606,7 @@ thêm vào chuỗi này:
 /**
  * @brief Parse LTE configuration from command string
  * Format: "LT:MODEM_NAME:TYPE:APN:USERNAME:PASSWORD:COMM_TYPE:AUTO_RECONNECT:RECONNECT_TIMEOUT:MAX_RECONNECT:PWR_PIN:RST_PIN"
- * Example: "LT:A7600C1:m3-world:user:pass:USB:true:30000:0:WK:PE"
+ * Example: "LT:A7600C1:m-wap:user:pass:USB:true:30000:0:WK:PE"
  * Note: Username and password can be empty
  * @param data Raw command data
  * @param len Command length

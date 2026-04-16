@@ -50,7 +50,7 @@ export function renderLte(container, config) {
         <div class="form-grid">
           <div class="form-group">
             <label>APN</label>
-            <input type="text" id="ltAPN" value="${esc(lte.apn)}" placeholder="m3-world">
+            <input type="text" id="ltAPN" value="${esc(lte.apn)}" placeholder="m-wap">
           </div>
           <div class="form-group">
             <label>Username</label>
@@ -159,7 +159,7 @@ export function renderLte(container, config) {
   container.querySelector('#ltSetBtn').addEventListener('click', async () => {
     let apn = container.querySelector('#ltAPN').value.trim();
     if (!apn) { 
-      apn = 'm3-world';
+      apn = 'm-wap';
       container.querySelector('#ltAPN').value = apn;
       toast('Using default APN: ' + apn, 'info');
     }

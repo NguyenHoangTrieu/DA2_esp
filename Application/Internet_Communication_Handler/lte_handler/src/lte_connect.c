@@ -11,19 +11,20 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "lte_handler.h"
-#include "pcf8563_rtc.h"
-#include "usbh_modem_board.h"
-#include "stack_handler.h"
 #include "lwip/dns.h"
 #include "lwip/ip_addr.h"
+#include "pcf8563_rtc.h"
+#include "stack_handler.h"
+#include "usbh_modem_board.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
+
 /* ==================== Default Configuration ==================== */
-/* Default APN for Vietnamobile (m3-world).
+/* Default APN for Vietnamobile (m-wap).
  * The LTE task will start with this APN unless config_handler overrides it. */
-#define LTE_DEFAULT_APN  "m3-world"
+#define LTE_DEFAULT_APN "m-wap"
 #define LTE_CONNECTION_MONITOR_INTERVAL_MS 1000
 
 static const char *TAG = "LTE_CONNECT";
@@ -32,19 +33,19 @@ static bool g_lte_sntp_started = false;
 
 /* ==================== LTE Config Context ==================== */
 lte_config_context_t g_lte_ctx = {
-    .modem_name              = "",
-    .apn                     = LTE_DEFAULT_APN,  /* Default Vietnamobile m3-world */
-    .username                = "",
-    .password                = "",
-    .max_reconnect_attempts  = 0,     /* 0 = infinite once configured      */
-    .reconnect_timeout_ms    = 30000,
-    .auto_reconnect          = false, /* disabled until config received     */
-    .comm_type               = LTE_HANDLER_USB,
-    .pwr_pin                 = 5,                /* P05 (flat GPIO mapping, numeric ID) */
-    .rst_pin                 = 6,                /* P06 (flat GPIO mapping, numeric ID) */
-    .initialized             = false,
-    .task_running            = false,
-    .task_handle             = NULL,
+    .modem_name = "",
+    .apn = LTE_DEFAULT_APN, /* Default Vietnamobile m-wap */
+    .username = "",
+    .password = "",
+    .max_reconnect_attempts = 0, /* 0 = infinite once configured      */
+    .reconnect_timeout_ms = 30000,
+    .auto_reconnect = false, /* disabled until config received     */
+    .comm_type = LTE_HANDLER_USB,
+    .pwr_pin = 5, /* P05 (flat GPIO mapping, numeric ID) */
+    .rst_pin = 6, /* P06 (flat GPIO mapping, numeric ID) */
+    .initialized = false,
+    .task_running = false,
+    .task_handle = NULL,
 };
 
 /**
@@ -69,8 +70,7 @@ static esp_err_t lte_init_with_config(void) {
       .max_reconnect_attempts = g_lte_ctx.max_reconnect_attempts};
 
   ESP_LOGI(TAG, "Initializing LTE - Modem: %s, APN: %s, Type: %s",
-           g_lte_ctx.modem_name,
-           cfg.apn,
+           g_lte_ctx.modem_name, cfg.apn,
            cfg.comm_type == LTE_HANDLER_UART ? "UART" : "USB");
 
   /* Configure TCA GPIO pins and modem name before init */
@@ -97,6 +97,11 @@ static esp_err_t lte_init_with_config(void) {
 static void lte_sntp_sync_notification_cb(struct timeval *tv) {
   ESP_LOGI(TAG, "LTE SNTP time synchronized!");
   g_lte_sntp_synced = true;
+
+  /* Slow down SNTP polling after first sync — 30 s was only for initial
+   * retry speed; continuing at 30 s wastes data and floods the log.
+   * 1 hour is more than sufficient for ongoing time maintenance.        */
+  sntp_set_sync_interval(3600 * 1000);
 
   // Sync system time to PCF8563
   time_t now = tv->tv_sec;
@@ -125,16 +130,16 @@ static void lte_init_sntp_once(void) {
   /* Use hardcoded IP addresses so SNTP never needs DNS resolution.
    * If the carrier DNS is slow/unreliable, hostname-based servers put
    * SNTP into its exponential retry loop (15 s → 30 s → …).          */
-  esp_sntp_setservername(0, "216.239.35.0");   /* time1.google.com */
-  esp_sntp_setservername(1, "162.159.200.1");  /* time.cloudflare.com */
-  esp_sntp_setservername(2, "pool.ntp.org");   /* hostname fallback */
+  esp_sntp_setservername(0, "216.239.35.0");  /* time1.google.com */
+  esp_sntp_setservername(1, "162.159.200.1"); /* time.cloudflare.com */
+  esp_sntp_setservername(2, "pool.ntp.org");  /* hostname fallback */
 
   esp_sntp_set_time_sync_notification_cb(lte_sntp_sync_notification_cb);
   /* Set timeout so SNTP doesn't block indefinitely. After 30 s of retries,
    * SNTP will give up and periodic retries will continue in background.
    * This prevents the boot from hanging if NTP is unreachable.           */
   esp_sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
-  sntp_set_sync_interval(30 * 1000);  /* Start periodic retry after 30 s */
+  sntp_set_sync_interval(30 * 1000); /* Start periodic retry after 30 s */
 
   esp_sntp_init();
   g_lte_sntp_started = true;
@@ -154,15 +159,15 @@ static void lte_task(void *arg) {
   TickType_t last_reconnect_attempt = 0;
   const TickType_t monitor_interval =
       pdMS_TO_TICKS(LTE_CONNECTION_MONITOR_INTERVAL_MS);
-  const TickType_t reconnect_interval =
-      pdMS_TO_TICKS(10000); // Retry every 10s
+  const TickType_t reconnect_interval = pdMS_TO_TICKS(10000); // Retry every 10s
 
   uint32_t reconnect_count = 0;
 
-  /* Wait for modem power-on before initializing (module needs ~15s after VCC) */
+  /* Wait for modem power-on before initializing (module needs ~15s after VCC)
+   */
   ESP_LOGI(TAG, "LTE: waiting 15 s for modem power-on...");
   for (int i = 15; i > 0 && g_lte_ctx.task_running; i--) {
-    ESP_LOGI(TAG, "LTE modem startup: %d s remaining...", i);
+    ESP_LOGD(TAG, "LTE modem startup: %d s remaining...", i);
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 
@@ -199,54 +204,88 @@ static void lte_task(void *arg) {
     if ((now - last_monitor) >= monitor_interval) {
       if (g_lte_ctx.initialized) {
         if (lte_handler_is_connected()) {
-          is_internet_connected = true;
+          if (!is_internet_connected) {
+            is_internet_connected = true;
+            /* Initialize application status to ONLINE now that PPP is
+               successfully UP. This prevents the Zombie Link Detector from
+               triggering prematurely on boot */
+            mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
+          }
+
           lte_init_sntp_once();
           reconnect_count = 0; // Reset on successful connection
 
-          /* Re-apply public DNS on every monitoring cycle while connected.
-           * The PPP stack or lte_handler_init() may re-apply carrier DNS
-           * during connection setup. Periodic re-application ensures
-           * getaddrinfo() always uses 8.8.8.8 rather than the carrier
-           * DNS that returns SERVFAIL for external hostnames (EAI_FAIL 202). */
-          ip_addr_t dns_a;
-          IP4_ADDR(&dns_a.u_addr.ip4, 8, 8, 8, 8);
-          dns_a.type = IPADDR_TYPE_V4;
-          dns_setserver(0, &dns_a);
-          IP4_ADDR(&dns_a.u_addr.ip4, 1, 1, 1, 1);
-          dns_setserver(1, &dns_a);
+          static bool s_dns_applied = false;
+          if (!s_dns_applied) {
+            /* Apply public DNS ONCE per connection.
+             * LwIP's dns.c aborts concurrent queries and causes EAI_FAIL (202)
+             * if we continuously spam dns_setserver() every 1000ms. */
+            ip_addr_t dns_a;
+            IP4_ADDR(&dns_a.u_addr.ip4, 8, 8, 8, 8);
+            dns_a.type = IPADDR_TYPE_V4;
+            dns_setserver(0, &dns_a);
+            IP4_ADDR(&dns_a.u_addr.ip4, 1, 1, 1, 1);
+            dns_setserver(1, &dns_a);
+            s_dns_applied = true;
+          }
+
+          /* Zombie IP Context Detector:
+           * Even if the PPP interface says UP, the cellular network often
+           * silently drops the TCP/UDP routing behind NAT after idling for
+           * 30-60s. The upper handlers (MQTT, HTTP, CoAP) will experience
+           * timeouts / failures and set internet_status to OFFLINE. If the
+           * application consistently reports OFFLINE for 180 seconds despite
+           * PPP being UP, the cellular context is dead. (Threshold is > MQTT
+           * reconnect delay to avoid false positives). */
+          static uint32_t offline_timeout_ticks = 0;
+          if (mcu_lan_handler_get_internet_status() ==
+              INTERNET_STATUS_OFFLINE) {
+            offline_timeout_ticks++;
+            if (offline_timeout_ticks >= 180) {
+              ESP_LOGE(TAG, "Application reported OFFLINE for 180s. Zombie "
+                            "link detected, restarting LTE...");
+              lte_init_with_config(); // Full hardware de-init and power cycle
+                                      // to fix frozen modems
+              offline_timeout_ticks = 0;
+              s_dns_applied = false; // Reset for next connect
+            }
+          } else {
+            offline_timeout_ticks = 0;
+          }
         } else {
-          // Active recovery
-          ESP_LOGW(TAG, "Not connected - State: %d", lte_handler_get_state());
+          /* PPP link is down — immediately clear the internet flag so that
+           * MQTT/CoAP/HTTP built-in auto-reconnect backs off instead of
+           * hammering TCP connects while modem_board is re-negotiating PPP.
+           * The flag is set back to true above as soon as PPP is UP again. */
+          is_internet_connected = false;
 
-          // Check if auto-reconnect is enabled
-          if (g_lte_ctx.auto_reconnect) {
-            // Check max reconnect attempts (0 = infinite)
-            if (g_lte_ctx.max_reconnect_attempts == 0 ||
-                reconnect_count < g_lte_ctx.max_reconnect_attempts) {
+          ESP_LOGW(TAG, "LTE not connected - State: %d",
+                   lte_handler_get_state());
 
-              // Try immediate reconnect first
-              ESP_LOGI(TAG, "Immediate reconnect attempt (attempt %lu)...",
+          /* Always attempt active reconnect (auto_reconnect flag only
+           * gates whether the middleware-level bg_task reconnects; we
+           * always want the application-level task to recover PPP).   */
+          if (g_lte_ctx.max_reconnect_attempts == 0 ||
+              reconnect_count < g_lte_ctx.max_reconnect_attempts) {
+
+            /* Throttle: don't call lte_handler_connect() faster than every
+             * 10 s — modem_board's own STAGE_WAIT_IP loop needs time.   */
+            if ((now - last_reconnect_attempt) >= reconnect_interval) {
+              ESP_LOGI(TAG, "LTE reconnect attempt %lu...",
                        reconnect_count + 1);
 
               esp_err_t ret = lte_handler_connect();
               if (ret == ESP_OK) {
-                ESP_LOGI(TAG, "Reconnect initiated");
-                reconnect_count++;
-                last_reconnect_attempt = now;
+                ESP_LOGI(TAG, "LTE reconnect initiated");
               } else {
-                ESP_LOGW(TAG, "Reconnect failed: 0x%x", ret);
-                
-                // If immediate attempt fails, check throttle before next retry
-                if ((now - last_reconnect_attempt) >= reconnect_interval) {
-                  ESP_LOGI(TAG, "Throttle passed, will retry later");
-                  reconnect_count++;
-                  last_reconnect_attempt = now;
-                }
+                ESP_LOGW(TAG, "LTE reconnect call failed: 0x%x", ret);
               }
-            } else {
-              ESP_LOGE(TAG, "Max reconnect attempts reached (%lu)",
-                       reconnect_count);
+              reconnect_count++;
+              last_reconnect_attempt = now;
             }
+          } else {
+            ESP_LOGE(TAG, "LTE max reconnect attempts reached (%lu)",
+                     reconnect_count);
           }
         }
       }

@@ -98,6 +98,7 @@ static esp_err_t resolve_host(const char *host, uint16_t port,
     int rc = getaddrinfo(host, port_str, &hints, &res);
     if (rc != 0 || !res) {
         ESP_LOGE(TAG, "DNS resolution failed for %s: %d", host, rc);
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
         return ESP_FAIL;
     }
 
@@ -238,6 +239,7 @@ static esp_err_t coap_post_to_resource(const char *resource_path, const uint8_t 
     coap_mid_t mid = coap_send(session, pdu);
     if (mid == COAP_INVALID_MID) {
         ESP_LOGE(TAG, "CoAP send failed");
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
         coap_session_release(session);
         coap_free_context(ctx);
         return ESP_FAIL;
@@ -279,8 +281,7 @@ static esp_err_t coap_poll_rpc(void) {
         // If no /telemetry in path, just append /rpc
         strncat(resource_path, "/rpc", sizeof(resource_path) - strlen(resource_path) - 1);
     }
-    
-    ESP_LOGI(TAG, "Polling RPC from: %s:%u%s", g_coap_cfg.host, g_coap_cfg.port, resource_path);
+    ESP_LOGD(TAG, "Polling RPC from: %s:%u%s", g_coap_cfg.host, g_coap_cfg.port, resource_path);
     
     coap_address_t dst;
     esp_err_t err = resolve_host(g_coap_cfg.host, g_coap_cfg.port, &dst);
@@ -354,6 +355,7 @@ static esp_err_t coap_poll_rpc(void) {
     coap_mid_t mid = coap_send(session, pdu);
     if (mid == COAP_INVALID_MID) {
         ESP_LOGE(TAG, "CoAP GET send failed");
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
         coap_session_release(session);
         coap_free_context(ctx);
         return ESP_FAIL;

@@ -35,6 +35,7 @@ mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
                                     .attribute_topic = ATTRIBUTE_TOPIC,
                                     .publish_topic = PUBLISH_TOPIC};
 
+
 /**
  * @brief Convert binary data to hex string
  * @param data Binary data
@@ -121,12 +122,8 @@ static size_t hex_string_to_binary(const char *hex_str, uint8_t *binary,
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   if (data == NULL || len == 0) {
-    ESP_LOGW(TAG, "Invalid parameters");
     return;
   }
-
-  ESP_LOGI(TAG, "MQTT RX: %d bytes", len);
-  ESP_LOGI(TAG, "Raw hex string: %.*s", len, data);
 
   // ===== Convert hex string to binary =====
   uint8_t binary_data[512];
@@ -138,19 +135,11 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
     return;
   }
 
-  ESP_LOGI(TAG, "Decoded: %d bytes", binary_len);
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, binary_data, binary_len, ESP_LOG_INFO);
-
   // ===== Parse binary header =====
 
   // 1. Check for Config Command: "CF" (0x43 0x46)
   if (binary_len >= 2 && binary_data[0] == 0x43 && binary_data[1] == 0x46) {
-    ESP_LOGI(TAG, "→ Config command detected (CF)");
-
     // Format: CF + config_text
-    // Example hex: 43 46 4D 4C 3A 43 46 46 57
-    //              C  F  M  L  :  C  F  F  W
-    // Config text: "ML:CFFW"
 
     // Extract config data (skip "CF" prefix = 2 bytes)
     const char *cmd_data = (const char *)&binary_data[2];
@@ -160,8 +149,6 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       ESP_LOGW(TAG, "Config command has no data");
       return;
     }
-
-    ESP_LOGI(TAG, "Config text: %.*s", cmd_len, cmd_data);
 
     // Parse command type from first 2 chars (ML, WF, MQ, etc.)
     config_type_t type = config_parse_type(cmd_data, cmd_len);
@@ -181,42 +168,25 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       extern QueueHandle_t g_config_handler_queue;
       if (g_config_handler_queue && xQueueSend(g_config_handler_queue, &cmd,
                                                pdMS_TO_TICKS(100)) == pdTRUE) {
-        ESP_LOGI(TAG, "Config forwarded to config handler");
+        ESP_LOGI(TAG, "✓ Config forwarded to handler: %.*s", cmd_len, cmd_data);
       } else {
         ESP_LOGW(TAG, "Failed to send to config handler");
         free(cmd);
       }
     } else {
-      ESP_LOGW(TAG, "Unknown config type");
+      ESP_LOGW(TAG, "Unknown config type: %.*s", cmd_len, cmd_data);
     }
     return;
   }
 
   // 2. Check for Data Command: "DT" (0x44 0x54)
-  // Format: DT + handler(3) + length(2) + payload
-  // Example: 44 54 5A 49 47 00 06 01 02 03 04 05 06
-  //          D  T  Z  I  G  len=6  [payload 6 bytes]
-
   if (binary_len >= 7 && binary_data[0] == 0x44 && binary_data[1] == 0x54) {
-    ESP_LOGI(TAG, "→ Data command detected (DT)");
-
     // Extract handler type (3 bytes after "DT")
     uint8_t handler_type[4] = {binary_data[2], binary_data[3], binary_data[4],
                                '\0'};
 
-    ESP_LOGI(TAG, "Handler: %s", handler_type);
-
     // Extract payload length (2 bytes, big-endian)
     uint16_t payload_len = ((uint16_t)binary_data[5] << 8) | binary_data[6];
-
-    ESP_LOGI(TAG, "Payload length field: %u bytes", payload_len);
-
-    // Validate length
-    if ((payload_len + 7) != binary_len) {
-      ESP_LOGW(TAG, "Length mismatch: expect %u, got %u", payload_len + 7,
-               binary_len);
-      // Continue anyway, use actual length
-    }
 
     // Map to handler ID
     handler_id_t target_id;
@@ -228,8 +198,7 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       target_id = HANDLER_CAN;
     } else if (memcmp(handler_type, "RS4", 3) == 0) {
       target_id = HANDLER_RS485;
-    } 
-    else {
+    } else {
       ESP_LOGW(TAG, "Unknown handler: %s", handler_type);
       return;
     }
@@ -237,9 +206,6 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
     // Extract actual payload (skip DT + handler + length = 7 bytes)
     const uint8_t *payload = &binary_data[7];
     uint16_t actual_payload_len = binary_len - 7;
-
-    ESP_LOGI(TAG, "Actual payload: %u bytes", actual_payload_len);
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, payload, actual_payload_len, ESP_LOG_INFO);
 
     // Forward to MCU LAN
     if (mcu_lan_enqueue_downlink(target_id, (uint8_t *)payload,
@@ -510,7 +476,13 @@ static void mqtt_reinit(void) {
   }
 
   uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
-  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 30000;
+
+  /* Enforce short keepalive for cellular links to bypass aggressive carrier NAT timeouts */
+  if (g_internet_type == CONFIG_INTERNET_LTE && ka > 30) {
+      ESP_LOGW(TAG, "Clamping MQTT keepalive from %u to 30s for LTE stability", ka);
+      ka = 30;
+  }
 
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
@@ -617,7 +589,13 @@ void mqtt_handler_task_start(void) {
   mqtt_task_close = false;
 
   uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
-  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 10000;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 30000;
+
+  /* Enforce short keepalive for cellular links to bypass aggressive carrier NAT timeouts */
+  if (g_internet_type == CONFIG_INTERNET_LTE && ka > 30) {
+      ESP_LOGW(TAG, "Clamping MQTT keepalive from %u to 30s for LTE stability", ka);
+      ka = 30;
+  }
 
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
@@ -729,8 +707,6 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(100)) ==
       pdTRUE) {
     ESP_LOGI(TAG, "Enqueued %d bytes for MQTT publish", data_len);
-    ESP_LOGI(TAG, "Receive Data:");
-    ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_INFO);
     return true;
   } else {
     ESP_LOGW(TAG, "Failed to enqueue data - queue full");

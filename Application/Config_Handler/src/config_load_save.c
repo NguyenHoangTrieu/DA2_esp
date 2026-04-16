@@ -38,7 +38,7 @@ char g_stack_id_wan[8] = "000";
 #define MQTT_DEFAULT_PUB_TOPIC    "v1/devices/me/telemetry"
 #define MQTT_DEFAULT_SUB_TOPIC    "v1/devices/me/rpc/request/+"
 #define MQTT_DEFAULT_ATTR_TOPIC   "v1/devices/me/attributes"
-#define MQTT_DEFAULT_KEEPALIVE_S  120
+#define MQTT_DEFAULT_KEEPALIVE_S  30
 #define MQTT_DEFAULT_TIMEOUT_MS   10000
 
 /* Default values for HTTP */
