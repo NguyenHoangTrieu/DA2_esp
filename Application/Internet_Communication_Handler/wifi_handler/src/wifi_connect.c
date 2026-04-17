@@ -10,7 +10,6 @@
 #include "fota_ap.h"
 #include "pcf8563_rtc.h"
 
-
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
 #define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
@@ -243,16 +242,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
     g_wifi_netif = esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    
-    /* 
-     * Optimize Wi-Fi DMA memory footprint to allow USB Host (LTE) enough contiguous memory!
-     * Default Wi-Fi DMA usage is ~100KB, which starves the USB Host pipe allocations.
-     */
-    cfg.static_rx_buf_num = 4;      // Default 10
-    cfg.dynamic_rx_buf_num = 16;    // Default 32
-    cfg.dynamic_tx_buf_num = 16;    // Default 32
-    cfg.mgmt_sbuf_num = 16;         // Default 32
-    
+
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
@@ -262,7 +252,7 @@ void wifi_init_sta(const char *custom_ssid, const char *custom_pass,
   } else {
     // Re-create event group if it was deleted
     if (s_wifi_event_group == NULL) {
-        s_wifi_event_group = xEventGroupCreate();
+      s_wifi_event_group = xEventGroupCreate();
     }
     ESP_LOGI(TAG, "WiFi driver already initialized, reusing existing stack");
   }
@@ -458,8 +448,10 @@ static void wifi_connect_init_task(void *arg) {
 
   // Start the config task to listen for WiFi credentials from queue
   if (!wifi_connect_task_close) {
-    if (xTaskCreate(wifi_config_task, "wifi_config_task", 4096, NULL, 5, NULL) != pdPASS) {
-      ESP_LOGE(TAG, "Failed to create wifi config task (Out of contiguous heap?)");
+    if (xTaskCreate(wifi_config_task, "wifi_config_task", 4096, NULL, 5,
+                    NULL) != pdPASS) {
+      ESP_LOGE(TAG,
+               "Failed to create wifi config task (Out of contiguous heap?)");
     } else {
       ESP_LOGI(TAG, "WiFi config task created");
     }
@@ -470,7 +462,8 @@ static void wifi_connect_init_task(void *arg) {
 
 void wifi_connect_task_start(void) {
   wifi_connect_task_close = false;
-  if (xTaskCreate(wifi_connect_init_task, "wifi_init_task", 4096, NULL, 5, NULL) != pdPASS) {
+  if (xTaskCreate(wifi_connect_init_task, "wifi_init_task", 4096, NULL, 5,
+                  NULL) != pdPASS) {
     ESP_LOGE(TAG, "Failed to create wifi init task (Out of contiguous heap?)");
   }
 }
@@ -482,7 +475,7 @@ void wifi_connect_task_stop(void) {
 
   wifi_connect_task_close = true;
   ESP_LOGI(TAG, "Stopping WiFi connection task");
-  
+
   if (g_wifi_netif == NULL) {
     ESP_LOGW(TAG, "WiFi not running, skipping teardown");
     return;
@@ -492,7 +485,7 @@ void wifi_connect_task_stop(void) {
   esp_wifi_sta_enterprise_disable();
 
   ESP_ERROR_CHECK(esp_wifi_stop());
-  
+
   if (s_wifi_event_group) {
     vEventGroupDelete(s_wifi_event_group);
     s_wifi_event_group = NULL;

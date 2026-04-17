@@ -304,6 +304,9 @@ static void lte_task(void *arg) {
   vTaskDelete(NULL);
 }
 
+static StackType_t *s_lte_task_stack = NULL;
+static StaticTask_t *s_lte_task_tcb = NULL;
+
 /**
  * @brief Start LTE connection
  */
@@ -325,9 +328,20 @@ void lte_connect_task_start(void) {
   g_lte_ctx.task_running = true;
   g_lte_ctx.initialized = false;
 
-  BaseType_t ret =
-      xTaskCreate(lte_task, "lte_task", 16384, NULL, 5, &g_lte_ctx.task_handle);
-  if (ret != pdPASS) {
+  if (s_lte_task_stack == NULL) {
+      s_lte_task_stack = (StackType_t *)heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  if (s_lte_task_tcb == NULL) {
+      s_lte_task_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+  if (!s_lte_task_stack || !s_lte_task_tcb) {
+      ESP_LOGE(TAG, "Failed to allocate LTE task stack/TCB");
+      g_lte_ctx.task_running = false;
+      return;
+  }
+
+  g_lte_ctx.task_handle = xTaskCreateStatic(lte_task, "lte_task", 16384, NULL, 5, s_lte_task_stack, s_lte_task_tcb);
+  if (g_lte_ctx.task_handle == NULL) {
     ESP_LOGE(TAG, "Failed to create task");
     g_lte_ctx.task_running = false;
     return;

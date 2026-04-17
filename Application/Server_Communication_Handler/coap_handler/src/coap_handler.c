@@ -555,13 +555,29 @@ void coap_handler_task_start(void) {
     }
 
     s_task_running = true;
-    xTaskCreate(coap_publish_task, "coap_publish", 6144, NULL, 5, &s_task_handle);
-    ESP_LOGI(TAG, "CoAP handler task created");
+    {
+        StackType_t *pub_stack = (StackType_t *)heap_caps_malloc(6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        StaticTask_t *pub_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (pub_stack && pub_tcb) {
+            s_task_handle = xTaskCreateStatic(coap_publish_task, "coap_publish", 6144, NULL, 5, pub_stack, pub_tcb);
+            ESP_LOGI(TAG, "CoAP handler task created in PSRAM");
+        } else {
+            ESP_LOGE(TAG, "Failed to allocate coap_publish task in PSRAM");
+        }
+    }
     
     // Start polling task for RPC commands
     s_polling_running = true;
-    xTaskCreate(coap_polling_task, "coap_poll_rpc", 4096, NULL, 4, &s_polling_task_handle);
-    ESP_LOGI(TAG, "CoAP RPC polling task created");
+    {
+        StackType_t *poll_stack = (StackType_t *)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        StaticTask_t *poll_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (poll_stack && poll_tcb) {
+            s_polling_task_handle = xTaskCreateStatic(coap_polling_task, "coap_poll_rpc", 4096, NULL, 4, poll_stack, poll_tcb);
+            ESP_LOGI(TAG, "CoAP RPC polling task created in PSRAM");
+        } else {
+            ESP_LOGE(TAG, "Failed to allocate coap_poll_rpc task in PSRAM");
+        }
+    }
 }
 
 void coap_handler_task_stop(void) {

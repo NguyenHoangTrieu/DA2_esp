@@ -12,7 +12,6 @@
 #include "http_handler.h"
 #include <ctype.h>
 
-
 static const char *TAG = "config_handler";
 
 // Configuration command constants
@@ -49,7 +48,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
 config_server_type_t g_server_type =
     CONFIG_SERVERTYPE_MQTT; /* default to MQTT */
 bool is_internet_connected = false;
@@ -1384,9 +1383,20 @@ void config_handler_task_start(void) {
   }
 
   config_handler_running = true;
-  xTaskCreate(config_handler_task, "config_handler", 4096, NULL, 5,
-              &config_handler_task_handle);
-  ESP_LOGI(TAG, "Config handler task created");
+  {
+    StackType_t *cfg_stack = (StackType_t *)heap_caps_malloc(
+        4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *cfg_tcb = (StaticTask_t *)heap_caps_malloc(
+        sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (cfg_stack && cfg_tcb) {
+      config_handler_task_handle =
+          xTaskCreateStatic(config_handler_task, "config_handler", 4096, NULL,
+                            5, cfg_stack, cfg_tcb);
+      ESP_LOGI(TAG, "Config handler task created in PSRAM");
+    } else {
+      ESP_LOGE(TAG, "Failed to allocate config_handler task in PSRAM");
+    }
+  }
 }
 
 /**

@@ -63,7 +63,7 @@ internet_status_t g_internet_status = INTERNET_STATUS_OFFLINE;
 // ===== Downlink-Specific State =====
 static QueueHandle_t g_downlink_queue = NULL;
 SemaphoreHandle_t g_config_mutex = NULL;
-static config_cache_t g_config_cache = {0};
+static EXT_RAM_BSS_ATTR config_cache_t g_config_cache = {0};
 bool g_config_cache_has_config = false; // Exposed to uplink
 bool g_fota_request_pending = false;    // Exposed to uplink
 

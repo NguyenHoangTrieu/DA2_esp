@@ -545,23 +545,17 @@ void fota_handler_task_start(void)
     ESP_LOGI(TAG, "Heap before OTA task: total=%d, internal=%d, internal_largest=%d",
              esp_get_free_heap_size(), internal_free, internal_largest);
 
-    /* IMPORTANT: stack MUST be in internal RAM for mbedTLS crypto performance.
-     * 12KB is sufficient: mbedTLS handshake depth ~3KB, OTA locals ~1KB.
-     * If internal RAM fragmented, fallback to PSRAM (slower TLS but still works). */
-    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task", 12 * 1024, NULL, 5, NULL);
-    if (ret != pdPASS) {
-        /* Internal RAM stack failed — try PSRAM (if available).
-         * PSRAM stack is slower for crypto (L1$ misses) but better than no task. */
-        ESP_LOGW(TAG, "Internal RAM stack failed (largest=%d), retrying in PSRAM", internal_largest);
-        ret = xTaskCreateWithCaps(&advanced_ota_task, "advanced_ota_task",
-                                  16 * 1024, NULL, 5, NULL,
-                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (ret != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create Advanced OTA task (internal AND PSRAM)");
-            return;
-        }
+    /* Push FOTA task unconditionally to PSRAM to free 12-16KB of internal RAM! 
+     * MbedTLS crypto performance will be slower, but frees critical DMA contiguous blocks */
+    StackType_t *fota_stack = (StackType_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *fota_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    
+    if (fota_stack && fota_tcb) {
+        xTaskCreateStatic(&advanced_ota_task, "advanced_ota_task", 16 * 1024, NULL, 5, fota_stack, fota_tcb);
+        ESP_LOGI(TAG, "Advanced OTA task created successfully in PSRAM");
+    } else {
+        ESP_LOGE(TAG, "Failed to allocate Advanced OTA task in PSRAM");
     }
-    ESP_LOGI(TAG, "Advanced OTA task created successfully");
 }
 
 void fota_handler_task_stop(void) 

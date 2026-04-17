@@ -642,11 +642,25 @@ void mqtt_handler_task_start(void) {
 
   // Start publish task
   if (m_pub_task == NULL) {
-    xTaskCreate(mqtt_publish_task, "mqtt_pub", 8192, NULL, 5, &m_pub_task);
+    StackType_t *pub_stack = (StackType_t *)heap_caps_malloc(8192, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *pub_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (pub_stack && pub_tcb) {
+        m_pub_task = xTaskCreateStatic(mqtt_publish_task, "mqtt_pub", 8192, NULL, 5, pub_stack, pub_tcb);
+    } else {
+        ESP_LOGE(TAG, "Failed to allocate mqtt_pub task in PSRAM");
+    }
   }
 
   // Start config task
-  xTaskCreate(mqtt_config_task, "mqtt_config", 3072, NULL, 5, NULL);
+  {
+      StackType_t *cfg_stack = (StackType_t *)heap_caps_malloc(3072, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      StaticTask_t *cfg_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (cfg_stack && cfg_tcb) {
+          xTaskCreateStatic(mqtt_config_task, "mqtt_config", 3072, NULL, 5, cfg_stack, cfg_tcb);
+      } else {
+          ESP_LOGE(TAG, "Failed to allocate mqtt_config task in PSRAM");
+      }
+  }
 
   ESP_LOGI(TAG, "MQTT handler started");
 }

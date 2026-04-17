@@ -124,12 +124,17 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
   }
 
   // Create uplink processor task (Priority 6)
-  BaseType_t ret = xTaskCreate(uplink_processor_task, "lan_uplink", 6144, NULL,
-                               6, &g_uplink_task_handle);
-  if (ret != pdPASS) {
-    ESP_LOGE(TAG, "Failed to create uplink task");
-    vSemaphoreDelete(g_rtc_cache.mutex);
-    return ESP_FAIL;
+  {
+      StackType_t *uplink_stack = (StackType_t *)heap_caps_malloc(6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      StaticTask_t *uplink_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (uplink_stack && uplink_tcb) {
+          g_uplink_task_handle = xTaskCreateStatic(uplink_processor_task, "lan_uplink", 6144, NULL, 6, uplink_stack, uplink_tcb);
+          ESP_LOGI(TAG, "Uplink processor task created in PSRAM");
+      } else {
+          ESP_LOGE(TAG, "Failed to allocate uplink task in PSRAM");
+          vSemaphoreDelete(g_rtc_cache.mutex);
+          return ESP_FAIL;
+      }
   }
 
   g_fota_start_sem = xSemaphoreCreateBinary();
@@ -141,15 +146,21 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
     return ESP_FAIL;
   }
 
-  ret = xTaskCreate(fota_task, "lan_fota", 4096, NULL, 5, &g_fota_task_handle);
-  if (ret != pdPASS) {
-    ESP_LOGE(TAG, "Failed to create FOTA task");
-    vSemaphoreDelete(g_fota_start_sem);
-    g_fota_start_sem = NULL;
-    vTaskDelete(g_uplink_task_handle);
-    g_uplink_task_handle = NULL;
-    vSemaphoreDelete(g_rtc_cache.mutex);
-    return ESP_FAIL;
+  {
+      StackType_t *fota_stack = (StackType_t *)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      StaticTask_t *fota_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (fota_stack && fota_tcb) {
+          g_fota_task_handle = xTaskCreateStatic(fota_task, "lan_fota", 4096, NULL, 5, fota_stack, fota_tcb);
+          ESP_LOGI(TAG, "FOTA task created in PSRAM");
+      } else {
+          ESP_LOGE(TAG, "Failed to allocate FOTA task in PSRAM");
+          vSemaphoreDelete(g_fota_start_sem);
+          g_fota_start_sem = NULL;
+          vTaskDelete(g_uplink_task_handle);
+          g_uplink_task_handle = NULL;
+          vSemaphoreDelete(g_rtc_cache.mutex);
+          return ESP_FAIL;
+      }
   }
 
   ESP_LOGI(TAG, "Uplink processor task started (Priority 6, stack 6KB)");

@@ -131,9 +131,16 @@ esp_err_t hmi_task_enter_mode(void)
     hmi_display_goto_page(HMI_PAGE_HOME);
 
     /* 6. Spawn the RX task — display is now in a known state */
-    xTaskCreate(rx_task_fn, "hmi_rx",
-                HMI_RX_TASK_STACK, NULL,
-                HMI_RX_TASK_PRIO, &s_rx_task);
+    {
+        StackType_t *rx_stack = (StackType_t *)heap_caps_malloc(HMI_RX_TASK_STACK, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        StaticTask_t *rx_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (rx_stack && rx_tcb) {
+            s_rx_task = xTaskCreateStatic(rx_task_fn, "hmi_rx", HMI_RX_TASK_STACK, NULL, HMI_RX_TASK_PRIO, rx_stack, rx_tcb);
+            ESP_LOGI(TAG, "HMI RX task created in PSRAM");
+        } else {
+            ESP_LOGE(TAG, "Failed to allocate HMI RX task in PSRAM");
+        }
+    }
 
     ESP_LOGI(TAG, "HMI mode active");
     return ESP_OK;

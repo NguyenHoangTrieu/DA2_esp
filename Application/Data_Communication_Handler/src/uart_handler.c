@@ -412,18 +412,18 @@ static void process_uart_line(char *line, int line_len) {
  */
 static void uart_handler_task(void *arg) {
   // Raw receive buffer
-  uint8_t *data = (uint8_t *)malloc(UART_BUF_SIZE);
+  uint8_t *data = (uint8_t *)heap_caps_malloc(UART_BUF_SIZE, MALLOC_CAP_SPIRAM);
   if (data == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate UART rx buffer (%d bytes)",
+    ESP_LOGE(TAG, "Failed to allocate UART rx buffer in PSRAM (%d bytes)",
              UART_BUF_SIZE);
     vTaskDelete(NULL);
     return;
   }
 
   // Line-assembly buffer — accumulates bytes until '\n'
-  char *line_buf = (char *)malloc(UART_BUF_SIZE);
+  char *line_buf = (char *)heap_caps_malloc(UART_BUF_SIZE, MALLOC_CAP_SPIRAM);
   if (line_buf == NULL) {
-    ESP_LOGE(TAG, "Failed to allocate UART line buffer (%d bytes)",
+    ESP_LOGE(TAG, "Failed to allocate UART line buffer in PSRAM (%d bytes)",
              UART_BUF_SIZE);
     free(data);
     vTaskDelete(NULL);
@@ -484,15 +484,30 @@ static void uart_handler_task(void *arg) {
   vTaskDelete(NULL);
 }
 
+static StackType_t *s_uart_task_stack = NULL;
+static StaticTask_t *s_uart_task_tcb = NULL;
+
 void uart_handler_task_start(void) {
   if (uart_handler_running) {
     ESP_LOGW(TAG, "UART handler already running");
     return;
   }
 
+  if (s_uart_task_stack == NULL) {
+      s_uart_task_stack = (StackType_t *)heap_caps_malloc(1024 * 16, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  if (s_uart_task_tcb == NULL) {
+      s_uart_task_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+
+  if (!s_uart_task_stack || !s_uart_task_tcb) {
+      ESP_LOGE(TAG, "Failed to allocate UART handler task stack/TCB in PSRAM");
+      return;
+  }
+
   uart_handler_running = true;
-  xTaskCreate(uart_handler_task, "uart_handler", 1024 * 16, NULL, 5, NULL);
-  ESP_LOGI(TAG, "UART handler task created");
+  xTaskCreateStatic(uart_handler_task, "uart_handler", 1024 * 16, NULL, 5, s_uart_task_stack, s_uart_task_tcb);
+  ESP_LOGI(TAG, "UART handler task created in PSRAM");
 }
 
 void uart_handler_task_stop(void) {
