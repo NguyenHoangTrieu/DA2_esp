@@ -33,8 +33,8 @@ static const char *TAG = "CONFIG_NVS";
 char g_stack_id_wan[8] = "000";
 
 /* Default values for MQTT */
-#define MQTT_DEFAULT_BROKER       "mqtt://demo.thingsboard.io:1883"
-#define MQTT_DEFAULT_TOKEN        "38kozd1weulcnl6ytz8f"
+#define MQTT_DEFAULT_BROKER       "mqtt://192.168.1.100:1883"
+#define MQTT_DEFAULT_TOKEN        "Zfdvk6M9rEmw5fBj7TzP"
 #define MQTT_DEFAULT_PUB_TOPIC    "v1/devices/me/telemetry"
 #define MQTT_DEFAULT_SUB_TOPIC    "v1/devices/me/rpc/request/+"
 #define MQTT_DEFAULT_ATTR_TOPIC   "v1/devices/me/attributes"
