@@ -27,6 +27,7 @@ extern "C" {
 #define BQ25892_REG00   0x00   /* Input Source Control (EN_HIZ, EN_ILIM, IINLIM) */
 #define BQ25892_REG02   0x02   /* ADC Control (CONV_START, CONV_RATE) */
 #define BQ25892_REG03   0x03   /* Charge Control (OTG_CONFIG, CHG_CONFIG, SYS_MIN) */
+#define BQ25892_REG04   0x04   /* Charge Current Control (EN_PUMPX, ICHG[6:0]) */
 #define BQ25892_REG06   0x06   /* Charge Voltage Limit (VREG[5:0], BATLOWV, VRECHG) */
 #define BQ25892_REG09   0x09   /* Fault / BATFET_DIS Register */
 #define BQ25892_REG0B   0x0B   /* System Status (VBUS_STAT, CHRG_STAT, PG_STAT) */

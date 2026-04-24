@@ -612,9 +612,12 @@ void app_main(void) {
     /* GPIO0 — toggle CONFIG / NORMAL */
     if (notif == NOTIFY_BUTTON_PRESS) {
       if (current_mode == APP_MODE_NORMAL) {
-        switch_to_config_mode(&current_internet_type);
+        // switch_to_config_mode(&current_internet_type);
+        ESP_LOGI(TAG, "POWER_SAMPLING_ON");
+        is_power_sampling = true;
       } else {
-        switch_to_normal_mode();
+        // switch_to_normal_mode();
+        is_power_sampling = false;
       }
     }
 
@@ -641,11 +644,9 @@ void app_main(void) {
     /* UART command — CONFIG or NORMAL */
     if (notif == NOTIFY_UART_MODE_SWITCH) {
       if (requested_mode == 0) {
-        // switch_to_config_mode(&current_internet_type);
-        is_power_sampling = true;
+        switch_to_config_mode(&current_internet_type);
       } else if (requested_mode == 1) {
-        // switch_to_normal_mode();
-        is_power_sampling = false;
+        switch_to_normal_mode();
       }
       requested_mode = -1;
     }
