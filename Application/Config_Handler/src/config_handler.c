@@ -48,7 +48,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE;
 config_server_type_t g_server_type =
     CONFIG_SERVERTYPE_MQTT; /* default to MQTT */
 bool is_internet_connected = false;

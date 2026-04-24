@@ -161,7 +161,7 @@ void downlink_send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
   ack[1] = ack_type;
   ack[2] = internet_flag;
   lan_comm_load_tx_data(g_lan_handle, ack, sizeof(ack));
-  ESP_LOGI(TAG, "ACK sent: type=0x%02X, internet=%u", ack_type, internet_flag);
+  ESP_LOGD(TAG, "ACK sent: type=0x%02X, internet=%u", ack_type, internet_flag);
 }
 
 // ===== Config Request Handler =====

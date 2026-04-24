@@ -10,14 +10,14 @@
  * ```
  * pwr_monitor_task_start()
  *   ↓
- * [Monitor Task Loop — running at priority 4, interval 5s]
+ * [Monitor Task Loop — running at priority 4, interval 500 ms]
  *   ├─ Read BQ27441 (SoC%, voltage, current, flags)
  *   ├─ Read BQ25892 (charge status, power good)
  *   ├─ Read INA230 (VSYS voltage, system current)
  *   ├─ Call pwr_source_charge_monitor() for threshold check (4.1V / 3.5V)
  *   ├─ Publish status to g_pwr_monitor_status (HMI reads this)
  *   ├─ If HMI active: call hmi_refresh_status()
- *   └─ Sleep 5s, repeat
+ *   └─ Sleep 500 ms, repeat
  *
  * pwr_monitor_task_stop()
  *   ↓
@@ -33,6 +33,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "DA2_esp.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -46,7 +47,7 @@ extern "C" {
 
 #define PWR_MONITOR_TASK_STACK_SIZE 4096
 #define PWR_MONITOR_TASK_PRIORITY   4       /* Medium priority */
-#define PWR_MONITOR_UPDATE_INTERVAL_MS 5000 /* 5-second update */
+#define PWR_MONITOR_UPDATE_INTERVAL_MS 10  /* 500 ms update */
 
 /* ================================================================== */
 /*  Public Data Structures                                             */
@@ -131,6 +132,14 @@ esp_err_t pwr_monitor_get_status(pwr_monitor_status_t *status);
  * @return ESP_OK on success
  */
 esp_err_t pwr_monitor_update_now(void);
+
+/**
+ * @brief Register a callback invoked whenever the VBUS power-good state changes.
+ *        Called from the monitor task context; must be ISR-safe (no long blocking).
+ *        Pass NULL to deregister.
+ * @param cb  void(*)(bool power_good) — true = VBUS present, false = battery only
+ */
+void pwr_monitor_register_power_good_cb(void (*cb)(bool power_good));
 
 #ifdef __cplusplus
 }

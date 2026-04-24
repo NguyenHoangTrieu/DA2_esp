@@ -3,24 +3,24 @@
  * @brief MCU LAN Handler - Uplink Processor Task (SPI Slave, Priority 6)
  */
 #include "DA2_esp.h"
+#include "coap_handler.h"
 #include "config_handler.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
-#include "driver/usb_serial_jtag.h"  // For USB source response routing
+#include "driver/usb_serial_jtag.h" // For USB source response routing
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "fota_ap.h"
 #include "fota_handler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_handler.h"
 #include "lan_comm.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
-#include "http_handler.h"
-#include "coap_handler.h"
 #include "pcf8563_rtc.h"
-#include "fota_ap.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -32,7 +32,8 @@ static const char *TAG = "MCU_LAN_UL";
 #define ACK_WAIT_TIMEOUT_MS 500
 #define MAX_RETRY_COUNT 3
 #define GPIO_DATA_READY_PIN 8
-#define LAN_FOTA_TIMEOUT_MS 300000  // 300 seconds timeout for LAN FOTA completion
+#define LAN_FOTA_TIMEOUT_MS                                                    \
+  300000 // 300 seconds timeout for LAN FOTA completion
 
 // ===== Config Request State Machine =====
 typedef enum {
@@ -61,17 +62,23 @@ extern void downlink_send_ack_to_lan(ack_type_t ack_type,
 // ===== Uplink Module State =====
 static uint32_t g_cached_lan_fw_version = 0;
 static uint32_t g_cached_wan_fw_version = 0;
-static bool g_waiting_for_lan_update = false;     // LAN is updating via FOTA
-static bool g_wan_fota_in_progress = false;       // WAN FOTA is running (prevents re-trigger)
+static bool g_waiting_for_lan_update = false; // LAN is updating via FOTA
+static bool g_wan_fota_in_progress =
+    false; // WAN FOTA is running (prevents re-trigger)
 static TaskHandle_t g_uplink_task_handle = NULL;
 static TaskHandle_t g_fota_task_handle = NULL;
 static SemaphoreHandle_t g_fota_start_sem = NULL;
 static bool g_fota_pending = false;
-static bool g_fota_trigger_pending = false;  // Flag: FOTA trigger ready to send to LAN
-static bool g_fota_pending_internet = false;  // FOTA needed but waiting for internet
-static uint32_t g_pending_lan_version_for_fota = 0;  // Cached version while waiting
-static internet_status_t g_prev_internet_status = INTERNET_STATUS_OFFLINE;  // Track status changes
-static TickType_t g_lan_fota_wait_start_tick = 0;  // Track when LAN FOTA trigger was sent
+static bool g_fota_trigger_pending =
+    false; // Flag: FOTA trigger ready to send to LAN
+static bool g_fota_pending_internet =
+    false; // FOTA needed but waiting for internet
+static uint32_t g_pending_lan_version_for_fota =
+    0; // Cached version while waiting
+static internet_status_t g_prev_internet_status =
+    INTERNET_STATUS_OFFLINE; // Track status changes
+static TickType_t g_lan_fota_wait_start_tick =
+    0; // Track when LAN FOTA trigger was sent
 
 // Pending downlink (set by downlink module)
 typedef struct {
@@ -125,16 +132,20 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
 
   // Create uplink processor task (Priority 6)
   {
-      StackType_t *uplink_stack = (StackType_t *)heap_caps_malloc(6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-      StaticTask_t *uplink_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-      if (uplink_stack && uplink_tcb) {
-          g_uplink_task_handle = xTaskCreateStatic(uplink_processor_task, "lan_uplink", 6144, NULL, 6, uplink_stack, uplink_tcb);
-          ESP_LOGI(TAG, "Uplink processor task created in PSRAM");
-      } else {
-          ESP_LOGE(TAG, "Failed to allocate uplink task in PSRAM");
-          vSemaphoreDelete(g_rtc_cache.mutex);
-          return ESP_FAIL;
-      }
+    StackType_t *uplink_stack = (StackType_t *)heap_caps_malloc(
+        6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *uplink_tcb = (StaticTask_t *)heap_caps_malloc(
+        sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (uplink_stack && uplink_tcb) {
+      g_uplink_task_handle =
+          xTaskCreateStatic(uplink_processor_task, "lan_uplink", 6144, NULL, 6,
+                            uplink_stack, uplink_tcb);
+      ESP_LOGI(TAG, "Uplink processor task created in PSRAM");
+    } else {
+      ESP_LOGE(TAG, "Failed to allocate uplink task in PSRAM");
+      vSemaphoreDelete(g_rtc_cache.mutex);
+      return ESP_FAIL;
+    }
   }
 
   g_fota_start_sem = xSemaphoreCreateBinary();
@@ -147,20 +158,23 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
   }
 
   {
-      StackType_t *fota_stack = (StackType_t *)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-      StaticTask_t *fota_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-      if (fota_stack && fota_tcb) {
-          g_fota_task_handle = xTaskCreateStatic(fota_task, "lan_fota", 4096, NULL, 5, fota_stack, fota_tcb);
-          ESP_LOGI(TAG, "FOTA task created in PSRAM");
-      } else {
-          ESP_LOGE(TAG, "Failed to allocate FOTA task in PSRAM");
-          vSemaphoreDelete(g_fota_start_sem);
-          g_fota_start_sem = NULL;
-          vTaskDelete(g_uplink_task_handle);
-          g_uplink_task_handle = NULL;
-          vSemaphoreDelete(g_rtc_cache.mutex);
-          return ESP_FAIL;
-      }
+    StackType_t *fota_stack = (StackType_t *)heap_caps_malloc(
+        4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *fota_tcb = (StaticTask_t *)heap_caps_malloc(
+        sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (fota_stack && fota_tcb) {
+      g_fota_task_handle = xTaskCreateStatic(fota_task, "lan_fota", 4096, NULL,
+                                             5, fota_stack, fota_tcb);
+      ESP_LOGI(TAG, "FOTA task created in PSRAM");
+    } else {
+      ESP_LOGE(TAG, "Failed to allocate FOTA task in PSRAM");
+      vSemaphoreDelete(g_fota_start_sem);
+      g_fota_start_sem = NULL;
+      vTaskDelete(g_uplink_task_handle);
+      g_uplink_task_handle = NULL;
+      vSemaphoreDelete(g_rtc_cache.mutex);
+      return ESP_FAIL;
+    }
   }
 
   ESP_LOGI(TAG, "Uplink processor task started (Priority 6, stack 6KB)");
@@ -211,37 +225,43 @@ static void uplink_processor_task(void *pvParameters) {
 
   // ===== Phase 2: SPI Receive Loop =====
   ESP_LOGI(TAG, "Phase 2: SPI Receive Loop");
-  
+
   while (g_handler_running) {
-    
+
     // ===== Timeout Check: LAN FOTA waiting timeout =====
     if (g_waiting_for_lan_update && g_lan_fota_wait_start_tick > 0) {
       TickType_t elapsed = xTaskGetTickCount() - g_lan_fota_wait_start_tick;
       if (elapsed >= pdMS_TO_TICKS(LAN_FOTA_TIMEOUT_MS)) {
-        ESP_LOGE(TAG, "[TIMEOUT] LAN FOTA handshake not received after %d seconds", LAN_FOTA_TIMEOUT_MS/1000);
-        ESP_LOGE(TAG, "[TIMEOUT] LAN may have failed FOTA or stuck - resetting wait flag");
+        ESP_LOGE(TAG,
+                 "[TIMEOUT] LAN FOTA handshake not received after %d seconds",
+                 LAN_FOTA_TIMEOUT_MS / 1000);
+        ESP_LOGE(TAG, "[TIMEOUT] LAN may have failed FOTA or stuck - resetting "
+                      "wait flag");
         g_waiting_for_lan_update = false;
         g_lan_fota_wait_start_tick = 0;
         fota_ap_stop(); /* LAN gave up — tear down the FOTA AP */
       }
     }
-    
+
     // ===== Periodic Check: FOTA pending internet trigger =====
-    // Check if previously pending FOTA can now be triggered (internet came online)
-    if (g_fota_pending_internet && g_internet_status == INTERNET_STATUS_ONLINE && 
+    // Check if previously pending FOTA can now be triggered (internet came
+    // online)
+    if (g_fota_pending_internet &&
+        g_internet_status == INTERNET_STATUS_ONLINE &&
         g_prev_internet_status == INTERNET_STATUS_OFFLINE) {
-      ESP_LOGI(TAG, "[FOTA] Internet just came online, triggering pending FOTA");
+      ESP_LOGI(TAG,
+               "[FOTA] Internet just came online, triggering pending FOTA");
       if (!fota_ap_is_running()) {
         fota_ap_start();
         vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
       }
       send_fota_trigger_to_lan();
       g_waiting_for_lan_update = true;
-      g_lan_fota_wait_start_tick = xTaskGetTickCount();  // Start timeout timer
+      g_lan_fota_wait_start_tick = xTaskGetTickCount(); // Start timeout timer
       g_fota_pending_internet = false;
     }
     g_prev_internet_status = g_internet_status;
-    
+
     // Pre-queue RX transaction (mandatory for SPI slave)
     lan_comm_queue_receive(g_lan_handle);
 
@@ -303,8 +323,9 @@ static void uplink_processor_task(void *pvParameters) {
           ESP_LOGI(TAG, "Config query received from LAN");
           process_config_query(&packet);
         }
-        // Note: FOTA trigger from LAN uses format [CF][FW] but WAN doesn't receive it
-        // WAN only sends FOTA trigger to LAN, never receives it from LAN
+        // Note: FOTA trigger from LAN uses format [CF][FW] but WAN doesn't
+        // receive it WAN only sends FOTA trigger to LAN, never receives it from
+        // LAN
       }
       break;
 
@@ -330,7 +351,8 @@ static void uplink_processor_task(void *pvParameters) {
 }
 
 // ===== FOTA Requirement Check =====
-// Wait for internet and trigger FOTA when online (similar to config_handler MCU_LAN case)
+// Wait for internet and trigger FOTA when online (similar to config_handler
+// MCU_LAN case)
 static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
   g_cached_lan_fw_version = received_lan_version;
   g_cached_wan_fw_version = WAN_FW_VERSION;
@@ -347,7 +369,7 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
   // Check for version mismatch or server FOTA command
   bool version_mismatch = (lan_maj != wan_maj || lan_min != wan_min ||
                            lan_pat != wan_pat || lan_bld != wan_bld);
-  
+
   bool server_fota = false;
   if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     server_fota = g_fota_request_pending;
@@ -355,10 +377,11 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
   }
 
   if (!version_mismatch && !server_fota) {
-    return;  // No FOTA needed
+    return; // No FOTA needed
   }
 
-  // If already waiting for LAN update or WAN FOTA in progress, don't trigger again
+  // If already waiting for LAN update or WAN FOTA in progress, don't trigger
+  // again
   if (g_waiting_for_lan_update || g_wan_fota_in_progress) {
     return;
   }
@@ -374,7 +397,8 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
 
   // Check internet status
   if (g_internet_status != INTERNET_STATUS_ONLINE) {
-    ESP_LOGW(TAG, "[FOTA] Internet offline, marking FOTA pending - will trigger when online");
+    ESP_LOGW(TAG, "[FOTA] Internet offline, marking FOTA pending - will "
+                  "trigger when online");
     g_fota_pending_internet = true;
     g_pending_lan_version_for_fota = received_lan_version;
     return;
@@ -390,9 +414,9 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
   // Trigger LAN FOTA via DQ
   send_fota_trigger_to_lan();
   g_waiting_for_lan_update = true;
-  g_lan_fota_wait_start_tick = xTaskGetTickCount();  // Start timeout timer
-  g_fota_pending_internet = false;  // Clear pending flag
-  g_wan_fota_in_progress = false;  // Reset for next FOTA cycle
+  g_lan_fota_wait_start_tick = xTaskGetTickCount(); // Start timeout timer
+  g_fota_pending_internet = false;                  // Clear pending flag
+  g_wan_fota_in_progress = false;                   // Reset for next FOTA cycle
 }
 
 // ===== Handshake Implementation =====
@@ -411,9 +435,9 @@ static esp_err_t perform_handshake_slave(void) {
 
   // Debug: Log received packet
   ESP_LOGD(TAG, "RX packet: len=%u", packet.payload_length);
-  // ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload, 
-  //                        packet.payload_length > 32 ? 32 : packet.payload_length, 
-  //                        ESP_LOG_INFO);
+  // ESP_LOG_BUFFER_HEXDUMP(TAG, packet.payload,
+  //                        packet.payload_length > 32 ? 32 :
+  //                        packet.payload_length, ESP_LOG_INFO);
 
   // Check for handshake request: [CF][0x01][fw_version(4)]
   if (packet.payload_length >= 7 && packet.payload[0] == 0x43 &&
@@ -445,10 +469,9 @@ static esp_err_t perform_handshake_slave(void) {
     // Load TX buffer
     ESP_LOGI(TAG, "Sending handshake response:");
     ESP_LOG_BUFFER_HEXDUMP(TAG, response, sizeof(response), ESP_LOG_INFO);
-    
+
     lan_comm_load_tx_data(g_lan_handle, response, sizeof(response));
-    ESP_LOGI(TAG,
-             "Handshake complete: Internet=%s, WAN FW=v%u.%u.%u.%u",
+    ESP_LOGI(TAG, "Handshake complete: Internet=%s, WAN FW=v%u.%u.%u.%u",
              response[2] ? "ONLINE" : "OFFLINE", WAN_FW_VERSION_MAJOR,
              WAN_FW_VERSION_MINOR, WAN_FW_VERSION_PATCH, WAN_FW_VERSION_BUILD);
 
@@ -476,20 +499,23 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
 
   // ===== CASE 1: LAN finished FOTA, now WAN starts its own FOTA =====
   if (g_waiting_for_lan_update) {
-    ESP_LOGW(TAG, "[MISMATCH] LAN FOTA complete (v%u.%u.%u.%u), WAN FOTA starting (NO ACK)",
+    ESP_LOGW(TAG,
+             "[MISMATCH] LAN FOTA complete (v%u.%u.%u.%u), WAN FOTA starting "
+             "(NO ACK)",
              FW_VERSION_MAJOR(lan_fw_version), FW_VERSION_MINOR(lan_fw_version),
-             FW_VERSION_PATCH(lan_fw_version), FW_VERSION_BUILD(lan_fw_version));
+             FW_VERSION_PATCH(lan_fw_version),
+             FW_VERSION_BUILD(lan_fw_version));
     g_cached_lan_fw_version = lan_fw_version;
     g_waiting_for_lan_update = false;
-    g_lan_fota_wait_start_tick = 0;  // Clear timeout timer
+    g_lan_fota_wait_start_tick = 0; // Clear timeout timer
     g_wan_fota_in_progress = true;  // Prevent re-triggering while WAN FOTA runs
-    g_fota_request_pending = false;  /* Clear so it doesn't re-fire if WAN FOTA
-        is delayed or skipped — server intent already served (LAN is updated) */
-    fota_ap_stop(); /* LAN FOTA done — AP no longer needed */
+    g_fota_request_pending = false; /* Clear so it doesn't re-fire if WAN FOTA
+       is delayed or skipped — server intent already served (LAN is updated) */
+    fota_ap_stop();                 /* LAN FOTA done — AP no longer needed */
     // DO NOT send ACK - let LAN retry handshake
     // Start WAN FOTA immediately
     fota_handler_task_start();
-    return;  // Exit without ACK
+    return; // Exit without ACK
   }
 
   // ===== CASE 2: Normal mid-operation handshake =====
@@ -498,7 +524,7 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
     ESP_LOGD(TAG, "WAN FOTA in progress, skipping handshake ACK");
     return;
   }
-  
+
   // Check if FOTA needed - internet check happens in main loop now
   trigger_lan_fota_if_needed(lan_fw_version);
 
@@ -528,7 +554,7 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
   uint16_t data_length = (payload[5] << 8) | payload[6];
 
-  ESP_LOGI(TAG, "Data from LAN: handler=%s, len=%u", handler_type, data_length);
+  ESP_LOGD(TAG, "Data from LAN: handler=%s, len=%u", handler_type, data_length);
 
   // Validate length
   if (length < DATA_PACKET_HEADER_SIZE + data_length) {
@@ -537,18 +563,19 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   }
 
   // Debug: Log data from LAN
-  ESP_LOGI(TAG, "Original data from LAN:");
-  ESP_LOG_BUFFER_HEXDUMP(TAG, &payload[DATA_PACKET_HEADER_SIZE],
-                         data_length > 64 ? 64 : data_length, ESP_LOG_INFO);
+  // ESP_LOGI(TAG, "Original data from LAN:");
+  // ESP_LOG_BUFFER_HEXDUMP(TAG, &payload[DATA_PACKET_HEADER_SIZE],
+  //                        data_length > 64 ? 64 : data_length, ESP_LOG_INFO);
 
   // Route response based on the original command source
   command_source_t src = mcu_lan_handler_get_config_source();
-  ESP_LOGI(TAG, "Response source: %s",
-           (src == CMD_SOURCE_UART) ? "UART" :
-           (src == CMD_SOURCE_USB)  ? "USB"  :
-           (src == CMD_SOURCE_HTTP) ? "HTTP/WebApp" :
-           (src == CMD_SOURCE_HTTP_RPC) ? "HTTP/RPC" :
-           (src == CMD_SOURCE_COAP) ? "CoAP" : "SERVER/MQTT");
+  ESP_LOGD(TAG, "Response source: %s",
+           (src == CMD_SOURCE_UART)       ? "UART"
+           : (src == CMD_SOURCE_USB)      ? "USB"
+           : (src == CMD_SOURCE_HTTP)     ? "HTTP/WebApp"
+           : (src == CMD_SOURCE_HTTP_RPC) ? "HTTP/RPC"
+           : (src == CMD_SOURCE_COAP)     ? "CoAP"
+                                          : "SERVER/MQTT");
 
   if (src == CMD_SOURCE_UART || src == CMD_SOURCE_USB) {
     // Local app command → extract and send back to the originating interface
@@ -556,31 +583,35 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     uint16_t response_len = data_length;
 
     // Search for "CFBL:" or "BR:" marker as start of actual response
-    const uint8_t *marker = (const uint8_t *)strstr((const char *)response_data, "CFBL:");
+    const uint8_t *marker =
+        (const uint8_t *)strstr((const char *)response_data, "CFBL:");
     if (marker == NULL) {
       marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
     }
     if (marker != NULL) {
       size_t offset = marker - response_data;
       response_data = marker;
-      response_len  = data_length - (uint16_t)offset;
-      ESP_LOGI(TAG, "Found response marker at offset %zu, len=%u", offset, response_len);
+      response_len = data_length - (uint16_t)offset;
+      ESP_LOGI(TAG, "Found response marker at offset %zu, len=%u", offset,
+               response_len);
     }
 
     if (src == CMD_SOURCE_UART) {
-      int sent = uart_write_bytes(UART_NUM_0, (const char *)response_data, response_len);
+      int sent = uart_write_bytes(UART_NUM_0, (const char *)response_data,
+                                  response_len);
       if (sent > 0) {
-        uart_write_bytes(UART_NUM_0, "\n", 1);  // Line terminator for App
+        uart_write_bytes(UART_NUM_0, "\n", 1); // Line terminator for App
         ESP_LOGI(TAG, "Response sent to UART: %d bytes", sent);
       } else {
         ESP_LOGE(TAG, "Failed to send response to UART");
       }
     } else {
       // CMD_SOURCE_USB
-      int sent = usb_serial_jtag_write_bytes((const char *)response_data, response_len,
-                                             pdMS_TO_TICKS(100));
+      int sent = usb_serial_jtag_write_bytes((const char *)response_data,
+                                             response_len, pdMS_TO_TICKS(100));
       if (sent > 0) {
-        usb_serial_jtag_write_bytes("\n", 1, pdMS_TO_TICKS(50));  // Line terminator for App
+        usb_serial_jtag_write_bytes(
+            "\n", 1, pdMS_TO_TICKS(50)); // Line terminator for App
         ESP_LOGI(TAG, "Response sent to USB: %d bytes", sent);
       } else {
         ESP_LOGW(TAG, "USB response failed (may not be connected)");
@@ -589,7 +620,8 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
 
     // ACK to LAN MCU
     downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
-                             g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+                             g_internet_status == INTERNET_STATUS_ONLINE ? 1
+                                                                         : 0);
     ESP_LOGI(TAG, "Local response forwarded, ACK sent to LAN");
     return;
   }
@@ -601,16 +633,21 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     uint16_t response_len = data_length;
 
     // Search for status marker (CFBL:/CFLR:/CFZB:/CFRS: prefix)
-    const uint8_t *marker = (const uint8_t *)strstr((const char *)response_data, "CFBL:");
-    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFLR:");
-    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFZB:");
-    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "CFRS:");
-    if (marker == NULL) marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
+    const uint8_t *marker =
+        (const uint8_t *)strstr((const char *)response_data, "CFBL:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFLR:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFZB:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFRS:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
 
     if (marker != NULL) {
       size_t offset = marker - response_data;
       response_data = marker;
-      response_len  = data_length - (uint16_t)offset;
+      response_len = data_length - (uint16_t)offset;
     }
 
     ESP_LOGI(TAG, "HTTP WebApp config response (local only): %*s",
@@ -618,14 +655,16 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
 
     // ACK to LAN MCU
     downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
-                             g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+                             g_internet_status == INTERNET_STATUS_ONLINE ? 1
+                                                                         : 0);
     ESP_LOGI(TAG, "HTTP response handled locally, ACK sent to LAN");
     return;
   }
 
-  // Config ACK responses (CFLR:JSON:, CFZB:JSON:, CFBL:JSON:, CFRS:JSON:) must NOT
-  // be routed through the internet/SD-card path — they are control-plane messages.
-  // The config flow is completely separate from the data/telemetry flow.
+  // Config ACK responses (CFLR:JSON:, CFZB:JSON:, CFBL:JSON:, CFRS:JSON:) must
+  // NOT be routed through the internet/SD-card path — they are control-plane
+  // messages. The config flow is completely separate from the data/telemetry
+  // flow.
   {
     const uint8_t *resp_data = &payload[DATA_PACKET_HEADER_SIZE];
     if (data_length >= 10 &&
@@ -636,7 +675,8 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
       ESP_LOGI(TAG, "Config ACK (local only): %.*s",
                data_length > 64 ? 64 : (int)data_length, (char *)resp_data);
       downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
-                               g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
+                               g_internet_status == INTERNET_STATUS_ONLINE ? 1
+                                                                           : 0);
       return;
     }
   }
@@ -650,11 +690,12 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
       memcpy(uplink_buffer, handler_type, 3);
       memcpy(&uplink_buffer[3], &payload[DATA_PACKET_HEADER_SIZE], data_length);
 
-      ESP_LOGI(TAG, "Uplink buffer (%u bytes):", uplink_len);
-      ESP_LOG_BUFFER_HEXDUMP(TAG, uplink_buffer,
-                             uplink_len > 64 ? 64 : uplink_len, ESP_LOG_INFO);
+      // ESP_LOGI(TAG, "Uplink buffer (%u bytes):", uplink_len);
+      // ESP_LOG_BUFFER_HEXDUMP(TAG, uplink_buffer,
+      //                        uplink_len > 64 ? 64 : uplink_len,
+      //                        ESP_LOG_INFO);
 
-      ESP_LOGI(TAG, "Forwarding to MQTT server (server command response)");
+      ESP_LOGD(TAG, "Forwarding to MQTT server (server command response)");
       server_handler_enqueue_uplink(uplink_buffer, uplink_len);
       free(uplink_buffer);
     } else {
@@ -676,12 +717,17 @@ static void process_data_query(void) {
     // Build FOTA trigger packet: [CF][length(2)][CFFW]
     // Format matches what LAN expects for FOTA detection
     uint8_t fota_trigger_frame[8] = {
-      (WAN_COMM_HEADER_CF >> 8) & 0xFF,  // 'C' = 0x43
-      (WAN_COMM_HEADER_CF & 0xFF),        // 'F' = 0x46
-      0x00, 0x04,                         // Length = 4 bytes
-      'C', 'F', 'F', 'W'                  // FOTA marker
+        (WAN_COMM_HEADER_CF >> 8) & 0xFF, // 'C' = 0x43
+        (WAN_COMM_HEADER_CF & 0xFF),      // 'F' = 0x46
+        0x00,
+        0x04, // Length = 4 bytes
+        'C',
+        'F',
+        'F',
+        'W' // FOTA marker
     };
-    lan_comm_load_tx_data(g_lan_handle, fota_trigger_frame, sizeof(fota_trigger_frame));
+    lan_comm_load_tx_data(g_lan_handle, fota_trigger_frame,
+                          sizeof(fota_trigger_frame));
     g_fota_trigger_pending = false;
     served = true;
     ESP_LOGI(TAG, "FOTA trigger (CFFW) sent to LAN MCU via DQ");
@@ -706,9 +752,10 @@ static void process_data_query(void) {
   // 2) Config/FOTA downlink to LAN (from WAN config cache)
   if (!served && g_config_cache_has_config) {
     ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
-    bool cache_was_fota = g_fota_request_pending;  /* g_fota_request_pending is only
-        set alongside is_fota=true in the config cache, so it's a safe proxy */
-    downlink_handle_config_request();  /* clears g_config_cache_has_config */
+    bool cache_was_fota =
+        g_fota_request_pending;       /* g_fota_request_pending is only
+set alongside is_fota=true in the config cache, so it's a safe proxy */
+    downlink_handle_config_request(); /* clears g_config_cache_has_config */
     served = true;
     if (cache_was_fota && !g_waiting_for_lan_update) {
       /* The FOTA trigger was delivered to LAN via the config-cache path
@@ -718,7 +765,9 @@ static void process_data_query(void) {
        * re-fires the FOTA.  Set the flag here so CASE 1 fires correctly. */
       g_waiting_for_lan_update = true;
       g_lan_fota_wait_start_tick = xTaskGetTickCount();
-      ESP_LOGI(TAG, "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
+      ESP_LOGI(
+          TAG,
+          "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
     }
   }
 

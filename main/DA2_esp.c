@@ -11,7 +11,7 @@ static const char *TAG = "MAIN";
 
 /* ===== Task Handle ==================================================== */
 TaskHandle_t main_task_handle = NULL;
-
+volatile bool is_power_sampling = false;
 /* ===== GPIO =========================================================== */
 #define GPIO3_POWER_RGB_CTRL GPIO_NUM_3 /* Toggle power rails + RGB LED */
 #define UART_SWITCH_SEL_GPIO                                                   \
@@ -43,6 +43,84 @@ static bool debounce_gpio3_active = false;
 #define GPIO_STABLE_SAMPLES 3 /* Number of stable readings before accept */
 
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
+static bool s_ext_power_ok =
+    true; /* VBUS present — updated by pwr_monitor callback */
+
+/* =====================================================================
+ *  Power Rail Wrapper
+ *
+ *  Five IOX pins must be forced OFF whenever the system runs on battery
+ *  alone (no VBUS):
+ *    STACK_GPIO_PIN_15  — DC Fan       (true = on)
+ *    STACK_GPIO_PIN_11  — EN_5V        (true = on)
+ *    STACK_GPIO_PIN_12  — RLED         (true = on, active-low circuit)
+ *    STACK_GPIO_PIN_13  — GLED         (true = on)
+ *    STACK_GPIO_PIN_14  — BLED         (true = on)
+ *
+ *  Use power_rail_write() in place of bare stack_handler_gpio_write()
+ *  for any of these five pins.  When s_ext_power_ok is false the
+ *  wrapper silently drops any enable (true) request.
+ * ===================================================================== */
+
+/**
+ * @brief Write an IOX power-rail pin, blocking enable if VBUS is absent.
+ *        For all other pins the call passes through unconditionally.
+ */
+static void power_rail_write(stack_gpio_pin_num_t pin, bool level) {
+  if (!s_ext_power_ok && level) {
+    switch (pin) {
+    case STACK_GPIO_PIN_15: /* fan    */
+    case STACK_GPIO_PIN_11: /* EN_5V  */
+    case STACK_GPIO_PIN_12: /* RLED   */
+    case STACK_GPIO_PIN_13: /* GLED   */
+    case STACK_GPIO_PIN_14: /* BLED   */
+      ESP_LOGD(TAG, "Rail P%d enable blocked (battery-only)", (int)pin);
+      return;
+    default:
+      break;
+    }
+  }
+  stack_handler_gpio_write(0, pin, level);
+}
+
+/**
+ * @brief Enforce power-rail state on VBUS change.
+ *
+ * Called by the pwr_monitor callback when power_good transitions.
+ *   ext_power_ok = false → battery only: immediately force all 5 rails OFF.
+ *   ext_power_ok = true  → VBUS returned: restore fan (always on) and the
+ *                          remaining rails to their battery_source_enabled
+ * state.
+ */
+static void power_rails_apply(bool ext_power_ok) {
+  if (s_ext_power_ok == ext_power_ok) {
+    return; /* no change */
+  }
+  s_ext_power_ok = ext_power_ok;
+
+  if (!ext_power_ok) {
+    /* Battery only — force all five rails off immediately */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_15, false); /* fan OFF  */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* EN_5V OFF */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true);  /* RLED off  */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true);  /* GLED off  */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true);  /* BLED off  */
+    ESP_LOGW(TAG, "Power rails OFF — battery-only mode");
+  } else {
+    /* External power returned — restore normal state */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_15, true); /* fan always on */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_11,
+                             battery_source_enabled); /* EN_5V */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_12,
+                             !battery_source_enabled); /* RLED  */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_13,
+                             !battery_source_enabled); /* GLED  */
+    stack_handler_gpio_write(0, STACK_GPIO_PIN_14,
+                             !battery_source_enabled); /* BLED  */
+    ESP_LOGI(TAG, "Power rails restored — external power (batt_en=%d)",
+             battery_source_enabled);
+  }
+}
 
 /**
  * @brief GPIO0 debounce timer callback - confirm button press after stable
@@ -423,7 +501,7 @@ void app_main(void) {
 
   /* Turn on DC Fan via IOX P15 */
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_15, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_15, true);
+  power_rail_write(STACK_GPIO_PIN_15, false);
 
   /* Set direction for 3V3 and 5V power rails EN and turn them ON */
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_10, true);
@@ -432,18 +510,28 @@ void app_main(void) {
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_13, true);
   stack_handler_gpio_set_direction(0, STACK_GPIO_PIN_14, true);
   stack_handler_gpio_set_direction(1, STACK_GPIO_PIN_04, true);
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true);  /* P10 = EN_3V3 */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_11, true);  /* P11 = EN_5V */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_12, false); /* P12 = RLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_13, false); /* P13 = GLED off */
-  stack_handler_gpio_write(0, STACK_GPIO_PIN_14, false); /* P14 = BLED off */
-  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true);  /* ADAPTER POWER ON */
+  stack_handler_gpio_write(0, STACK_GPIO_PIN_10, true); /* P10 = EN_3V3 */
+  power_rail_write(STACK_GPIO_PIN_11, true);            /* P11 = EN_5V  */
+  power_rail_write(STACK_GPIO_PIN_12, true);            /* P12 = RLED on */
+  power_rail_write(STACK_GPIO_PIN_13, true);            /* P13 = GLED on */
+  power_rail_write(STACK_GPIO_PIN_14, true);            /* P14 = BLED on */
+  stack_handler_gpio_write(1, STACK_GPIO_PIN_04, true); /* ADAPTER POWER ON */
   config_init_wan_stack_id(); /* invalidate stale LTE config       */
 
   pwr_source_init();
   pwr_monitor_task_start(); /* Battery monitor + HMI updates (5s interval) */
-  hmi_task_init();          /* HMI display: init state only  */
-  hmi_task_enter_mode();    /* Route UART to HMI, init display */
+
+  /* Check VBUS state now and enforce rail policy immediately if on battery */
+  {
+    pwr_source_status_t boot_pwr = {0};
+    if (pwr_source_get_status(&boot_pwr) == ESP_OK && !boot_pwr.power_good) {
+      s_ext_power_ok = true; /* force a transition inside power_rails_apply */
+      power_rails_apply(false);
+    }
+  }
+  pwr_monitor_register_power_good_cb(power_rails_apply);
+  // hmi_task_init();          /* HMI display: init state only  */
+  // hmi_task_enter_mode();    /* Route UART to HMI, init display */
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 
@@ -508,7 +596,7 @@ void app_main(void) {
   /* Start web config portal BEFORE protocol handlers — httpd needs to
    * allocate its task stack from internal RAM, which is more constrained
    * once a connected LTE PPP stack + MQTT tasks are running.            */
-  web_config_handler_start(WEB_MODE_STA);
+  // web_config_handler_start(WEB_MODE_STA);
 
   server_connect_start(g_server_type);
 
@@ -538,14 +626,14 @@ void app_main(void) {
                battery_source_enabled ? "ENABLED" : "DISABLED");
       stack_handler_gpio_write(0, STACK_GPIO_PIN_10,
                                battery_source_enabled); /* P10 = EN_3V3 */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_11,
-                               battery_source_enabled); /* P11 = EN_5V */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_12,
-                               !battery_source_enabled); /* P12 = RLED off */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_13,
-                               !battery_source_enabled); /* P13 = GLED off */
-      stack_handler_gpio_write(0, STACK_GPIO_PIN_14,
-                               !battery_source_enabled); /* P14 = BLED off */
+      power_rail_write(STACK_GPIO_PIN_11,
+                       battery_source_enabled); /* P11 = EN_5V  */
+      power_rail_write(STACK_GPIO_PIN_12,
+                       !battery_source_enabled); /* P12 = RLED   */
+      power_rail_write(STACK_GPIO_PIN_13,
+                       !battery_source_enabled); /* P13 = GLED   */
+      power_rail_write(STACK_GPIO_PIN_14,
+                       !battery_source_enabled); /* P14 = BLED   */
       stack_handler_gpio_write(1, STACK_GPIO_PIN_04,
                                battery_source_enabled); /* ADAPTER POWER*/
     }
@@ -553,9 +641,11 @@ void app_main(void) {
     /* UART command — CONFIG or NORMAL */
     if (notif == NOTIFY_UART_MODE_SWITCH) {
       if (requested_mode == 0) {
-        switch_to_config_mode(&current_internet_type);
+        // switch_to_config_mode(&current_internet_type);
+        is_power_sampling = true;
       } else if (requested_mode == 1) {
-        switch_to_normal_mode();
+        // switch_to_normal_mode();
+        is_power_sampling = false;
       }
       requested_mode = -1;
     }
