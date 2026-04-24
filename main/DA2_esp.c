@@ -617,6 +617,7 @@ void app_main(void) {
         is_power_sampling = true;
       } else {
         // switch_to_normal_mode();
+        ESP_LOGI(TAG, "POWER_SAMPLING_OFF");
         is_power_sampling = false;
       }
     }
