@@ -4,8 +4,8 @@
  */
 
 #include "DA2_esp.h"
-#include <esp_timer.h>
 #include <esp_pm.h>
+#include <esp_timer.h>
 
 /* ===== Module Tag ===================================================== */
 static const char *TAG = "MAIN";
@@ -471,15 +471,6 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
 
   /* --- Core peripherals ----------------------------------------------- */
-#if CONFIG_PM_ENABLE
-  esp_pm_config_t pm_config = {
-      .max_freq_mhz = 240, 
-      .min_freq_mhz = 40,  
-      .light_sleep_enable = true
-  };
-  ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
-  ESP_LOGI(TAG, "Automatic Light Sleep & Power Management ENABLED");
-#endif
 
   ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LOWMED));
   uart_switch_init(); /* UART_SEL GPIO46: default to LAN MCU   */
@@ -613,7 +604,15 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");
-  // ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
+// ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
+
+// Enable sleep mode:
+#if CONFIG_PM_ENABLE
+  esp_pm_config_t pm_config = {
+      .max_freq_mhz = 240, .min_freq_mhz = 40, .light_sleep_enable = true};
+  ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+  ESP_LOGI(TAG, "Automatic Light Sleep & Power Management ENABLED");
+#endif
 
   /* --- Main event loop ------------------------------------------------ */
   for (;;) {
