@@ -36,5 +36,6 @@ typedef void (*uart_mode_switch_cb_t)(int mode);
 void uart_handler_task_start(void);
 void uart_handler_task_stop(void);
 void uart_handler_register_mode_callback(uart_mode_switch_cb_t callback);
+void uart_handler_send_config_result(bool success, const char *message);
 
 #endif // UART_HANDLER_H

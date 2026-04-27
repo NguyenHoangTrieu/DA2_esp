@@ -13,10 +13,13 @@
 #include <stdint.h>
 #include <string.h>
 
-// Simplified publish data structure (no type differentiation)
+#define MQTT_PUBLISH_DATA_MAX_LEN 1024
+
+// Queue item owns its payload so data stays valid while buffered offline.
 typedef struct {
-  uint8_t *data;
+  uint8_t data[MQTT_PUBLISH_DATA_MAX_LEN];
   size_t length;
+  int64_t enqueued_at_us;
 } mqtt_publish_data_t;
 
 // Start the MQTT handler

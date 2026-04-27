@@ -353,6 +353,7 @@ static esp_err_t http_poll_rpc(void) {
 
                 config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
                 if (cmd) {
+                    memset(cmd, 0, sizeof(*cmd));
                     cmd->type     = config_parse_type((const char *)enqueue_cmd, enqueue_len);
                     cmd->data_len = enqueue_len;
                     cmd->source   = CMD_SOURCE_HTTP_RPC;

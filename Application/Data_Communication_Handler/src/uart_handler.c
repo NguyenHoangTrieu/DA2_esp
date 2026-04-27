@@ -81,6 +81,14 @@ static void uart_send_kv_ulong(const char *key, unsigned long value) {
   uart_println(buffer);
 }
 
+void uart_handler_send_config_result(bool success, const char *message) {
+  char buffer[CONFIG_RESULT_MSG_MAX_LEN + 32];
+  snprintf(buffer, sizeof(buffer), "CONFIG_ACK:%s:%s",
+           success ? "SUCCESS" : "FAIL",
+           (message && message[0] != '\0') ? message : "UNKNOWN");
+  uart_println(buffer);
+}
+
 /**
  * @brief Convert TCA stack-enum index to port-pin label: index -> "PxBit"
  * Examples: 5 -> "05" (P05), 6 -> "06" (P06), 11 -> "11" (P11)
@@ -376,6 +384,7 @@ static void process_uart_line(char *line, int line_len) {
       return;
     }
 
+    memset(cmd, 0, sizeof(*cmd));
     cmd->type = type;
     cmd->data_len = cmd_len;
     cmd->source = CMD_SOURCE_UART;

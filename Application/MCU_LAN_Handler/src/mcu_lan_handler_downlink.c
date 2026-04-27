@@ -46,6 +46,7 @@ typedef struct {
   bool has_config;
   bool is_fota;
   command_source_t source; // Track command source for ACK routing
+  void *result_waiter;
 } config_cache_t;
 
 // ===== Config Request Async Structure =====
@@ -370,11 +371,12 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
 }
 
 // ===== Public API: Update Config Cache =====
-void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota, command_source_t source) {
+bool mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
+                                   bool is_fota, command_source_t source,
+                                   void *result_waiter) {
   if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
     ESP_LOGW(TAG, "Config mutex timeout");
-    return;
+    return false;
   }
 
   if (config_data && length > 0 &&
@@ -384,6 +386,7 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     g_config_cache.has_config = true;
     g_config_cache.is_fota = is_fota;
     g_config_cache.source = source;
+    g_config_cache.result_waiter = result_waiter;
     g_config_cache_has_config = true;
 
     if (is_fota) {
@@ -396,6 +399,8 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     ESP_LOGI(TAG, "Config cached: %u bytes, FOTA=%s, source=%s", length,
              is_fota ? "YES" : "NO", src_str);
     signal_data_ready();
+    xSemaphoreGive(g_config_mutex);
+    return true;
   } else {
     if (!config_data) {
       ESP_LOGE(TAG, "Config data is NULL");
@@ -408,6 +413,7 @@ void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
   }
 
   xSemaphoreGive(g_config_mutex);
+  return false;
 }
 
 // ===== Public API: Get Config Source for Response Routing =====
@@ -420,6 +426,18 @@ command_source_t mcu_lan_handler_get_config_source(void) {
   }
 
   return src;
+}
+
+void *mcu_lan_handler_take_config_result_waiter(void) {
+  void *result_waiter = NULL;
+
+  if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    result_waiter = g_config_cache.result_waiter;
+    g_config_cache.result_waiter = NULL;
+    xSemaphoreGive(g_config_mutex);
+  }
+
+  return result_waiter;
 }
 
 // ===== Public API: Request LAN Config Async =====

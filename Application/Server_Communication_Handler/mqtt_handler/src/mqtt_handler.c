@@ -6,6 +6,7 @@
 #include "mqtt_handler.h"
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
+#include "esp_timer.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "38kozd1weulcnl6ytz8f"
@@ -159,6 +160,7 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
         ESP_LOGE(TAG, "Failed to allocate config command buffer");
         return;
       }
+      memset(cmd, 0, sizeof(*cmd));
       cmd->type = type;
       cmd->data_len = cmd_len;
       cmd->source = CMD_SOURCE_MQTT;  // MQTT commands → route response to server
@@ -369,7 +371,6 @@ static void mqtt_publish_task(void *arg) {
     if (g_mqtt_publish_queue) {
       if (xQueueReceive(g_mqtt_publish_queue, &incoming_data,
                         pdMS_TO_TICKS(500)) == pdTRUE) {
-
         // Wait for MQTT reconnection instead of dropping — esp-mqtt auto-reconnects
         if (!m_mqtt_connected) {
           ESP_LOGW(TAG, "MQTT not connected, waiting up to 10s for reconnect...");
@@ -385,7 +386,7 @@ static void mqtt_publish_task(void *arg) {
           ESP_LOGI(TAG, "MQTT reconnected after %d ms, retrying publish", wait_ms);
         }
 
-        if (!incoming_data.data || incoming_data.length == 0) {
+        if (incoming_data.length == 0) {
           ESP_LOGW(TAG, "Invalid data received from queue");
           continue;
         }
@@ -715,8 +716,17 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   // Do NOT gate on m_mqtt_connected — esp-mqtt auto-reconnects and the publish
   // task will wait for reconnection before sending.  Dropping here causes permanent
   // data loss during transient (1-2s) disconnects.
-  mqtt_publish_data_t queue_data = {.data = (uint8_t *)data,
-                                    .length = data_len};
+  if (data_len > MQTT_PUBLISH_DATA_MAX_LEN) {
+    ESP_LOGW(TAG, "Payload too large (%zu > %d), truncating", data_len,
+             MQTT_PUBLISH_DATA_MAX_LEN);
+    data_len = MQTT_PUBLISH_DATA_MAX_LEN;
+  }
+
+  mqtt_publish_data_t queue_data = {
+      .length = data_len,
+      .enqueued_at_us = esp_timer_get_time(),
+  };
+  memcpy(queue_data.data, data, data_len);
 
   if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(100)) ==
       pdTRUE) {

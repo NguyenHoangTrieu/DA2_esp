@@ -421,6 +421,7 @@ static esp_err_t coap_poll_rpc(void) {
                 if (type != CONFIG_TYPE_UNKNOWN && g_config_handler_queue) {
                     config_command_t *cmd = malloc(sizeof(config_command_t));
                     if (cmd) {
+                        memset(cmd, 0, sizeof(*cmd));
                         cmd->type = type;
                         cmd->data_len = cmd_data_len;
                         cmd->source = CMD_SOURCE_COAP;

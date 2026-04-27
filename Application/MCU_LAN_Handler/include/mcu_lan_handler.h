@@ -81,15 +81,23 @@ bool mcu_lan_enqueue_downlink(handler_id_t target_id, uint8_t *data,
  * @param length Config length
  * @param is_fota True if FOTA command
  * @param source Command source (CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT)
+ * @param result_waiter Optional waiter used by synchronous HTTP config calls
  */
-void mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
-                                   bool is_fota, command_source_t source);
+bool mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
+                                   bool is_fota, command_source_t source,
+                                   void *result_waiter);
 
 /**
  * @brief Get last config command source (for response routing)
  * @return command_source_t: CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT
  */
 command_source_t mcu_lan_handler_get_config_source(void);
+
+/**
+ * @brief Take the pending config result waiter for the last LAN config command.
+ *        Returns NULL when no synchronous waiter is pending.
+ */
+void *mcu_lan_handler_take_config_result_waiter(void);
 
 /**
  * @brief Enqueue uplink data to server (MQTT/HTTP)

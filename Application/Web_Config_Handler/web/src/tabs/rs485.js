@@ -173,12 +173,12 @@ export function renderRs485(container, config) {
     style: 'margin-top:8px',
     onClick: async () => {
       try {
-        await postLanConfig('rs485_baud', baudSel.value);
-        baudStatus.textContent = `✓ Baud rate set to ${baudSel.value}`;
-        toast(`RS485 baud → ${baudSel.value}`);
+        const res = await postLanConfig('rs485_baud', baudSel.value);
+        baudStatus.textContent = `✓ ${res?.message || `Baud rate set to ${baudSel.value}`}`;
+        toast(res?.message || `RS485 baud → ${baudSel.value}`);
       } catch (e) {
         baudStatus.textContent = '✗ Error: ' + e.message;
-        toast('Failed', 'err');
+        toast(e.message, 'err');
       }
     },
   }));
@@ -296,13 +296,13 @@ export function renderRs485(container, config) {
         const jsonStr = JSON.stringify(cfg);
         const slot = stackSel.value;
         /* Format: "<slot>:<minified_json>" → api builds ML:CFRS:JSON:<slot>:<json> */
-        await postLanConfig('rs485_json', `${slot}:${jsonStr}`);
-        gpioStatus.textContent = `✓ GPIO config sent (${jsonStr.length} bytes)`;
-        toast('RS485 GPIO config sent');
+        const res = await postLanConfig('rs485_json', `${slot}:${jsonStr}`);
+        gpioStatus.textContent = `✓ ${res?.message || `GPIO config sent (${jsonStr.length} bytes)`}`;
+        toast(res?.message || 'RS485 GPIO config sent');
         refreshPreview();
       } catch (e) {
         gpioStatus.textContent = '✗ Error: ' + e.message;
-        toast('Failed', 'err');
+        toast(e.message, 'err');
       }
     },
   }));

@@ -14,11 +14,25 @@ async function request(method, path, body) {
   } catch {
     throw new Error('Network error — gateway may be offline or switching networks');
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text}`);
+
+  let payload = null;
+  let text = '';
+  try {
+    payload = await res.json();
+  } catch {
+    text = await res.text().catch(() => '');
   }
-  return res.json();
+
+  if (!res.ok) {
+    const message = payload?.message || payload?.error || text || `HTTP ${res.status}`;
+    throw new Error(message);
+  }
+
+  if (payload?.ok === false) {
+    throw new Error(payload.message || payload.error || 'Request failed');
+  }
+
+  return payload;
 }
 
 /** GET /api/config — full gateway config */

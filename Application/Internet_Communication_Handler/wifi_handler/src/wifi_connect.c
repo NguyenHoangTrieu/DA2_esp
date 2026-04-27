@@ -12,8 +12,8 @@
 
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
-#define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Configure via config handler
+#define DEFAULT_ESP_WIFI_SSID "Banh Mi"      // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS "22110406" // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define WIFI_ESP_MAXIMUM_RETRY 3

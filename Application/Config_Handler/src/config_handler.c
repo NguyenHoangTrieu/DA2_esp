@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "fota_handler.h"
 #include "http_handler.h"
+#include "uart_handler.h"
 #include <ctype.h>
 
 static const char *TAG = "config_handler";
@@ -48,7 +49,7 @@ QueueHandle_t g_mqtt_config_queue = NULL;
 QueueHandle_t g_config_handler_queue = NULL;
 
 // Global config contexts
-config_internet_type_t g_internet_type = CONFIG_INTERNET_LTE;
+config_internet_type_t g_internet_type = CONFIG_INTERNET_WIFI;
 config_server_type_t g_server_type =
     CONFIG_SERVERTYPE_MQTT; /* default to MQTT */
 bool is_internet_connected = false;
@@ -76,6 +77,66 @@ static esp_err_t config_parse_http(const char *data, uint16_t len,
                                    http_config_data_t *cfg);
 static esp_err_t config_parse_coap(const char *data, uint16_t len,
                                    coap_config_data_t *cfg);
+
+static bool config_result_is_success_message(const char *message) {
+  if (message == NULL || message[0] == '\0') {
+    return false;
+  }
+
+  if (strstr(message, ":FAIL") != NULL || strstr(message, "ERROR") != NULL ||
+      strstr(message, "QUEUE_FULL") != NULL ||
+      strstr(message, "INVALID") != NULL) {
+    return false;
+  }
+
+  return (strstr(message, ":OK") != NULL || strstr(message, "SUCCESS") != NULL);
+}
+
+static void config_result_signal_waiter(void *result_waiter, bool success,
+                                        const char *message) {
+  config_result_waiter_t *waiter = (config_result_waiter_t *)result_waiter;
+  if (waiter == NULL) {
+    return;
+  }
+
+  waiter->success = success;
+  if (message && message[0] != '\0') {
+    strncpy(waiter->message, message, sizeof(waiter->message) - 1);
+    waiter->message[sizeof(waiter->message) - 1] = '\0';
+  } else {
+    strncpy(waiter->message, "UNKNOWN", sizeof(waiter->message) - 1);
+    waiter->message[sizeof(waiter->message) - 1] = '\0';
+  }
+
+  if (waiter->completion_sem != NULL) {
+    xSemaphoreGive(waiter->completion_sem);
+  }
+}
+
+void config_handler_publish_result(command_source_t source, void *result_waiter,
+                                   bool success, const char *message) {
+  config_result_signal_waiter(result_waiter, success, message);
+
+  if (source == CMD_SOURCE_UART) {
+    uart_handler_send_config_result(success, message);
+  }
+}
+
+void config_handler_publish_result_from_line(command_source_t source,
+                                             void *result_waiter,
+                                             const char *response_line) {
+  bool success = config_result_is_success_message(response_line);
+
+  config_result_signal_waiter(result_waiter, success, response_line);
+
+  /* For UART/USB sources, the raw line is already forwarded by the uplink
+   * path, so avoid emitting a second synthesized ACK line here. */
+  if (source == CMD_SOURCE_HTTP) {
+    ESP_LOGI(TAG, "HTTP config result: %s",
+             (response_line && response_line[0] != '\0') ? response_line
+                                                          : "UNKNOWN");
+  }
+}
 
 /**
  * @brief Parse command type from 2-character prefix
@@ -1051,15 +1112,17 @@ static void config_handler_task(void *arg) {
       ESP_LOGI(TAG, "Received config command, type: %d, len: %d", cmd->type,
                cmd->data_len);
 
+      bool command_success = false;
+      bool deferred_result = false;
+      bool restart_after_response = false;
+      char result_message[CONFIG_RESULT_MSG_MAX_LEN] = "CONFIG:FAIL:UNKNOWN";
+
       // Route to appropriate handler based on type
       switch (cmd->type) {
       case CONFIG_TYPE_WIFI: {
         wifi_config_data_t wifi_cfg;
         if (config_parse_wifi(cmd->raw_data, cmd->data_len, &wifi_cfg) ==
             ESP_OK) {
-          // CRITICAL: Save to NVS FIRST before sending to queue
-          // This ensures config is persisted even if device restarts
-          // immediately
           strncpy(g_wifi_ctx.ssid, wifi_cfg.ssid, sizeof(g_wifi_ctx.ssid) - 1);
           g_wifi_ctx.ssid[sizeof(g_wifi_ctx.ssid) - 1] = '\0';
           strncpy(g_wifi_ctx.pass, wifi_cfg.password,
@@ -1071,16 +1134,14 @@ static void config_handler_task(void *arg) {
           g_wifi_ctx.auth_mode = wifi_cfg.auth_mode;
 
           save_wifi_config_to_nvs();
-          ESP_LOGI(TAG, "WiFi config saved to NVS");
-
-          // Then send to WiFi task for runtime update
           if (g_wifi_config_queue) {
             xQueueSend(g_wifi_config_queue, &wifi_cfg, pdMS_TO_TICKS(100));
-            ESP_LOGI(TAG, "WiFi config sent to WiFi task");
-          } else {
-            ESP_LOGW(TAG,
-                     "WiFi queue not initialized, config saved to NVS only");
           }
+
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "WF:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "WF:FAIL:PARSE");
         }
         break;
       }
@@ -1089,7 +1150,6 @@ static void config_handler_task(void *arg) {
         mqtt_config_data_t mqtt_cfg;
         if (config_parse_mqtt(cmd->raw_data, cmd->data_len, &mqtt_cfg) ==
             ESP_OK) {
-          // CRITICAL: Save to NVS FIRST before sending to queue
           strncpy(g_mqtt_ctx.broker_uri, mqtt_cfg.broker_uri,
                   sizeof(g_mqtt_ctx.broker_uri) - 1);
           g_mqtt_ctx.broker_uri[sizeof(g_mqtt_ctx.broker_uri) - 1] = '\0';
@@ -1109,33 +1169,33 @@ static void config_handler_task(void *arg) {
               '\0';
 
           save_mqtt_config_to_nvs();
-          ESP_LOGI(TAG, "MQTT config saved to NVS");
-
-          // Then send to MQTT task for runtime update
           if (g_mqtt_config_queue) {
             xQueueSend(g_mqtt_config_queue, &mqtt_cfg, pdMS_TO_TICKS(100));
-            ESP_LOGI(TAG, "MQTT config sent to MQTT task");
-          } else {
-            ESP_LOGW(TAG,
-                     "MQTT queue not initialized, config saved to NVS only");
           }
+
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "MQ:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "MQ:FAIL:PARSE");
         }
         break;
       }
       case CONFIG_SET_FIRMWARE_URL: {
-        /* FU:<url> — save WAN firmware URL to NVS only, no OTA trigger */
         if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
           const char *url = cmd->raw_data + 3;
           if (url[0] != '\0') {
-            fota_handler_set_url(url); /* set_url saves to NVS internally */
-            ESP_LOGI(TAG, "WAN firmware URL saved: %s", url);
+            fota_handler_set_url(url);
+            command_success = true;
+            snprintf(result_message, sizeof(result_message), "FU:OK");
+          } else {
+            snprintf(result_message, sizeof(result_message), "FU:FAIL:EMPTY");
           }
+        } else {
+          snprintf(result_message, sizeof(result_message), "FU:FAIL:FORMAT");
         }
         break;
       }
       case CONFIG_UPDATE_FIRMWARE: {
-        ESP_LOGI(TAG, "Firmware update command received");
-        /* Optional URL: "FW:<url>" sets WAN MCU URL before triggering */
         if (cmd->data_len > 3 && cmd->raw_data[2] == ':') {
           const char *url = cmd->raw_data + 3;
           if (url[0] != '\0') {
@@ -1143,17 +1203,21 @@ static void config_handler_task(void *arg) {
           }
         }
         fota_handler_task_start();
+        command_success = true;
+        snprintf(result_message, sizeof(result_message), "FW:OK");
         break;
       }
       case CONFIG_TYPE_INTERNET: {
         config_internet_type_t internet_type;
         if (config_parse_internet(cmd->raw_data, cmd->data_len,
                                   &internet_type) == ESP_OK) {
-          ESP_LOGI(TAG, "Internet config type parsed: %d", internet_type);
           g_internet_type = internet_type;
           save_internet_config_to_nvs();
-          vTaskDelay(pdMS_TO_TICKS(1000));
-          esp_restart();
+          command_success = true;
+          restart_after_response = true;
+          snprintf(result_message, sizeof(result_message), "IN:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "IN:FAIL:PARSE");
         }
         break;
       }
@@ -1161,7 +1225,6 @@ static void config_handler_task(void *arg) {
         lte_config_data_t lte_cfg;
         if (config_parse_lte(cmd->raw_data, cmd->data_len, &lte_cfg) ==
             ESP_OK) {
-          // CRITICAL: Save to NVS FIRST before sending to queue
           strncpy(g_lte_ctx.apn, lte_cfg.apn, sizeof(g_lte_ctx.apn) - 1);
           g_lte_ctx.apn[sizeof(g_lte_ctx.apn) - 1] = '\0';
           strncpy(g_lte_ctx.username, lte_cfg.username,
@@ -1181,47 +1244,40 @@ static void config_handler_task(void *arg) {
           g_lte_ctx.rst_pin = lte_cfg.rst_pin;
 
           save_lte_config_to_nvs();
-          ESP_LOGI(TAG, "LTE config saved to NVS");
-
-          // Then send to LTE task for runtime update
           if (g_lte_config_queue) {
             xQueueSend(g_lte_config_queue, &lte_cfg, pdMS_TO_TICKS(100));
-            ESP_LOGI(TAG, "LTE config sent to LTE task");
-          } else {
-            ESP_LOGW(TAG, "LTE queue not initialized");
           }
+
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "LT:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "LT:FAIL:PARSE");
         }
         break;
       }
       case CONFIG_TYPE_MCU_LAN: {
         bool is_fota = false;
-        ESP_LOGI(TAG,
-                 "MCU LAN command received, forwarding to MCU LAN handler");
         if (cmd->data_len > 5) {
-          // Validate buffer size BEFORE copying
-          uint16_t cmd_payload_len = cmd->data_len - 3; // Skip "ML:" prefix
+          uint16_t cmd_payload_len = cmd->data_len - 3;
 
           if (cmd_payload_len > CONFIG_CMD_MAX_LEN) {
-            ESP_LOGE(TAG, "MCU LAN command too large: %d bytes (max %d)",
-                     cmd_payload_len, CONFIG_CMD_MAX_LEN);
+            snprintf(result_message, sizeof(result_message),
+                     "ML:FAIL:TOO_LARGE");
             break;
           }
 
-          // Allocate on heap to avoid stack overflow (4KB struct)
           mcu_lan_config_data_t *lan_cmd =
               (mcu_lan_config_data_t *)malloc(sizeof(mcu_lan_config_data_t));
           if (lan_cmd == NULL) {
-            ESP_LOGE(TAG,
-                     "Failed to allocate MCU LAN command buffer (%d bytes)",
-                     sizeof(mcu_lan_config_data_t));
+            snprintf(result_message, sizeof(result_message),
+                     "ML:FAIL:NO_MEM");
             break;
           }
 
           lan_cmd->length = cmd_payload_len;
           memcpy(lan_cmd->command, &cmd->raw_data[3], lan_cmd->length);
-          lan_cmd->command[lan_cmd->length] = '\0'; // Null-terminate
+          lan_cmd->command[lan_cmd->length] = '\0';
 
-          // Check if this is a firmware update command
           if (lan_cmd->length >= 4 &&
               strncmp(lan_cmd->command, "CFFW", 4) == 0) {
             if (!fota_ap_is_running()) {
@@ -1231,28 +1287,27 @@ static void config_handler_task(void *arg) {
             is_fota = true;
           }
 
-          // Send to MCU LAN queue (pass source for response routing)
-          mcu_lan_handler_update_config((const uint8_t *)lan_cmd->command,
-                                        lan_cmd->length, is_fota, cmd->source);
+          if (mcu_lan_handler_update_config((const uint8_t *)lan_cmd->command,
+                                            lan_cmd->length, is_fota,
+                                            cmd->source,
+                                            cmd->result_waiter)) {
+            deferred_result = true;
+          } else {
+            snprintf(result_message, sizeof(result_message),
+                     "ML:FAIL:FORWARD");
+          }
 
-          // Free allocated memory
           free(lan_cmd);
         } else {
-          ESP_LOGW(TAG, "MCU LAN command too short");
+          snprintf(result_message, sizeof(result_message), "ML:FAIL:FORMAT");
         }
         break;
       }
       case CONFIG_TYPE_SERVER: {
-        ESP_LOGI(TAG, "Server type config command received");
         config_server_type_t new_type;
         if (config_parse_server_type(cmd->raw_data, cmd->data_len, &new_type) ==
             ESP_OK) {
           if (new_type != g_server_type) {
-            ESP_LOGI(TAG,
-                     "Server type changing from %d to %d, restarting handlers",
-                     g_server_type, new_type);
-
-            // Stop current handler
             switch (g_server_type) {
             case CONFIG_SERVERTYPE_MQTT:
               mqtt_handler_task_stop();
@@ -1267,73 +1322,80 @@ static void config_handler_task(void *arg) {
               break;
             }
 
-            // Update and save
             g_server_type = new_type;
             save_server_config_to_nvs();
-
-            // Wait for handler to fully stop
             vTaskDelay(pdMS_TO_TICKS(500));
 
-            // Start new handler
             switch (g_server_type) {
             case CONFIG_SERVERTYPE_MQTT:
               mqtt_handler_task_start();
-              ESP_LOGI(TAG, "MQTT handler started");
               break;
             case CONFIG_SERVERTYPE_HTTP:
               http_handler_task_start();
-              ESP_LOGI(TAG, "HTTP handler started");
               break;
             case CONFIG_SERVERTYPE_COAP:
               coap_handler_task_start();
-              ESP_LOGI(TAG, "CoAP handler started");
               break;
             default:
-              mqtt_handler_task_start(); // Fallback to MQTT
-              ESP_LOGW(TAG, "Unknown server type, defaulting to MQTT");
+              mqtt_handler_task_start();
               break;
             }
-
-            ESP_LOGI(TAG, "Server type updated to: %d", g_server_type);
-          } else {
-            ESP_LOGI(TAG, "Server type already set to %d, no change",
-                     g_server_type);
           }
+
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "SV:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "SV:FAIL:PARSE");
         }
         break;
       }
       case CONFIG_TYPE_HTTP: {
-        ESP_LOGI(TAG, "HTTP config command received");
         http_config_data_t http_cfg;
         if (config_parse_http(cmd->raw_data, cmd->data_len, &http_cfg) ==
             ESP_OK) {
           memcpy(&g_http_cfg, &http_cfg, sizeof(http_config_data_t));
           save_http_config_to_nvs();
-          ESP_LOGI(TAG, "HTTP config saved - URL: %s", g_http_cfg.server_url);
           http_handler_update_config(&g_http_cfg);
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "HP:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "HP:FAIL:PARSE");
         }
         break;
       }
       case CONFIG_TYPE_COAP: {
-        ESP_LOGI(TAG, "CoAP config command received");
         coap_config_data_t coap_cfg;
         if (config_parse_coap(cmd->raw_data, cmd->data_len, &coap_cfg) ==
             ESP_OK) {
           memcpy(&g_coap_cfg, &coap_cfg, sizeof(coap_config_data_t));
           save_coap_config_to_nvs();
-          ESP_LOGI(TAG, "CoAP config saved - Host: %s", g_coap_cfg.host);
           coap_handler_update_config(&g_coap_cfg);
+          command_success = true;
+          snprintf(result_message, sizeof(result_message), "CP:OK");
+        } else {
+          snprintf(result_message, sizeof(result_message), "CP:FAIL:PARSE");
         }
         break;
       }
       default:
         ESP_LOGW(TAG, "Unknown config type: %d", cmd->type);
+        snprintf(result_message, sizeof(result_message),
+                 "CONFIG:FAIL:UNKNOWN_TYPE");
         break;
       }
 
-      // CRITICAL: Free heap memory after processing
+      if (!deferred_result) {
+        config_handler_publish_result(cmd->source, cmd->result_waiter,
+                                      command_success, result_message);
+      }
+
       free(cmd);
       cmd = NULL;
+
+      if (restart_after_response) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+      }
     }
   }
 

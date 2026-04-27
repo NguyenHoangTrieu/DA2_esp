@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
@@ -21,6 +22,7 @@
 // Must match MAX_CONFIG_LENGTH in uart_handler.c
 #define CONFIG_CMD_MAX_LEN 16384
 #define CONFIG_QUEUE_SIZE 20
+#define CONFIG_RESULT_MSG_MAX_LEN 128
 
 // Command type codes (2-character prefix)
 typedef enum {
@@ -117,10 +119,17 @@ typedef struct {
 
 // Generic configuration command
 typedef struct {
+    SemaphoreHandle_t completion_sem;
+    bool success;
+    char message[CONFIG_RESULT_MSG_MAX_LEN];
+} config_result_waiter_t;
+
+typedef struct {
     config_type_t type;
     char raw_data[CONFIG_CMD_MAX_LEN];
     uint16_t data_len;
     command_source_t source;  // CMD_SOURCE_UART / CMD_SOURCE_USB / CMD_SOURCE_MQTT
+    void *result_waiter;
 } config_command_t;
 
 // Queue handles for each subsystem
@@ -147,6 +156,11 @@ void config_handler_task_stop(void);
 
 // Helper functions
 config_type_t config_parse_type(const char *cmd, uint16_t len);
+void config_handler_publish_result(command_source_t source, void *result_waiter,
+                                   bool success, const char *message);
+void config_handler_publish_result_from_line(command_source_t source,
+                                             void *result_waiter,
+                                             const char *response_line);
 
 // NVS save/load functions
 esp_err_t save_internet_config_to_nvs(void);

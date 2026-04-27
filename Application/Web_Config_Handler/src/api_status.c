@@ -56,7 +56,7 @@ esp_err_t api_status_get_handler(void *arg)
     mcu_lan_handler_get_rtc(rtc_buf);
 
     /* Build JSON response */
-    char resp[512];
+    char resp[768];
     int len = snprintf(resp, sizeof(resp),
         "{"
         "\"firmware_version\":\"%s\","

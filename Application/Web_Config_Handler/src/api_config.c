@@ -14,6 +14,7 @@
 #include "config_handler.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "fota_handler.h"
 #include "mcu_lan_handler.h"
 #include "stack_handler.h"
@@ -25,9 +26,13 @@
 
 static const char *TAG = "api_config";
 
+static esp_err_t send_json_error(httpd_req_t *req, int status,
+                                 const char *msg);
+
 /* Max body size we accept on POST (matches CONFIG_CMD_MAX_LEN) */
 #define API_MAX_BODY_LEN CONFIG_CMD_MAX_LEN
 #define FOTA_URL_MAX_LEN 256
+#define CONFIG_RESULT_TIMEOUT_MS 6000
 
 /* ================================================================
  *  Helper: send JSON error response
@@ -44,6 +49,37 @@ static esp_err_t send_json_error(httpd_req_t *req, int status,
   snprintf(buf, sizeof(buf), "{\"ok\":false,\"error\":\"%s\"}", msg);
   httpd_resp_sendstr(req, buf);
   return ESP_OK;
+}
+
+static esp_err_t send_json_result(httpd_req_t *req, bool ok,
+                                  const char *message) {
+  httpd_resp_set_type(req, "application/json");
+
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "{\"ok\":%s,\"message\":\"%s\"}",
+           ok ? "true" : "false",
+           (message && message[0] != '\0') ? message : (ok ? "OK" : "FAILED"));
+  httpd_resp_sendstr(req, buf);
+  return ESP_OK;
+}
+
+static esp_err_t wait_for_config_result(config_result_waiter_t *waiter,
+                                        uint32_t timeout_ms) {
+  if (waiter == NULL || waiter->completion_sem == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  if (xSemaphoreTake(waiter->completion_sem, pdMS_TO_TICKS(timeout_ms)) !=
+      pdTRUE) {
+    strncpy(waiter->message, "CONFIG:FAIL:TIMEOUT",
+            sizeof(waiter->message) - 1);
+    waiter->message[sizeof(waiter->message) - 1] = '\0';
+    waiter->success = false;
+    return ESP_ERR_TIMEOUT;
+  }
+
+  return waiter->success ? ESP_OK : ESP_FAIL;
 }
 
 /* ================================================================
@@ -223,15 +259,23 @@ esp_err_t api_config_get_handler(void *arg) {
  *  Helper: allocate + enqueue a config command (heap, pointer-pass)
  * ================================================================ */
 static esp_err_t enqueue_config_cmd(config_type_t type, const char *wire_data,
-                                    uint16_t wire_len) {
+                                    uint16_t wire_len,
+                                    config_result_waiter_t *waiter) {
   config_command_t *cmd = malloc(sizeof(config_command_t));
   if (!cmd) {
     ESP_LOGE(TAG, "Failed to allocate config_command_t");
     return ESP_ERR_NO_MEM;
   }
 
+  memset(cmd, 0, sizeof(*cmd));
+  if (waiter != NULL) {
+    waiter->success = false;
+    waiter->message[0] = '\0';
+  }
+
   cmd->type = type;
   cmd->source = CMD_SOURCE_HTTP;
+  cmd->result_waiter = waiter;
   cmd->data_len = wire_len;
   memcpy(cmd->raw_data, wire_data, wire_len);
   cmd->raw_data[wire_len] = '\0';
@@ -246,13 +290,42 @@ static esp_err_t enqueue_config_cmd(config_type_t type, const char *wire_data,
   return ESP_OK;
 }
 
+static esp_err_t apply_config_cmd(config_type_t type, const char *wire_data,
+                                  uint16_t wire_len,
+                                  config_result_waiter_t *waiter,
+                                  char *message_buf,
+                                  size_t message_buf_size) {
+  esp_err_t ret = enqueue_config_cmd(type, wire_data, wire_len, waiter);
+  if (ret != ESP_OK) {
+    if (message_buf && message_buf_size > 0) {
+      strncpy(message_buf, "CONFIG:FAIL:QUEUE", message_buf_size - 1);
+      message_buf[message_buf_size - 1] = '\0';
+    }
+    return ret;
+  }
+
+  if (waiter == NULL) {
+    return ESP_OK;
+  }
+
+  ret = wait_for_config_result(waiter, CONFIG_RESULT_TIMEOUT_MS);
+  if (message_buf && message_buf_size > 0) {
+    strncpy(message_buf,
+            (waiter->message[0] != '\0') ? waiter->message : "CONFIG:FAIL:UNKNOWN",
+            message_buf_size - 1);
+    message_buf[message_buf_size - 1] = '\0';
+  }
+  return ret;
+}
+
 /* ================================================================
  *  JSON → wire-format builders  (one per config section)
  *  These produce the exact same colon/pipe-separated strings that
  *  the Python desktop app sends over UART.
  * ================================================================ */
 
-static esp_err_t build_wifi_cmd(const cJSON *obj) {
+static esp_err_t build_wifi_cmd(const cJSON *obj, config_result_waiter_t *waiter,
+                                char *message_buf, size_t message_buf_size) {
   const cJSON *ssid = cJSON_GetObjectItem(obj, "ssid");
   const cJSON *pass = cJSON_GetObjectItem(obj, "password");
   if (!cJSON_IsString(ssid))
@@ -278,10 +351,12 @@ static esp_err_t build_wifi_cmd(const cJSON *obj) {
     len = snprintf(wire, sizeof(wire), "WF:%s:%s:%s", ssid->valuestring, pw,
                    amode);
   }
-  return enqueue_config_cmd(CONFIG_TYPE_WIFI, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_WIFI, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_lte_cmd(const cJSON *obj) {
+static esp_err_t build_lte_cmd(const cJSON *obj, config_result_waiter_t *waiter,
+                               char *message_buf, size_t message_buf_size) {
   /* LT:MODEM:APN:USER:PASS:COMM:AUTO:TIMEOUT:MAXRETRY:PWR:RST */
   const cJSON *modem = cJSON_GetObjectItem(obj, "modem_name");
   const cJSON *apn = cJSON_GetObjectItem(obj, "apn");
@@ -332,10 +407,13 @@ static esp_err_t build_lte_cmd(const cJSON *obj) {
   int len = snprintf(wire, sizeof(wire), "LT:%s:%s:%s:%s:%s:%s:%lu:%lu:%s:%s",
                      mn, apn_str, us, pw, comm, arec, (unsigned long)timeout,
                      (unsigned long)maxr, ppin, rpin);
-  return enqueue_config_cmd(CONFIG_TYPE_LTE, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_LTE, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_mqtt_cmd(const cJSON *obj) {
+static esp_err_t build_mqtt_cmd(const cJSON *obj,
+                                config_result_waiter_t *waiter,
+                                char *message_buf, size_t message_buf_size) {
   /* MQ:URI|TOKEN|SUB|PUB|ATTR */
   const cJSON *uri = cJSON_GetObjectItem(obj, "broker_uri");
   const cJSON *tok = cJSON_GetObjectItem(obj, "device_token");
@@ -358,10 +436,12 @@ static esp_err_t build_mqtt_cmd(const cJSON *obj) {
                cJSON_IsString(pub) ? pub->valuestring : "",
                cJSON_IsString(attr) ? attr->valuestring : "", keepalive,
                (unsigned long)timeout);
-  return enqueue_config_cmd(CONFIG_TYPE_MQTT, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_MQTT, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_http_cmd(const cJSON *obj) {
+static esp_err_t build_http_cmd(const cJSON *obj, config_result_waiter_t *waiter,
+                                char *message_buf, size_t message_buf_size) {
   /* HP:URL|AUTH_TOKEN|PORT|USE_TLS|VERIFY|TIMEOUT_MS */
   const cJSON *url = cJSON_GetObjectItem(obj, "server_url");
   if (!cJSON_IsString(url))
@@ -382,10 +462,12 @@ static esp_err_t build_http_cmd(const cJSON *obj) {
                (cJSON_IsBool(vfy) && cJSON_IsTrue(vfy)) ? 1 : 0,
                (unsigned long)(cJSON_IsNumber(tmo) ? (uint32_t)tmo->valuedouble
                                                    : 10000));
-  return enqueue_config_cmd(CONFIG_TYPE_HTTP, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_HTTP, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_coap_cmd(const cJSON *obj) {
+static esp_err_t build_coap_cmd(const cJSON *obj, config_result_waiter_t *waiter,
+                                char *message_buf, size_t message_buf_size) {
   /* CP:HOST|RESOURCE|TOKEN|PORT|DTLS|ACK_TIMEOUT|MAX_RTX|RPC_POLL_MS */
   const cJSON *host = cJSON_GetObjectItem(obj, "host");
   if (!cJSON_IsString(host))
@@ -410,10 +492,14 @@ static esp_err_t build_coap_cmd(const cJSON *obj) {
       cJSON_IsNumber(rtx) ? rtx->valueint : 4,
       (unsigned long)(cJSON_IsNumber(poll) ? (uint32_t)poll->valuedouble
                                            : 1500));
-  return enqueue_config_cmd(CONFIG_TYPE_COAP, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_COAP, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_internet_cmd(const cJSON *obj) {
+static esp_err_t build_internet_cmd(const cJSON *obj,
+                                    config_result_waiter_t *waiter,
+                                    char *message_buf,
+                                    size_t message_buf_size) {
   /* obj is just a number: 0=WIFI, 1=LTE, 2=ETHERNET, 3=NBIOT */
   if (!cJSON_IsNumber(obj))
     return ESP_ERR_INVALID_ARG;
@@ -438,7 +524,8 @@ static esp_err_t build_internet_cmd(const cJSON *obj) {
 
   char wire[16];
   int len = snprintf(wire, sizeof(wire), "IN:%s", type_str);
-  return enqueue_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
 /* ----------------------------------------------------------------
@@ -448,7 +535,8 @@ static esp_err_t build_internet_cmd(const cJSON *obj) {
  *   internet_fallback (number: 0 or 1, optional)
  * Builds: "IN:TYPE", "IN:TYPE:1", or "IN:TYPE:0"
  * ---------------------------------------------------------------- */
-static esp_err_t build_wan_cmd(const cJSON *obj) {
+static esp_err_t build_wan_cmd(const cJSON *obj, config_result_waiter_t *waiter,
+                               char *message_buf, size_t message_buf_size) {
   const cJSON *itype = cJSON_GetObjectItem(obj, "internet_type");
   if (!cJSON_IsString(itype))
     return ESP_ERR_INVALID_ARG;
@@ -474,10 +562,14 @@ static esp_err_t build_wan_cmd(const cJSON *obj) {
   } else {
     len = snprintf(wire, sizeof(wire), "IN:%s", type_str);
   }
-  return enqueue_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_INTERNET, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_server_type_cmd(const cJSON *obj) {
+static esp_err_t build_server_type_cmd(const cJSON *obj,
+                                       config_result_waiter_t *waiter,
+                                       char *message_buf,
+                                       size_t message_buf_size) {
   /* obj is a number: 0=MQTT, 1=CoAP, 2=HTTP */
   if (!cJSON_IsNumber(obj))
     return ESP_ERR_INVALID_ARG;
@@ -486,10 +578,14 @@ static esp_err_t build_server_type_cmd(const cJSON *obj) {
 
   char wire[8];
   int len = snprintf(wire, sizeof(wire), "SV:%d", obj->valueint);
-  return enqueue_config_cmd(CONFIG_TYPE_SERVER, wire, (uint16_t)len);
+  return apply_config_cmd(CONFIG_TYPE_SERVER, wire, (uint16_t)len, waiter,
+                          message_buf, message_buf_size);
 }
 
-static esp_err_t build_fota_url_cmd(const cJSON *obj) {
+static esp_err_t build_fota_url_cmd(const cJSON *obj,
+                                    config_result_waiter_t *waiter,
+                                    char *message_buf,
+                                    size_t message_buf_size) {
   /* obj fields:
    *   lan_fw_url  (string) — saved to LAN MCU via ML:CFFU:<url> (NVS, no
    * trigger) wan_fw_url  (string) — saved to WAN MCU directly         (NVS, no
@@ -503,13 +599,18 @@ static esp_err_t build_fota_url_cmd(const cJSON *obj) {
     char wire[FOTA_URL_MAX_LEN + 16];
     int wire_len =
         snprintf(wire, sizeof(wire), "ML:CFFU:%s", lan_url->valuestring);
-    ret = enqueue_config_cmd(CONFIG_TYPE_MCU_LAN, wire, (uint16_t)wire_len);
+    ret = apply_config_cmd(CONFIG_TYPE_MCU_LAN, wire, (uint16_t)wire_len,
+                           waiter, message_buf, message_buf_size);
   }
 
   /* ── WAN MCU: set URL only (direct, saves to NVS via set_url) ── */
   const cJSON *wan_url = cJSON_GetObjectItem(obj, "wan_fw_url");
   if (cJSON_IsString(wan_url) && wan_url->valuestring[0] != '\0') {
     fota_handler_set_url(wan_url->valuestring);
+    if (ret == ESP_OK && message_buf && message_buf_size > 0) {
+      strncpy(message_buf, "FU:OK", message_buf_size - 1);
+      message_buf[message_buf_size - 1] = '\0';
+    }
   }
 
   return ret;
@@ -550,8 +651,21 @@ esp_err_t api_config_post_handler(void *arg) {
     return send_json_error(req, 400, "Invalid JSON");
   }
 
+  SemaphoreHandle_t completion_sem = xSemaphoreCreateBinary();
+  if (completion_sem == NULL) {
+    cJSON_Delete(root);
+    return send_json_error(req, 500, "Out of memory");
+  }
+
+  config_result_waiter_t waiter = {
+      .completion_sem = completion_sem,
+      .success = false,
+      .message = {0},
+  };
+
   int queued = 0;
   int errors = 0;
+  char last_message[CONFIG_RESULT_MSG_MAX_LEN] = "";
 
   /* Each key triggers the matching command builder.
    * IMPORTANT: LTE (CFLT) must be sent BEFORE WAN (CFIN) for proper sequencing.
@@ -560,49 +674,74 @@ esp_err_t api_config_post_handler(void *arg) {
 
   item = cJSON_GetObjectItem(root, "internet_type");
   if (item) {
-    (build_internet_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_internet_cmd(item, &waiter, last_message,
+                        sizeof(last_message)) == ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "wifi");
   if (item) {
-    (build_wifi_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_wifi_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   /* CFLT (LTE config) MUST be sent before CFIN (WAN/internet type) */
   item = cJSON_GetObjectItem(root, "lte");
   if (item) {
-    (build_lte_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_lte_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   /* Now send CFIN after CFLT is queued */
   item = cJSON_GetObjectItem(root, "wan");
   if (item) {
-    (build_wan_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_wan_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "server_type");
   if (item) {
-    (build_server_type_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_server_type_cmd(item, &waiter, last_message,
+                           sizeof(last_message)) == ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "mqtt");
   if (item) {
-    (build_mqtt_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_mqtt_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "http");
   if (item) {
-    (build_http_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_http_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "coap");
   if (item) {
-    (build_coap_cmd(item) == ESP_OK) ? queued++ : errors++;
+    (build_coap_cmd(item, &waiter, last_message, sizeof(last_message)) ==
+     ESP_OK)
+        ? queued++
+        : errors++;
   }
 
   item = cJSON_GetObjectItem(root, "fota");
   if (item) {
-    esp_err_t fota_ret = build_fota_url_cmd(item);
+    esp_err_t fota_ret =
+        build_fota_url_cmd(item, &waiter, last_message, sizeof(last_message));
     if (fota_ret == ESP_OK)
       queued++;
     else
@@ -610,18 +749,16 @@ esp_err_t api_config_post_handler(void *arg) {
   }
 
   cJSON_Delete(root);
+  vSemaphoreDelete(completion_sem);
 
   if (queued == 0 && errors == 0) {
     return send_json_error(req, 400, "No recognized config sections");
   }
 
-  /* Response */
-  httpd_resp_set_type(req, "application/json");
-  char resp[128];
-  snprintf(resp, sizeof(resp), "{\"ok\":%s,\"queued\":%d,\"errors\":%d}",
-           errors == 0 ? "true" : "false", queued, errors);
-  httpd_resp_sendstr(req, resp);
-  return ESP_OK;
+  return send_json_result(req, errors == 0,
+                          (last_message[0] != '\0') ? last_message
+                                                     : (errors == 0 ? "OK"
+                                                                    : "FAILED"));
 }
 
 /* ================================================================
@@ -722,6 +859,19 @@ esp_err_t api_lan_config_post_handler(void *arg) {
   const char *type_str = type_item->valuestring;
   const char *data_str = data_item->valuestring;
   int data_len = (int)strlen(data_str);
+  char result_message[CONFIG_RESULT_MSG_MAX_LEN] = "";
+
+  SemaphoreHandle_t completion_sem = xSemaphoreCreateBinary();
+  if (completion_sem == NULL) {
+    cJSON_Delete(root);
+    return send_json_error(req, 500, "Out of memory");
+  }
+
+  config_result_waiter_t waiter = {
+      .completion_sem = completion_sem,
+      .success = false,
+      .message = {0},
+  };
 
   /* Build the MCU LAN command forwarded to LAN MCU via SPI.
    * WAN MCU strips "ML:" (3 bytes) before forwarding, so LAN MCU
@@ -769,16 +919,20 @@ esp_err_t api_lan_config_post_handler(void *arg) {
     return send_json_error(req, 400, "Unknown LAN config type");
   }
 
-  esp_err_t ret =
-      enqueue_config_cmd(CONFIG_TYPE_MCU_LAN, wire, (uint16_t)wire_len);
+  esp_err_t ret = apply_config_cmd(CONFIG_TYPE_MCU_LAN, wire,
+                                   (uint16_t)wire_len, &waiter,
+                                   result_message, sizeof(result_message));
   free(wire);
   cJSON_Delete(root);
+  vSemaphoreDelete(completion_sem);
 
   if (ret != ESP_OK) {
-    return send_json_error(req, 500, "Queue full");
+    return send_json_result(req, false,
+                            (result_message[0] != '\0') ? result_message
+                                                         : "ML:FAIL");
   }
 
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_sendstr(req, "{\"ok\":true}");
-  return ESP_OK;
+  return send_json_result(req, true,
+                          (result_message[0] != '\0') ? result_message
+                                                       : "ML:OK");
 }

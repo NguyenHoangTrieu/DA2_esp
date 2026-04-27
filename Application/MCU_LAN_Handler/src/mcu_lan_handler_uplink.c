@@ -77,6 +77,17 @@ static uint32_t g_pending_lan_version_for_fota =
     0; // Cached version while waiting
 static internet_status_t g_prev_internet_status =
     INTERNET_STATUS_OFFLINE; // Track status changes
+
+static bool is_config_result_payload(const char *payload) {
+  if (payload == NULL) {
+    return false;
+  }
+
+  return strncmp(payload, "CFBL:", 5) == 0 || strncmp(payload, "CFLR:", 5) == 0 ||
+         strncmp(payload, "CFZB:", 5) == 0 || strncmp(payload, "CFRS:", 5) == 0 ||
+         strncmp(payload, "CFBG:", 5) == 0 ||
+         strncmp(payload, "BR:JSON:", 8) == 0 || strncmp(payload, "LR:JSON:", 8) == 0;
+}
 static TickType_t g_lan_fota_wait_start_tick =
     0; // Track when LAN FOTA trigger was sent
 
@@ -582,12 +593,21 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     const uint8_t *response_data = &payload[DATA_PACKET_HEADER_SIZE];
     uint16_t response_len = data_length;
 
-    // Search for "CFBL:" or "BR:" marker as start of actual response
+    // Search for known config/result markers as start of actual response
     const uint8_t *marker =
         (const uint8_t *)strstr((const char *)response_data, "CFBL:");
-    if (marker == NULL) {
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFLR:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFZB:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFRS:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFBG:");
+    if (marker == NULL)
       marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
-    }
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "LR:");
     if (marker != NULL) {
       size_t offset = marker - response_data;
       response_data = marker;
@@ -618,6 +638,12 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
       }
     }
 
+    if (is_config_result_payload((const char *)response_data)) {
+      void *result_waiter = mcu_lan_handler_take_config_result_waiter();
+      config_handler_publish_result_from_line(src, result_waiter,
+                                              (const char *)response_data);
+    }
+
     // ACK to LAN MCU
     downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
                              g_internet_status == INTERNET_STATUS_ONLINE ? 1
@@ -627,8 +653,8 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   }
 
   if (src == CMD_SOURCE_HTTP) {
-    /* HTTP/WebApp config response — log it locally, don't send to MQTT.
-     * The HTTP endpoint already returned OK to the web app. */
+    /* HTTP/WebApp config response — complete the waiting HTTP request using
+     * the LAN ACK payload. */
     const uint8_t *response_data = &payload[DATA_PACKET_HEADER_SIZE];
     uint16_t response_len = data_length;
 
@@ -642,12 +668,22 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     if (marker == NULL)
       marker = (const uint8_t *)strstr((const char *)response_data, "CFRS:");
     if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "CFBG:");
+    if (marker == NULL)
       marker = (const uint8_t *)strstr((const char *)response_data, "BR:");
+    if (marker == NULL)
+      marker = (const uint8_t *)strstr((const char *)response_data, "LR:");
 
     if (marker != NULL) {
       size_t offset = marker - response_data;
       response_data = marker;
       response_len = data_length - (uint16_t)offset;
+    }
+
+    {
+      void *result_waiter = mcu_lan_handler_take_config_result_waiter();
+      config_handler_publish_result_from_line(src, result_waiter,
+                                              (const char *)response_data);
     }
 
     ESP_LOGI(TAG, "HTTP WebApp config response (local only): %*s",
@@ -661,17 +697,12 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
     return;
   }
 
-  // Config ACK responses (CFLR:JSON:, CFZB:JSON:, CFBL:JSON:, CFRS:JSON:) must
-  // NOT be routed through the internet/SD-card path — they are control-plane
-  // messages. The config flow is completely separate from the data/telemetry
-  // flow.
+  // Config ACK responses must NOT be routed through the internet/SD-card path
+  // — they are control-plane messages. Keep them local regardless of internet
+  // state so config feedback still works when offline.
   {
     const uint8_t *resp_data = &payload[DATA_PACKET_HEADER_SIZE];
-    if (data_length >= 10 &&
-        (strncmp((const char *)resp_data, "CFLR:JSON:", 10) == 0 ||
-         strncmp((const char *)resp_data, "CFZB:JSON:", 10) == 0 ||
-         strncmp((const char *)resp_data, "CFBL:JSON:", 10) == 0 ||
-         strncmp((const char *)resp_data, "CFRS:JSON:", 10) == 0)) {
+    if (is_config_result_payload((const char *)resp_data)) {
       ESP_LOGI(TAG, "Config ACK (local only): %.*s",
                data_length > 64 ? 64 : (int)data_length, (char *)resp_data);
       downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,

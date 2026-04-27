@@ -54,6 +54,7 @@ void pwr_monitor_register_power_good_cb(void (*cb)(bool power_good)) {
  *        - >= 10%: Orange (critical)
  *        - <  10%: Red (emergency)
  */
+static const char *get_soc_color_name(uint8_t soc_pct) __attribute__((unused));
 static const char *get_soc_color_name(uint8_t soc_pct) {
   if (soc_pct >= 50)
     return "GREEN";
