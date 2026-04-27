@@ -25,9 +25,9 @@
  * Works with ThingsBoard, GitHub Releases, any plain HTTP/HTTPS server.
  *
  * Examples:
- *   ThingsBoard local : http://192.168.1.100:8080/api/v1/TOKEN/firmware?title=DA2_esp&version=1.1.2
- *   ThingsBoard cloud : https://demo.thingsboard.io/api/v1/TOKEN/firmware?title=DA2_esp&version=1.1.2
- *   GitHub Release    : https://github.com/USER/REPO/releases/download/v1.1.2/DA2_esp.bin
+ *   ThingsBoard local : http://192.168.1.100:8080/api/v1/TOKEN/firmware?title=DA2_esp&version=<current-version>
+ *   ThingsBoard cloud : https://demo.thingsboard.io/api/v1/TOKEN/firmware?title=DA2_esp&version=<current-version>
+ *   GitHub Release    : https://github.com/USER/REPO/releases/download/v<current-version>/DA2_esp.bin
  *   Custom HTTP       : http://192.168.1.50/ota/DA2_esp.bin
  * ============================================================ */
 

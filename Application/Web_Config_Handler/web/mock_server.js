@@ -6,6 +6,8 @@ import express from 'express';
 const app = express();
 app.use(express.json());
 
+const CURRENT_FW_VERSION = '2.1.1';
+
 // ── In-memory state ───────────────────────────────────────────────────────────
 
 let state = {
@@ -128,7 +130,9 @@ app.post('/api/lan_config', (req, res) => {
 app.get('/api/status', (_req, res) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000);
   res.json({
-    firmware_version: '1.0.0-mock',
+    firmware_version: CURRENT_FW_VERSION,
+    wan_fw: CURRENT_FW_VERSION,
+    lan_fw: CURRENT_FW_VERSION,
     wifi_connected: true,
     wifi_ssid: state.wifi.ssid,
     wifi_rssi: -62,

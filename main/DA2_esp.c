@@ -1,6 +1,5 @@
 /*
  * DA2_esp — ESP32-S3 WAN Gateway Main Application
- * Firmware v1.0.1
  */
 
 #include "DA2_esp.h"
@@ -12,7 +11,6 @@ static const char *TAG = "MAIN";
 
 /* ===== Task Handle ==================================================== */
 TaskHandle_t main_task_handle = NULL;
-volatile bool is_power_sampling = false;
 /* ===== GPIO =========================================================== */
 #define GPIO3_POWER_RGB_CTRL GPIO_NUM_3 /* Toggle power rails + RGB LED */
 #define UART_SWITCH_SEL_GPIO                                                   \
@@ -598,7 +596,7 @@ void app_main(void) {
   /* Start web config portal BEFORE protocol handlers — httpd needs to
    * allocate its task stack from internal RAM, which is more constrained
    * once a connected LTE PPP stack + MQTT tasks are running.            */
-  // web_config_handler_start(WEB_MODE_STA);
+  web_config_handler_start(WEB_MODE_STA);
 
   server_connect_start(g_server_type);
 
@@ -622,13 +620,9 @@ void app_main(void) {
     /* GPIO0 — toggle CONFIG / NORMAL */
     if (notif == NOTIFY_BUTTON_PRESS) {
       if (current_mode == APP_MODE_NORMAL) {
-        // switch_to_config_mode(&current_internet_type);
-        ESP_LOGI(TAG, "POWER_SAMPLING_ON");
-        is_power_sampling = true;
+        switch_to_config_mode(&current_internet_type);
       } else {
-        // switch_to_normal_mode();
-        ESP_LOGI(TAG, "POWER_SAMPLING_OFF");
-        is_power_sampling = false;
+        switch_to_normal_mode();
       }
     }
 

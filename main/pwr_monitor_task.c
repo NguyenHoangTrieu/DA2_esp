@@ -183,8 +183,7 @@ static void power_monitor_task(void *arg) {
       }
 
       /* 4. Log battery status */
-      if (is_power_sampling)
-        log_battery_status(&new_status);
+      log_battery_status(&new_status);
 
       /* 5. Notify on VBUS power-good state change */
       if (new_status.power_good != s_last_power_good) {

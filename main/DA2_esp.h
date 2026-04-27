@@ -22,7 +22,6 @@
 #include "hmi_task.h"
 #include "pcf8563_rtc.h"
 extern TaskHandle_t main_task_handle;
-extern volatile bool is_power_sampling;
 void server_connect_stop(config_server_type_t server_type);
 void server_connect_start(config_server_type_t server_type);
 

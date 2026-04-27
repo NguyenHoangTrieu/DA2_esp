@@ -27,9 +27,6 @@ esp_err_t api_status_get_handler(void *arg)
 {
     httpd_req_t *req = (httpd_req_t *)arg;
 
-    /* Firmware version from app descriptor */
-    const esp_app_desc_t *app = esp_app_get_description();
-
     /* WAN / LAN firmware version */
     uint32_t wan_ver = WAN_FW_VERSION;
     uint32_t lan_ver = mcu_lan_handler_get_lan_fw_version();
@@ -60,8 +57,8 @@ esp_err_t api_status_get_handler(void *arg)
     int len = snprintf(resp, sizeof(resp),
         "{"
         "\"firmware_version\":\"%s\","
-        "\"wan_fw\":\"%u.%u.%u.%u\","
-        "\"lan_fw\":\"%u.%u.%u.%u\","
+        "\"wan_fw\":\"%u.%u.%u\","
+        "\"lan_fw\":\"%u.%u.%u\","
         "\"internet_type\":%d,"
         "\"server_type\":%d,"
         "\"wifi_connected\":%s,"
@@ -71,11 +68,11 @@ esp_err_t api_status_get_handler(void *arg)
         "\"rtc\":\"%s\","
         "\"free_heap\":%lu"
         "}",
-        app->version,
+        DA2_CURRENT_VERSION_STR,
         (unsigned int)((wan_ver >> 24) & 0xFF), (unsigned int)((wan_ver >> 16) & 0xFF),
-        (unsigned int)((wan_ver >> 8)  & 0xFF), (unsigned int)(wan_ver & 0xFF),
+        (unsigned int)((wan_ver >> 8)  & 0xFF),
         (unsigned int)((lan_ver >> 24) & 0xFF), (unsigned int)((lan_ver >> 16) & 0xFF),
-        (unsigned int)((lan_ver >> 8)  & 0xFF), (unsigned int)(lan_ver & 0xFF),
+        (unsigned int)((lan_ver >> 8)  & 0xFF),
         (int)g_internet_type,
         (int)g_server_type,
         wifi_connected ? "true" : "false",

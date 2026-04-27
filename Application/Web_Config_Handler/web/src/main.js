@@ -202,6 +202,8 @@ async function pollStatus() {
     statusHost.textContent = window.location.hostname || 'gateway.local';
 
     const parts = [];
+    if (s.firmware_version) parts.push(`FW: ${s.firmware_version}`);
+    if (s.wan_fw || s.lan_fw) parts.push(`WAN/LAN: ${s.wan_fw || '-'} / ${s.lan_fw || '-'}`);
     if (s.wifi_connected) parts.push(`WiFi: ${s.wifi_ssid}`);
     if (s.internet_ok) parts.push('Internet: OK');
     if (s.server_ok) parts.push('Server: OK');

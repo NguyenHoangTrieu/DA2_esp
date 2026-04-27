@@ -235,9 +235,12 @@ esp_err_t api_config_get_handler(void *arg) {
 
   /* FOTA — firmware download URLs for both LAN and WAN MCUs */
   cJSON *jfota = cJSON_AddObjectToObject(root, "fota");
-  cJSON_AddStringToObject(jfota, "lan_fw_url",
-                          "http://192.168.1.100:8080/api/v1/TOKEN/firmware"
-                          "?title=DA2_esp_LAN&version=1.1.2");
+  char lan_fw_url_default[192];
+  snprintf(lan_fw_url_default, sizeof(lan_fw_url_default),
+           "http://192.168.1.100:8080/api/v1/TOKEN/firmware"
+           "?title=DA2_esp_LAN&version=%s",
+           DA2_CURRENT_VERSION_STR);
+  cJSON_AddStringToObject(jfota, "lan_fw_url", lan_fw_url_default);
   cJSON_AddStringToObject(jfota, "wan_fw_url", fota_handler_get_url());
 
   /* Serialise */

@@ -15,10 +15,22 @@
 
 // ===== Firmware Version =====
 // Update these values for new releases
-#define WAN_FW_VERSION_MAJOR 1
-#define WAN_FW_VERSION_MINOR 1
-#define WAN_FW_VERSION_PATCH 1
-#define WAN_FW_VERSION_BUILD 2
+#define DA2_VERSION_MAJOR 2
+#define DA2_VERSION_MINOR 1
+#define DA2_VERSION_PATCH 1
+#define DA2_VERSION_BUILD 0
+
+#define DA2_STR_HELPER(x) #x
+#define DA2_STR(x) DA2_STR_HELPER(x)
+
+#define DA2_CURRENT_VERSION_STR                                                \
+  DA2_STR(DA2_VERSION_MAJOR) "." DA2_STR(DA2_VERSION_MINOR) "."            \
+      DA2_STR(DA2_VERSION_PATCH)
+
+#define WAN_FW_VERSION_MAJOR DA2_VERSION_MAJOR
+#define WAN_FW_VERSION_MINOR DA2_VERSION_MINOR
+#define WAN_FW_VERSION_PATCH DA2_VERSION_PATCH
+#define WAN_FW_VERSION_BUILD DA2_VERSION_BUILD
 
 #define WAN_FW_VERSION                                                         \
   FW_VERSION_MAKE(WAN_FW_VERSION_MAJOR, WAN_FW_VERSION_MINOR,                  \
