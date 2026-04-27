@@ -287,8 +287,8 @@ export function renderServer(container, config) {
     }
 
     try {
-      await postConfig(payload);
-      toast('Server config set');
+      const res = await postConfig(payload);
+      toast(res?.message || 'Server config set');
     } catch (e) {
       toast('Server set failed: ' + e.message, 'err');
     }

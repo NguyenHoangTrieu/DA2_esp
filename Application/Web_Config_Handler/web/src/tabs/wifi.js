@@ -75,7 +75,7 @@ export function renderWifi(container, config) {
     const ssid = container.querySelector('#wfSSID').value.trim();
     if (!ssid) { toast('SSID is required', 'err'); return; }
     try {
-      await postConfig({
+      const res = await postConfig({
         wifi: {
           ssid,
           password: passIn.value,
@@ -88,7 +88,7 @@ export function renderWifi(container, config) {
           internet_fallback_type: 'LTE',
         }
       });
-      toast('WiFi config set');
+      toast(res?.message || 'WiFi config set');
     } catch (e) {
       toast('WiFi set failed: ' + e.message, 'err');
     }

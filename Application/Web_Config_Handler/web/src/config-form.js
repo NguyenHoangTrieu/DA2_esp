@@ -406,9 +406,9 @@ export function renderConfigForm(container, config, moduleType) {
       const jsonStr = JSON.stringify(cfgData);
       const key = moduleType.toLowerCase() + '_json';
       localStorage.setItem(storageKey, jsonStr);
-      await postLanConfig(key, `${slot}:${jsonStr}`);
-      setStatus(`JSON sent (${jsonStr.length} bytes)`, false);
-      toast('JSON config sent');
+      const res = await postLanConfig(key, `${slot}:${jsonStr}`);
+      setStatus(res?.message || `JSON sent (${jsonStr.length} bytes)`, false);
+      toast(res?.message || 'JSON config sent');
     } catch (e) {
       setStatus('Send failed: ' + e.message, true);
       toast('Send failed: ' + e.message, 'err');

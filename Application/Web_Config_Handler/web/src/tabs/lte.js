@@ -188,8 +188,8 @@ export function renderLte(container, config) {
     }
 
     try {
-      await postConfig(payload);
-      toast('LTE config set');
+      const res = await postConfig(payload);
+      toast(res?.message || 'LTE config set');
     } catch (e) {
       toast('LTE set failed: ' + e.message, 'err');
     }
