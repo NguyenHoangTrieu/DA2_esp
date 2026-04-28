@@ -11,18 +11,21 @@
 #include "eth_connect.h"
 #include "config_handler.h"
 #include "esp_eth.h"
+#include "esp_eth_mac_w5500.h"
+#include "esp_eth_phy_w5500.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "driver/spi_master.h"
+#include "mcu_lan_handler.h"
 #include "pcf8563_rtc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <sys/time.h>
 #include <time.h>
 #include <string.h>
-#include "esp_eth_phy_w5500.h"
+
 static const char *TAG = "ETH_CONNECT";
 
 /* ── Module state ────────────────────────────────────────────────────────── */
@@ -94,6 +97,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
             ESP_LOGW(TAG, "Ethernet link down");
             s_eth_connected  = false;
             is_internet_connected = false;
+            mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
             break;
 
         case ETHERNET_EVENT_START:
@@ -112,6 +116,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_eth_connected  = true;
         is_internet_connected = true;
+        mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
         eth_init_sntp();
         /* HMI display will be updated on next hmi_refresh_status() call */
     }
@@ -171,20 +176,57 @@ static esp_err_t eth_spi_hw_init(void)
     }
     ESP_LOGI(TAG, "Event handlers registered");
 
-    /* 4 ── Install Ethernet driver
-     * NOTE: When CONFIG_ETH_SPI_ETHERNET_W5500 (or similar) is set in sdkconfig,
-     * the SPI bus setup above allows the driver to auto-detect and attach to the chip.
-     * The MAC and PHY will be created automatically by the driver framework.
-     */
-    esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(NULL, NULL);
+    /* 4 ── Create the actual W5500 MAC/PHY instances required by ESP-IDF. */
+    spi_device_interface_config_t devcfg = {
+        .mode = 0,
+        .clock_speed_hz = ETH_SPI_CLOCK_MHZ * 1000 * 1000,
+        .queue_size = 16,
+        .spics_io_num = ETH_SPI_CS_GPIO,
+    };
+    eth_w5500_config_t w5500_cfg = ETH_W5500_DEFAULT_CONFIG(ETH_SPI_HOST, &devcfg);
+    w5500_cfg.int_gpio_num = ETH_INT_GPIO;
+    if (ETH_INT_GPIO < 0) {
+        w5500_cfg.poll_period_ms = 100;
+    }
+
+    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+    mac_config.rx_task_stack_size = 4096;
+    esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_cfg, &mac_config);
+    if (!mac) {
+        ESP_LOGE(TAG, "Failed to create W5500 MAC");
+        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
+        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
+        esp_netif_destroy(g_eth_netif);
+        g_eth_netif = NULL;
+        spi_bus_free(ETH_SPI_HOST);
+        return ESP_FAIL;
+    }
+
+    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+    phy_config.reset_gpio_num = ETH_RST_GPIO;
+    esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phy_config);
+    if (!phy) {
+        ESP_LOGE(TAG, "Failed to create W5500 PHY");
+        mac->del(mac);
+        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
+        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
+        esp_netif_destroy(g_eth_netif);
+        g_eth_netif = NULL;
+        spi_bus_free(ETH_SPI_HOST);
+        return ESP_FAIL;
+    }
+
+    esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
     ret = esp_eth_driver_install(&eth_config, &s_eth_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Ethernet driver install failed: 0x%x", ret);
         ESP_LOGW(TAG, "Possible causes:");
-        ESP_LOGW(TAG, "  - CONFIG_ETH_SPI_ETHERNET_W5500 not set in sdkconfig");
         ESP_LOGW(TAG, "  - SPI chip not detected on bus");
         ESP_LOGW(TAG, "  - GPIO pins incorrect");
+        ESP_LOGW(TAG, "  - W5500 INT/RST wiring mismatch");
 
+        phy->del(phy);
+        mac->del(mac);
         esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
         esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
         esp_netif_destroy(g_eth_netif);
@@ -328,6 +370,7 @@ void eth_connect_task_stop(void)
 
     s_eth_connected = false;
     is_internet_connected = false;
+    mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
     /* HMI display will be updated on next hmi_refresh_status() call */
 
     ESP_LOGI(TAG, "Ethernet connection stopped");
