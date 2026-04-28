@@ -545,17 +545,19 @@ void fota_handler_task_start(void)
     ESP_LOGI(TAG, "Heap before OTA task: total=%d, internal=%d, internal_largest=%d",
              esp_get_free_heap_size(), internal_free, internal_largest);
 
-    /* Push FOTA task unconditionally to PSRAM to free 12-16KB of internal RAM! 
-     * MbedTLS crypto performance will be slower, but frees critical DMA contiguous blocks */
-    StackType_t *fota_stack = (StackType_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    StaticTask_t *fota_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    
-    if (fota_stack && fota_tcb) {
-        xTaskCreateStatic(&advanced_ota_task, "advanced_ota_task", 16 * 1024, NULL, 5, fota_stack, fota_tcb);
-        ESP_LOGI(TAG, "Advanced OTA task created successfully in PSRAM");
-    } else {
-        ESP_LOGE(TAG, "Failed to allocate Advanced OTA task in PSRAM");
+    /* The OTA task calls flash/cache-sensitive APIs such as
+     * esp_partition_get_sha256(), esp_ota_begin() and esp_ota_write().
+     * Its stack must stay in internal RAM or esp_task_stack_is_sane_cache_disabled()
+     * will assert when flash cache is disabled. */
+    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task",
+                                 16 * 1024, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create Advanced OTA task in internal RAM (largest=%d)",
+                 internal_largest);
+        return;
     }
+
+    ESP_LOGI(TAG, "Advanced OTA task created successfully in internal RAM");
 }
 
 void fota_handler_task_stop(void) 
