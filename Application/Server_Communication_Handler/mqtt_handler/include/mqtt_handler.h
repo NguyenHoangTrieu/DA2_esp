@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define MQTT_PUBLISH_DATA_MAX_LEN 1024
+#define MQTT_PUBLISH_DATA_MAX_LEN 2048
 
 // Queue item owns its payload so data stays valid while buffered offline.
 typedef struct {

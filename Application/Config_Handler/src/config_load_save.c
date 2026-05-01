@@ -33,8 +33,8 @@ static const char *TAG = "CONFIG_NVS";
 char g_stack_id_wan[8] = "000";
 
 /* Default values for MQTT */
-#define MQTT_DEFAULT_BROKER       "mqtt://demo.thingsboard.io:1883"
-#define MQTT_DEFAULT_TOKEN        "38kozd1weulcnl6ytz8f"
+#define MQTT_DEFAULT_BROKER       "mqtt://192.168.1.100:1883"
+#define MQTT_DEFAULT_TOKEN        "Zfdvk6M9rEmw5fBj7TzP"
 #define MQTT_DEFAULT_PUB_TOPIC    "v1/devices/me/telemetry"
 #define MQTT_DEFAULT_SUB_TOPIC    "v1/devices/me/rpc/request/+"
 #define MQTT_DEFAULT_ATTR_TOPIC   "v1/devices/me/attributes"
@@ -42,15 +42,15 @@ char g_stack_id_wan[8] = "000";
 #define MQTT_DEFAULT_TIMEOUT_MS   10000
 
 /* Default values for HTTP */
-#define HTTP_DEFAULT_URL        "http://demo.thingsboard.io/api/v1/38kozd1weulcnl6ytz8f/telemetry"
-#define HTTP_DEFAULT_TOKEN      "38kozd1weulcnl6ytz8f"
+#define HTTP_DEFAULT_URL        "http://192.168.1.100/api/v1/Zfdvk6M9rEmw5fBj7TzP/telemetry"
+#define HTTP_DEFAULT_TOKEN      "Zfdvk6M9rEmw5fBj7TzP"
 #define HTTP_DEFAULT_PORT       80
 #define HTTP_DEFAULT_TIMEOUT_MS 10000
 
 /* Default values for CoAP */
-#define COAP_DEFAULT_HOST        "demo.thingsboard.io"
-#define COAP_DEFAULT_RESOURCE    "api/v1/38kozd1weulcnl6ytz8f/telemetry"
-#define COAP_DEFAULT_TOKEN       "38kozd1weulcnl6ytz8f"
+#define COAP_DEFAULT_HOST        "192.168.1.100"
+#define COAP_DEFAULT_RESOURCE    "api/v1/Zfdvk6M9rEmw5fBj7TzP/telemetry"
+#define COAP_DEFAULT_TOKEN       "Zfdvk6M9rEmw5fBj7TzP"
 #define COAP_DEFAULT_PORT        5683
 #define COAP_DEFAULT_ACK_TO_MS   2000
 #define COAP_DEFAULT_MAX_RTX     4
