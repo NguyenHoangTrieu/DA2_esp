@@ -58,10 +58,19 @@ esp_err_t tca_init_inst(tca6416a_inst_t *inst, uint8_t i2c_addr, int int_gpio) {
         };
         gpio_config(&io_conf);
 
-        esp_err_t isr_ret = gpio_install_isr_service(0);
-        if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE)
-            ESP_LOGW(TAG, "gpio_install_isr_service: %s (non-fatal)", esp_err_to_name(isr_ret));
-        gpio_isr_handler_add((gpio_num_t)int_gpio, tca_isr_handler, inst);
+        esp_err_t add_ret = gpio_isr_handler_add((gpio_num_t)int_gpio, tca_isr_handler, inst);
+        if (add_ret == ESP_ERR_INVALID_STATE) {
+            esp_err_t isr_ret = gpio_install_isr_service(0);
+            if (isr_ret == ESP_OK || isr_ret == ESP_ERR_INVALID_STATE) {
+                add_ret = gpio_isr_handler_add((gpio_num_t)int_gpio, tca_isr_handler, inst);
+            } else {
+                ESP_LOGW(TAG, "gpio_install_isr_service: %s (non-fatal)", esp_err_to_name(isr_ret));
+            }
+        }
+        if (add_ret != ESP_OK) {
+            ESP_LOGW(TAG, "gpio_isr_handler_add(%d): %s (non-fatal)",
+                     int_gpio, esp_err_to_name(add_ret));
+        }
     }
 
     /* Add device to I2C bus */

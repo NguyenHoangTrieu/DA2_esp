@@ -1,21 +1,21 @@
 #ifndef ETH_CONNECT_H
 #define ETH_CONNECT_H
 
+#include "driver/spi_common.h"
 #include "esp_err.h"
 #include "esp_netif.h"
 #include <stdbool.h>
 
-/* ── W5500 SPI Hardware Config ──────────────────────────────────────────────
- * TODO: Replace placeholder GPIO numbers with the actual pin assignments
- * from your schematic before flashing.
- * ────────────────────────────────────────────────────────────────────────── */
+/* ── W5500 SPI Hardware Config ────────────────────────────────────────────── */
 #define ETH_SPI_HOST        SPI3_HOST
-#define ETH_SPI_SCLK_GPIO   36   /* TODO: set actual GPIO */
-#define ETH_SPI_MOSI_GPIO   35   /* TODO: set actual GPIO */
-#define ETH_SPI_MISO_GPIO   37   /* TODO: set actual GPIO */
-#define ETH_SPI_CS_GPIO     34   /* TODO: set actual GPIO */
-#define ETH_INT_GPIO        5    /* TODO: set actual GPIO */
-#define ETH_RST_GPIO        (-1) /* Set to GPIO number, or -1 if not wired */
+#define ETH_SPI_SCLK_GPIO   06
+#define ETH_SPI_MOSI_GPIO   05
+#define ETH_SPI_MISO_GPIO   07
+#define ETH_SPI_CS_GPIO     04
+/* W5500 INT#/RST# are routed through the adapter IO expander, not directly
+ * to ESP32-S3 GPIO. Use polling mode and perform reset through stack_handler. */
+#define ETH_INT_GPIO        (-1)
+#define ETH_RST_GPIO        (-1)
 #define ETH_SPI_CLOCK_MHZ   25   /* W5500 max is 80 MHz; 25 MHz is safe    */
 
 /* Global netif handle — used by other modules (e.g. PPP server) */

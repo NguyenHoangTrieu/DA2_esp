@@ -15,11 +15,13 @@
 #include "esp_eth_phy_w5500.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "driver/spi_master.h"
 #include "mcu_lan_handler.h"
 #include "pcf8563_rtc.h"
+#include "stack_handler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <sys/time.h>
@@ -37,6 +39,21 @@ static bool                   s_sntp_synced   = false;
 static bool                   s_sntp_started  = false;
 static volatile bool          s_task_running  = false;
 static TaskHandle_t           s_task_handle   = NULL;
+
+static void eth_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data);
+static esp_err_t eth_set_default_mac(esp_eth_handle_t eth_handle);
+
+#define ETH_ADAPTER_STACK_ID          1
+#define ETH_ADAPTER_MODULE_ID         "015"
+#define ETH_ADAPTER_POWER_PIN         STACK_GPIO_PIN_04
+#define ETH_ADAPTER_RESET_PIN         STACK_GPIO_PIN_05
+#define ETH_ADAPTER_INT_PIN           STACK_GPIO_PIN_06
+#define ETH_ADAPTER_RESET_INACTIVE    1
+#define ETH_ADAPTER_RESET_ACTIVE      0
+#define ETH_ADAPTER_POWER_SETTLE_MS   20
+#define ETH_ADAPTER_RESET_ACTIVE_MS   10
+#define ETH_ADAPTER_RESET_READY_MS    120
 
 /* ── SNTP ─────────────────────────────────────────────────────────────────── */
 
@@ -80,6 +97,131 @@ static void eth_init_sntp(void)
 
     s_sntp_started = true;
     ESP_LOGI(TAG, "SNTP initialised, waiting for sync...");
+}
+
+static void eth_release_resources(bool unregister_events)
+{
+    if (s_eth_glue) {
+        esp_eth_del_netif_glue(s_eth_glue);
+        s_eth_glue = NULL;
+    }
+
+    if (s_eth_handle) {
+        esp_eth_driver_uninstall(s_eth_handle);
+        s_eth_handle = NULL;
+    }
+
+    if (unregister_events) {
+        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
+        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
+    }
+
+    if (g_eth_netif) {
+        esp_netif_destroy(g_eth_netif);
+        g_eth_netif = NULL;
+    }
+
+    spi_bus_free(ETH_SPI_HOST);
+}
+
+static esp_err_t eth_set_default_mac(esp_eth_handle_t eth_handle)
+{
+    uint8_t base_mac[6] = {0};
+    uint8_t eth_mac[6] = {0};
+
+    esp_err_t ret = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read base MAC: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    memcpy(eth_mac, base_mac, sizeof(eth_mac));
+    eth_mac[0] |= 0x02;
+    eth_mac[0] &= 0xFE;
+    eth_mac[5] ^= 0x01;
+
+    ret = esp_eth_ioctl(eth_handle, ETH_CMD_S_MAC_ADDR, eth_mac);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set Ethernet MAC address: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "W5500 MAC address set to %02X:%02X:%02X:%02X:%02X:%02X",
+             eth_mac[0], eth_mac[1], eth_mac[2], eth_mac[3], eth_mac[4], eth_mac[5]);
+    return ESP_OK;
+}
+
+static esp_err_t eth_prepare_adapter(void)
+{
+    const char *module_id = stack_handler_get_module_id(ETH_ADAPTER_STACK_ID);
+    if (strcmp(module_id, ETH_ADAPTER_MODULE_ID) != 0) {
+        ESP_LOGE(TAG, "Ethernet adapter not detected on slot %d (module_id=%s)",
+                 ETH_ADAPTER_STACK_ID, module_id);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t ret = stack_handler_gpio_set_direction(ETH_ADAPTER_STACK_ID,
+                                                     ETH_ADAPTER_POWER_PIN,
+                                                     true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure adapter power pin: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = stack_handler_gpio_set_direction(ETH_ADAPTER_STACK_ID,
+                                           ETH_ADAPTER_RESET_PIN,
+                                           true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure adapter reset pin: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = stack_handler_gpio_set_direction(ETH_ADAPTER_STACK_ID,
+                                           ETH_ADAPTER_INT_PIN,
+                                           false);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to configure adapter INT pin as input: %s", esp_err_to_name(ret));
+    }
+
+    ret = stack_handler_gpio_write(ETH_ADAPTER_STACK_ID,
+                                   ETH_ADAPTER_POWER_PIN,
+                                   true);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enable adapter 3V3 rail: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = stack_handler_gpio_write(ETH_ADAPTER_STACK_ID,
+                                   ETH_ADAPTER_RESET_PIN,
+                                   ETH_ADAPTER_RESET_INACTIVE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set adapter reset inactive: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(ETH_ADAPTER_POWER_SETTLE_MS));
+
+    ret = stack_handler_gpio_write(ETH_ADAPTER_STACK_ID,
+                                   ETH_ADAPTER_RESET_PIN,
+                                   ETH_ADAPTER_RESET_ACTIVE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to assert adapter reset: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(ETH_ADAPTER_RESET_ACTIVE_MS));
+
+    ret = stack_handler_gpio_write(ETH_ADAPTER_STACK_ID,
+                                   ETH_ADAPTER_RESET_PIN,
+                                   ETH_ADAPTER_RESET_INACTIVE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to release adapter reset: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(ETH_ADAPTER_RESET_READY_MS));
+    ESP_LOGI(TAG, "Ethernet adapter prepared via IOX (P04=power, P05=reset#, P06=int#)");
+    return ESP_OK;
 }
 
 /* ── Event handler ────────────────────────────────────────────────────────── */
@@ -126,6 +268,11 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
 
 static esp_err_t eth_spi_hw_init(void)
 {
+    esp_err_t ret = eth_prepare_adapter();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
     /* 1 ── Initialise SPI bus for Ethernet chip (W5500, DM9051, etc) */
     spi_bus_config_t buscfg = {
         .mosi_io_num   = ETH_SPI_MOSI_GPIO,
@@ -135,7 +282,7 @@ static esp_err_t eth_spi_hw_init(void)
         .quadhd_io_num = -1,
     };
 
-    esp_err_t ret = spi_bus_initialize(ETH_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    ret = spi_bus_initialize(ETH_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SPI bus init failed: %s", esp_err_to_name(ret));
         return ret;
@@ -148,7 +295,7 @@ static esp_err_t eth_spi_hw_init(void)
     g_eth_netif = esp_netif_new(&netif_cfg);
     if (!g_eth_netif) {
         ESP_LOGE(TAG, "Failed to create eth netif");
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(false);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Ethernet netif created");
@@ -158,9 +305,7 @@ static esp_err_t eth_spi_hw_init(void)
                                      eth_event_handler, NULL);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register ETH_EVENT handler");
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(false);
         return ret;
     }
 
@@ -168,10 +313,7 @@ static esp_err_t eth_spi_hw_init(void)
                                      eth_event_handler, NULL);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register IP_EVENT handler");
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ret;
     }
     ESP_LOGI(TAG, "Event handlers registered");
@@ -187,6 +329,8 @@ static esp_err_t eth_spi_hw_init(void)
     w5500_cfg.int_gpio_num = ETH_INT_GPIO;
     if (ETH_INT_GPIO < 0) {
         w5500_cfg.poll_period_ms = 100;
+        ESP_LOGI(TAG, "W5500 INT# is behind IOX, using polling mode (%d ms)",
+                 w5500_cfg.poll_period_ms);
     }
 
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
@@ -194,11 +338,7 @@ static esp_err_t eth_spi_hw_init(void)
     esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_cfg, &mac_config);
     if (!mac) {
         ESP_LOGE(TAG, "Failed to create W5500 MAC");
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ESP_FAIL;
     }
 
@@ -208,11 +348,7 @@ static esp_err_t eth_spi_hw_init(void)
     if (!phy) {
         ESP_LOGE(TAG, "Failed to create W5500 PHY");
         mac->del(mac);
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ESP_FAIL;
     }
 
@@ -227,41 +363,29 @@ static esp_err_t eth_spi_hw_init(void)
 
         phy->del(phy);
         mac->del(mac);
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ret;
     }
     ESP_LOGI(TAG, "Ethernet driver installed");
+
+    ret = eth_set_default_mac(s_eth_handle);
+    if (ret != ESP_OK) {
+        eth_release_resources(true);
+        return ret;
+    }
 
     /* 5 ── Attach netif glue */
     s_eth_glue = esp_eth_new_netif_glue(s_eth_handle);
     if (!s_eth_glue) {
         ESP_LOGE(TAG, "Failed to create eth glue");
-        esp_eth_driver_uninstall(s_eth_handle);
-        s_eth_handle = NULL;
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ESP_FAIL;
     }
 
     ret = esp_netif_attach(g_eth_netif, s_eth_glue);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to attach eth netif: %s", esp_err_to_name(ret));
-        esp_eth_del_netif_glue(s_eth_glue);
-        s_eth_glue = NULL;
-        esp_eth_driver_uninstall(s_eth_handle);
-        s_eth_handle = NULL;
-        esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-        esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-        spi_bus_free(ETH_SPI_HOST);
+        eth_release_resources(true);
         return ret;
     }
     ESP_LOGI(TAG, "Ethernet netif attached");
@@ -270,6 +394,7 @@ static esp_err_t eth_spi_hw_init(void)
     ret = esp_eth_start(s_eth_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_eth_start failed: %s", esp_err_to_name(ret));
+        eth_release_resources(true);
         return ret;
     }
 
@@ -342,31 +467,10 @@ void eth_connect_task_stop(void)
     }
 
     /* Unregister event handlers */
-    esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler);
-    esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, eth_event_handler);
-
-    /* Stop driver */
     if (s_eth_handle) {
         esp_eth_stop(s_eth_handle);
     }
-
-    /* Detach and destroy netif */
-    if (s_eth_glue) {
-        esp_eth_del_netif_glue(s_eth_glue);
-        s_eth_glue = NULL;
-    }
-    if (g_eth_netif) {
-        esp_netif_destroy(g_eth_netif);
-        g_eth_netif = NULL;
-    }
-
-    /* Uninstall driver (also calls mac->del and phy->del internally) */
-    if (s_eth_handle) {
-        esp_eth_driver_uninstall(s_eth_handle);
-        s_eth_handle = NULL;
-    }
-
-    spi_bus_free(ETH_SPI_HOST);
+    eth_release_resources(true);
 
     s_eth_connected = false;
     is_internet_connected = false;
