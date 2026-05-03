@@ -7,6 +7,7 @@
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -36,15 +37,20 @@ static TaskHandle_t  s_polling_task_handle = NULL;
 static bool          s_task_running = false;
 static bool          s_polling_running = false;
 static int           s_last_rpc_id = -1;
+static StaticQueue_t *s_coap_publish_qcb = NULL;
+static uint8_t *s_coap_publish_qstorage = NULL;
 
 /* RPC payload staging buffer — written by response handler, read by polling task */
 static char          s_rpc_payload_buf[512];
 static volatile bool s_rpc_payload_ready = false;
 
-#define COAP_QUEUE_SIZE 8
+#define COAP_QUEUE_SIZE 32
+#define COAP_ENQUEUE_WAIT_MS 250
 #define COAP_ACK_TIMEOUT_DEFAULT_MS 2000
 #define COAP_WAIT_TICKS pdMS_TO_TICKS(5000)
 #define COAP_RPC_POLL_INTERVAL_DEFAULT_MS 200  // Default poll interval (reduced from 1500ms)
+#define COAP_POST_PUBLISH_DELAY_MS 0
+#define COAP_JSON_PAYLOAD_CAP ((COAP_PUBLISH_DATA_MAX_LEN * 2) + 128)
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -472,8 +478,8 @@ static void coap_polling_task(void *arg) {
 
 static void coap_publish_task(void *arg) {
     coap_publish_data_t item;
-    uint8_t *data_buffer = (uint8_t *)malloc(1024);
-    char *json_payload = (char *)malloc(2048);
+    uint8_t *data_buffer = (uint8_t *)malloc(COAP_PUBLISH_DATA_MAX_LEN);
+    char *json_payload = (char *)malloc(COAP_JSON_PAYLOAD_CAP);
     
     if (!data_buffer || !json_payload) {
         ESP_LOGE(TAG, "Failed to allocate buffers");
@@ -486,18 +492,25 @@ static void coap_publish_task(void *arg) {
         if (xQueueReceive(g_coap_publish_queue, &item, pdMS_TO_TICKS(500)) == pdTRUE) {
             if (item.length == 0) continue;
             
-            // Copy to local buffer — limit raw bytes so hex-encoded JSON stays under
-            // one UDP datagram (~1448 byte payload).  450 raw bytes → 911-char JSON.
-            const size_t COAP_MAX_RAW = 450;
-            size_t copy_len = (item.length < COAP_MAX_RAW) ? item.length : COAP_MAX_RAW;
+            // Keep full queued payload (up to COAP_PUBLISH_DATA_MAX_LEN) for throughput tests.
+            size_t copy_len = (item.length < COAP_PUBLISH_DATA_MAX_LEN)
+                                  ? item.length
+                                  : COAP_PUBLISH_DATA_MAX_LEN;
             memcpy(data_buffer, item.data, copy_len);
             
             /* Format as JSON for ThingsBoard: {"data":"HEX_STRING"} */
-            int json_len = snprintf(json_payload, 2048, "{\"data\":\"");
-            for (size_t i = 0; i < copy_len && json_len < 2048 - 3; i++) {
-                json_len += snprintf(&json_payload[json_len], 2048 - json_len, "%02X", data_buffer[i]);
+            size_t json_cap = COAP_JSON_PAYLOAD_CAP;
+            int json_len = snprintf(json_payload, json_cap, "{\"data\":\"");
+            for (size_t i = 0; i < copy_len && json_len < (int)json_cap - 3; i++) {
+                json_len += snprintf(&json_payload[json_len], json_cap - json_len, "%02X", data_buffer[i]);
             }
-            json_len += snprintf(&json_payload[json_len], 2048 - json_len, "\"}");
+            json_len += snprintf(&json_payload[json_len], json_cap - json_len, "\"}");
+
+            if (json_len >= (int)json_cap) {
+                ESP_LOGW(TAG, "CoAP JSON truncated: raw=%zu json_len=%d cap=%zu", copy_len, json_len, json_cap);
+                json_len = (int)json_cap - 1;
+                json_payload[json_len] = '\0';
+            }
 
             ESP_LOGI(TAG, "Publishing %zu bytes as JSON (%d chars)", copy_len, json_len);
 
@@ -526,6 +539,12 @@ static void coap_publish_task(void *arg) {
                 coap_post_to_resource(rpc_path, (const uint8_t *)json_payload, json_len);
                 /* NOTE: s_last_rpc_id is NOT reset here — kept for poll dedup */
             }
+
+            if (COAP_POST_PUBLISH_DELAY_MS > 0) {
+                vTaskDelay(pdMS_TO_TICKS(COAP_POST_PUBLISH_DELAY_MS));
+            } else {
+                taskYIELD();
+            }
         }
     }
 
@@ -548,11 +567,31 @@ void coap_handler_task_start(void) {
     }
 
     if (!g_coap_publish_queue) {
-        g_coap_publish_queue = xQueueCreate(COAP_QUEUE_SIZE, sizeof(coap_publish_data_t));
+        size_t q_bytes = COAP_QUEUE_SIZE * sizeof(coap_publish_data_t);
+        s_coap_publish_qstorage = (uint8_t *)heap_caps_malloc(q_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        s_coap_publish_qcb = (StaticQueue_t *)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+        if (s_coap_publish_qstorage && s_coap_publish_qcb) {
+            g_coap_publish_queue = xQueueCreateStatic(
+                COAP_QUEUE_SIZE,
+                sizeof(coap_publish_data_t),
+                s_coap_publish_qstorage,
+                s_coap_publish_qcb);
+        }
+
         if (!g_coap_publish_queue) {
+            if (s_coap_publish_qstorage) {
+                heap_caps_free(s_coap_publish_qstorage);
+                s_coap_publish_qstorage = NULL;
+            }
+            if (s_coap_publish_qcb) {
+                heap_caps_free(s_coap_publish_qcb);
+                s_coap_publish_qcb = NULL;
+            }
             ESP_LOGE(TAG, "Failed to create CoAP publish queue");
             return;
         }
+        ESP_LOGI(TAG, "CoAP publish queue created: depth=%d", COAP_QUEUE_SIZE);
     }
 
     s_task_running = true;
@@ -593,6 +632,14 @@ void coap_handler_task_stop(void) {
     if (g_coap_publish_queue) {
         vQueueDelete(g_coap_publish_queue);
         g_coap_publish_queue = NULL;
+        if (s_coap_publish_qstorage) {
+            heap_caps_free(s_coap_publish_qstorage);
+            s_coap_publish_qstorage = NULL;
+        }
+        if (s_coap_publish_qcb) {
+            heap_caps_free(s_coap_publish_qcb);
+            s_coap_publish_qcb = NULL;
+        }
     }
     ESP_LOGI(TAG, "CoAP handler tasks stopped");
 }
@@ -612,7 +659,7 @@ bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     memcpy(item.data, data, data_len);
     item.length = data_len;
 
-    if (xQueueSend(g_coap_publish_queue, &item, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (xQueueSend(g_coap_publish_queue, &item, pdMS_TO_TICKS(COAP_ENQUEUE_WAIT_MS)) != pdTRUE) {
         ESP_LOGE(TAG, "CoAP publish queue full payload dropped");
         return false;
     }

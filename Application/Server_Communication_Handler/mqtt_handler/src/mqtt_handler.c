@@ -7,6 +7,7 @@
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "38kozd1weulcnl6ytz8f"
@@ -14,9 +15,13 @@
 #define SUBSCRIBE_TOPIC "v1/devices/me/rpc/request/+"
 #define ATTRIBUTE_TOPIC "v1/devices/me/attributes"
 #define FIRMWARE_STATUS_TOPIC "v1/devices/me/attributes"
-#define DATA_BUFFER_SIZE (1024) // 1KB
-#define JSON_TX_BUFFER_SIZE (3072)
-#define HEX_STRING_BUFFER_SIZE (DATA_BUFFER_SIZE * 2 + 1)
+#define DATA_BUFFER_SIZE (2048) // 2KB – must match MQTT_PUBLISH_DATA_MAX_LEN
+#define JSON_TX_BUFFER_SIZE (4224)  // 2048B raw → 4096 hex chars + {"data":"..."} overhead
+#define HEX_STRING_BUFFER_SIZE (DATA_BUFFER_SIZE * 2 + 1) // 4097
+#define MQTT_PUBLISH_QUEUE_DEPTH 32
+#define MQTT_PUBLISH_ENQUEUE_WAIT_MS 250
+/* Hard throttle after each publish limits throughput; set to 0 for benchmark. */
+#define MQTT_POST_PUBLISH_DELAY_MS 0
 
 static const char *TAG = "mqtt_handler";
 
@@ -25,6 +30,8 @@ static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 
 QueueHandle_t g_mqtt_publish_queue = NULL;
+static StaticQueue_t *s_mqtt_publish_qcb = NULL;
+static uint8_t *s_mqtt_publish_qstorage = NULL;
 static bool mqtt_task_close = false;
 static int g_last_rpc_id = -1;
 
@@ -443,7 +450,11 @@ static void mqtt_publish_task(void *arg) {
           ESP_LOGE(TAG, "✗ Publish failed");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if (MQTT_POST_PUBLISH_DELAY_MS > 0) {
+          vTaskDelay(pdMS_TO_TICKS(MQTT_POST_PUBLISH_DELAY_MS));
+        } else {
+          taskYIELD();
+        }
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(100));
@@ -635,9 +646,40 @@ void mqtt_handler_task_start(void) {
   esp_mqtt_client_start(m_client);
 
   if (!g_mqtt_publish_queue) {
-    g_mqtt_publish_queue = xQueueCreate(10, sizeof(mqtt_publish_data_t));
-    if (!g_mqtt_publish_queue) {
+    size_t q_bytes = MQTT_PUBLISH_QUEUE_DEPTH * sizeof(mqtt_publish_data_t);
+    s_mqtt_publish_qstorage = (uint8_t *)heap_caps_malloc(q_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_mqtt_publish_qcb = (StaticQueue_t *)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    if (!s_mqtt_publish_qstorage || !s_mqtt_publish_qcb) {
+      if (s_mqtt_publish_qstorage) {
+        heap_caps_free(s_mqtt_publish_qstorage);
+        s_mqtt_publish_qstorage = NULL;
+      }
+      if (s_mqtt_publish_qcb) {
+        heap_caps_free(s_mqtt_publish_qcb);
+        s_mqtt_publish_qcb = NULL;
+      }
       ESP_LOGE(TAG, "Failed to create publish queue");
+    } else {
+      g_mqtt_publish_queue = xQueueCreateStatic(
+          MQTT_PUBLISH_QUEUE_DEPTH,
+          sizeof(mqtt_publish_data_t),
+          s_mqtt_publish_qstorage,
+          s_mqtt_publish_qcb);
+    }
+
+    if (!g_mqtt_publish_queue) {
+      if (s_mqtt_publish_qstorage) {
+        heap_caps_free(s_mqtt_publish_qstorage);
+        s_mqtt_publish_qstorage = NULL;
+      }
+      if (s_mqtt_publish_qcb) {
+        heap_caps_free(s_mqtt_publish_qcb);
+        s_mqtt_publish_qcb = NULL;
+      }
+      ESP_LOGE(TAG, "Failed to create publish queue");
+    } else {
+      ESP_LOGI(TAG, "Publish queue created: depth=%d", MQTT_PUBLISH_QUEUE_DEPTH);
     }
   }
 
@@ -694,6 +736,15 @@ void mqtt_handler_task_stop(void) {
     }
     vQueueDelete(g_mqtt_publish_queue);
     g_mqtt_publish_queue = NULL;
+
+    if (s_mqtt_publish_qstorage) {
+      heap_caps_free(s_mqtt_publish_qstorage);
+      s_mqtt_publish_qstorage = NULL;
+    }
+    if (s_mqtt_publish_qcb) {
+      heap_caps_free(s_mqtt_publish_qcb);
+      s_mqtt_publish_qcb = NULL;
+    }
   }
 
   ESP_LOGI(TAG, "MQTT handler stopped");
@@ -728,7 +779,7 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   };
   memcpy(queue_data.data, data, data_len);
 
-  if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(100)) ==
+  if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(MQTT_PUBLISH_ENQUEUE_WAIT_MS)) ==
       pdTRUE) {
     ESP_LOGI(TAG, "Enqueued %d bytes for MQTT publish", data_len);
     return true;

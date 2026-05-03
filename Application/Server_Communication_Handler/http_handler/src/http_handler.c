@@ -12,6 +12,7 @@
 #include "mcu_lan_handler.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -45,8 +46,14 @@ static int           s_cooldown_rpc_id    = -1;
 static uint32_t      s_cooldown_rpc_ts    =  0;  // xTaskGetTickCount() snapshot
 #define RPC_ID_COOLDOWN_TICKS pdMS_TO_TICKS(15000)  // 15-second cooldown after completion
 
-#define HTTP_QUEUE_SIZE 8
+#define HTTP_QUEUE_SIZE 32
+#define HTTP_ENQUEUE_WAIT_MS 250
 #define HTTP_CONTENT_TYPE "application/json"
+#define HTTP_POST_PUBLISH_DELAY_MS 0
+#define HTTP_RPC_POLL_GAP_MS 0
+
+static StaticQueue_t *s_http_publish_qcb = NULL;
+static uint8_t *s_http_publish_qstorage = NULL;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -411,9 +418,12 @@ static void http_polling_task(void *arg) {
 
     while (s_polling_running) {
         http_poll_rpc();
-        // Minimal gap (100ms) just to yield to other tasks between polls.
-        // The 20s long-poll itself is the rate limiter, not this delay.
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Long-poll already rate-limits; keep gap at 0 for max responsiveness.
+        if (HTTP_RPC_POLL_GAP_MS > 0) {
+            vTaskDelay(pdMS_TO_TICKS(HTTP_RPC_POLL_GAP_MS));
+        } else {
+            taskYIELD();
+        }
     }
     
     ESP_LOGI(TAG, "HTTP RPC polling task exiting");
@@ -426,9 +436,9 @@ static void http_polling_task(void *arg) {
 
 static void http_publish_task(void *arg) {
     http_publish_data_t item;
-    uint8_t *data_buffer = (uint8_t *)malloc(1024);
-    uint8_t *json_buffer = (uint8_t *)malloc(2048);
-    char *hex_buffer = (char *)malloc(2048);
+    uint8_t *data_buffer = (uint8_t *)malloc(2048);
+    uint8_t *json_buffer = (uint8_t *)malloc(4224);
+    char *hex_buffer = (char *)malloc(4097);
     
     if (!data_buffer || !json_buffer || !hex_buffer) {
         ESP_LOGE(TAG, "Failed to allocate buffers");
@@ -442,17 +452,17 @@ static void http_publish_task(void *arg) {
             if (item.length == 0) continue;
             
             // Copy to local buffer
-            size_t copy_len = (item.length < 1024) ? item.length : 1024;
+            size_t copy_len = (item.length < 2048) ? item.length : 2048;
             memcpy(data_buffer, item.data, copy_len);
             
             // Convert binary to hex string
             size_t hex_len = 0;
-            for (size_t i = 0; i < copy_len && hex_len < 2048 - 3; i++) {
-                hex_len += snprintf(&hex_buffer[hex_len], 2048 - hex_len, "%02X", data_buffer[i]);
+            for (size_t i = 0; i < copy_len && hex_len < 4096 - 3; i++) {
+                hex_len += snprintf(&hex_buffer[hex_len], 4097 - hex_len, "%02X", data_buffer[i]);
             }
             
             // Wrap in JSON
-            int json_len = snprintf((char *)json_buffer, 2048,
+            int json_len = snprintf((char *)json_buffer, 4224,
                                     "{\"data\":\"%s\"}",hex_buffer);
             
             ESP_LOGI(TAG, "Publishing %d bytes JSON (raw: %zu bytes → hex: %zu chars)",
@@ -576,6 +586,12 @@ static void http_publish_task(void *arg) {
                     ESP_LOGW(TAG, "HTTP publish failed, payload dropped");
                 }
             }
+
+            if (HTTP_POST_PUBLISH_DELAY_MS > 0) {
+                vTaskDelay(pdMS_TO_TICKS(HTTP_POST_PUBLISH_DELAY_MS));
+            } else {
+                taskYIELD();
+            }
         }
     }
 
@@ -599,11 +615,31 @@ void http_handler_task_start(void) {
     }
 
     if (!g_http_publish_queue) {
-        g_http_publish_queue = xQueueCreate(HTTP_QUEUE_SIZE, sizeof(http_publish_data_t));
+        size_t q_bytes = HTTP_QUEUE_SIZE * sizeof(http_publish_data_t);
+        s_http_publish_qstorage = (uint8_t *)heap_caps_malloc(q_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        s_http_publish_qcb = (StaticQueue_t *)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+        if (s_http_publish_qstorage && s_http_publish_qcb) {
+            g_http_publish_queue = xQueueCreateStatic(
+                HTTP_QUEUE_SIZE,
+                sizeof(http_publish_data_t),
+                s_http_publish_qstorage,
+                s_http_publish_qcb);
+        }
+
         if (!g_http_publish_queue) {
+            if (s_http_publish_qstorage) {
+                heap_caps_free(s_http_publish_qstorage);
+                s_http_publish_qstorage = NULL;
+            }
+            if (s_http_publish_qcb) {
+                heap_caps_free(s_http_publish_qcb);
+                s_http_publish_qcb = NULL;
+            }
             ESP_LOGE(TAG, "Failed to create HTTP publish queue");
             return;
         }
+        ESP_LOGI(TAG, "HTTP publish queue created: depth=%d", HTTP_QUEUE_SIZE);
     }
 
     s_task_running = true;
@@ -640,6 +676,14 @@ void http_handler_task_stop(void) {
     if (g_http_publish_queue) {
         vQueueDelete(g_http_publish_queue);
         g_http_publish_queue = NULL;
+        if (s_http_publish_qstorage) {
+            heap_caps_free(s_http_publish_qstorage);
+            s_http_publish_qstorage = NULL;
+        }
+        if (s_http_publish_qcb) {
+            heap_caps_free(s_http_publish_qcb);
+            s_http_publish_qcb = NULL;
+        }
     }
     ESP_LOGI(TAG, "HTTP handler tasks stopped");
 }
@@ -658,7 +702,7 @@ bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     memcpy(item.data, data, data_len);
     item.length = data_len;
 
-    if (xQueueSend(g_http_publish_queue, &item, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (xQueueSend(g_http_publish_queue, &item, pdMS_TO_TICKS(HTTP_ENQUEUE_WAIT_MS)) != pdTRUE) {
         ESP_LOGE(TAG, "HTTP publish queue full payload dropped");
         return false;
     }
