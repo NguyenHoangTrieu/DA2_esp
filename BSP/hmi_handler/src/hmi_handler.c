@@ -38,10 +38,21 @@ esp_err_t hmi_bsp_init(void)
         ESP_LOGE(TAG, "uart_driver_install failed: %s", esp_err_to_name(ret));
         return ret;
     }
-    uart_param_config(HMI_BSP_UART_NUM, &cfg);
-    uart_set_pin(HMI_BSP_UART_NUM,
-                 HMI_BSP_TX_PIN, HMI_BSP_RX_PIN,
-                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    ret = uart_param_config(HMI_BSP_UART_NUM, &cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "uart_param_config failed: %s", esp_err_to_name(ret));
+        uart_driver_delete(HMI_BSP_UART_NUM);
+        return ret;
+    }
+
+    ret = uart_set_pin(HMI_BSP_UART_NUM,
+                       HMI_BSP_TX_PIN, HMI_BSP_RX_PIN,
+                       UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "uart_set_pin failed: %s", esp_err_to_name(ret));
+        uart_driver_delete(HMI_BSP_UART_NUM);
+        return ret;
+    }
 
     ESP_LOGI(TAG, "UART%d BSP init OK (TX=%d RX=%d %d baud)",
              HMI_BSP_UART_NUM, HMI_BSP_TX_PIN, HMI_BSP_RX_PIN, HMI_BSP_BAUD);
@@ -56,6 +67,10 @@ void hmi_bsp_deinit(void)
 
 void hmi_bsp_write(const uint8_t *data, size_t len)
 {
+    if (!data || len == 0) {
+        return;
+    }
+
     int written = uart_write_bytes(HMI_BSP_UART_NUM, (const char *)data, len);
     if (written < 0) {
         ESP_LOGE(TAG, "uart_write_bytes error: %d", written);

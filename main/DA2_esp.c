@@ -530,8 +530,13 @@ void app_main(void) {
     }
   }
   pwr_monitor_register_power_good_cb(power_rails_apply);
-  // hmi_task_init();          /* HMI display: init state only  */
-  // hmi_task_enter_mode();    /* Route UART to HMI, init display */
+  hmi_task_init();          /* HMI display: init state only  */
+  {
+    esp_err_t hmi_ret = hmi_task_enter_mode(); /* Route UART to HMI, init display */
+    if (hmi_ret != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to enter HMI mode: %s", esp_err_to_name(hmi_ret));
+    }
+  }
   pcf8563_init();
   pcf8563_clear_voltage_low_flag();
 
