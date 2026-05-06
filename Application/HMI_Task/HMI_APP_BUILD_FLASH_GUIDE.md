@@ -32,22 +32,12 @@ The firmware currently expects the following contract:
   - `home.b_lte_cfg` must be component ID `2`
   - `pgWifi.b_back` must be component ID `1`
   - `pgLTE.b_back` must be component ID `1`
-- Named components used by firmware on the home page:
-  - `t_bat_pct`
-  - `t_bat_chrg`
-  - `t_wifi_dot`
-  - `t_wifi_st`
-  - `t_wifi_ssid`
-  - `t_wifi_det`
-  - `t_lte_dot`
-  - `t_lte_st`
-  - `t_lte_apn`
-  - `t_lte_det`
-  - `t_eth_dot`
-  - `t_eth_st`
-  - `t_eth_ip`
+- Home page components required by firmware:
+  - `home.b_wifi_cfg`
+  - `home.b_lte_cfg`
 
-If any page name, component name, or component ID changes, the firmware in `hmi_display.c` and `hmi_display.h` must be updated together.
+The rest of the home page is drawn by firmware via `xstr`, `fill`, and `line` commands.
+If any page name or button component ID changes, the firmware in `hmi_display.c` and `hmi_display.h` must be updated together.
 
 ## 3. Pre-build checklist in TJC USART HMI Editor
 
@@ -59,12 +49,10 @@ If any page name, component name, or component ID changes, the firmware in `hmi_
    - Baud rate: `115200`
 3. Ensure at least one ASCII font resource is imported before compiling text components:
    - preferred: `font_ascii_16.zi`
-4. Confirm all text components use:
-   - `sta = 1`
-   - `bco = 0`
-5. Keep the battery bar area empty:
+4. Keep the battery bar area empty:
    - `x = 88..161`, `y = 6..17`
-6. Re-check component IDs after adding or deleting buttons. TJC assigns IDs by creation order.
+5. Re-check component IDs after adding or deleting buttons. TJC assigns IDs by creation order.
+6. Do not add the status text fields on `home`; this panel can exceed the per-page task limit if too many components are placed on one page.
 
 ## 4. Build the HMI app into a `.tft` image
 

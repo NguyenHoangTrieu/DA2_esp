@@ -47,7 +47,7 @@ extern "C" {
 
 #define PWR_MONITOR_TASK_STACK_SIZE 4096
 #define PWR_MONITOR_TASK_PRIORITY   4       /* Medium priority */
-#define PWR_MONITOR_UPDATE_INTERVAL_MS 20000  /* 1000 ms update */
+#define PWR_MONITOR_UPDATE_INTERVAL_MS 1000  /* 1000 ms update */
 
 /* ================================================================== */
 /*  Public Data Structures                                             */
