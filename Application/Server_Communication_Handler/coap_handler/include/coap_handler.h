@@ -39,6 +39,9 @@ void coap_handler_task_start(void);
 /** Stop the CoAP handler task */
 void coap_handler_task_stop(void);
 
+/** Return true when the last CoAP exchange reached the configured server. */
+bool coap_handler_is_connected(void);
+
 /**
  * @brief Enqueue a telemetry payload for CoAP publishing (non-blocking).
  * @param data Pointer to payload bytes

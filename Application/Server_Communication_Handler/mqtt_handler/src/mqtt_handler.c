@@ -750,6 +750,10 @@ void mqtt_handler_task_stop(void) {
   ESP_LOGI(TAG, "MQTT handler stopped");
 }
 
+bool mqtt_handler_is_connected(void) {
+  return m_mqtt_connected && m_client != NULL;
+}
+
 /**
  * @brief Unified function to enqueue any data for publishing.
  */

@@ -23,6 +23,8 @@ extern "C" {
 #endif
 
 /* Battery charge thresholds */
+#define PWR_BATT_CRITICAL_SOC_PCT     5     /* Critical battery warning threshold */
+#define PWR_BATT_LOW_SOC_PCT          25    /* Low battery warning threshold */
 #define PWR_BATT_CHARGE_FULL_SOC_PCT   100   /* Stop charging at 100% SoC (secondary criterion) */
 #define PWR_BATT_CHARGE_RESUME_SOC_PCT 95    /* Resume charging below 95% SoC (hysteresis) */
 #define PWR_BATT_CHARGE_MIN_STOP_MV    4100  /* Never stop charging below this voltage, even if SoC=100% */
@@ -57,7 +59,7 @@ typedef struct {
     int16_t  bat_current_ma;    /* Battery average current (mA; negative=discharging) */
     bool     battery_present;   /* BAT_DET flag */
     bool     fully_charged;     /* FC flag */
-    bool     critical_low;      /* SOCF flag */
+    bool     critical_low;      /* Sanitized critical battery condition */
 
     /* From BQ25892 (charger) */
     uint8_t  chrg_status;       /* 0=off,1=pre,2=fast,3=done (bq25892_chrg_status_t) */

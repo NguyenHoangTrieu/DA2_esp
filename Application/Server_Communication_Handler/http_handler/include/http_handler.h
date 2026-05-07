@@ -38,6 +38,9 @@ void http_handler_task_start(void);
 /** Stop the HTTP handler task */
 void http_handler_task_stop(void);
 
+/** Return true when the last HTTP exchange reached the configured server. */
+bool http_handler_is_connected(void);
+
 /**
  * @brief Enqueue a telemetry payload for HTTP publishing (non-blocking).
  * @param data Pointer to payload bytes

@@ -7,13 +7,24 @@
  */
 
 #include "pwr_monitor_task.h"
+#include "coap_handler.h"
+#include "config_handler.h"
+#include "eth_connect.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "http_handler.h"
 #include "hmi_task.h"
+#include "lte_handler.h"
+#include "mqtt_handler.h"
+#include "pcf8563_rtc.h"
 #include "pwr_source_handler.h"
+#include "web_config_handler.h"
+#include "wifi_connect.h"
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 static const char *TAG = "PWR_MON";
 
@@ -31,6 +42,111 @@ static volatile bool s_monitor_running = false;
 /* Power-good change callback */
 static void (*s_power_good_cb)(bool) = NULL;
 static bool s_last_power_good = true; /* optimistic: assume VBUS at boot */
+
+static bool is_reasonable_time(const struct tm *timeinfo) {
+  return (timeinfo != NULL) && (timeinfo->tm_year >= (2024 - 1900)) &&
+         (timeinfo->tm_mon >= 0) && (timeinfo->tm_mon <= 11) &&
+         (timeinfo->tm_mday >= 1) && (timeinfo->tm_mday <= 31);
+}
+
+static void populate_datetime_strings(hmi_status_t *hmi_status) {
+  struct tm timeinfo = {0};
+  bool have_time = false;
+
+  if (pcf8563_read_time(&timeinfo) == ESP_OK && is_reasonable_time(&timeinfo)) {
+    have_time = true;
+  } else {
+    time_t now = time(NULL);
+    if (now >= 1704067200) {
+      localtime_r(&now, &timeinfo);
+      have_time = is_reasonable_time(&timeinfo);
+    }
+  }
+
+  if (have_time) {
+    strftime(hmi_status->date_str, sizeof(hmi_status->date_str), "%d/%m/%Y",
+             &timeinfo);
+    strftime(hmi_status->time_str, sizeof(hmi_status->time_str), "%H:%M:%S",
+             &timeinfo);
+    return;
+  }
+
+  snprintf(hmi_status->date_str, sizeof(hmi_status->date_str), "--/--/----");
+  snprintf(hmi_status->time_str, sizeof(hmi_status->time_str), "--:--:--");
+}
+
+static const char *internet_type_to_str(config_internet_type_t type) {
+  switch (type) {
+  case CONFIG_INTERNET_WIFI:
+    return "WIFI";
+  case CONFIG_INTERNET_LTE:
+    return "LTE";
+  case CONFIG_INTERNET_ETHERNET:
+    return "ETHERNET";
+  case CONFIG_INTERNET_NBIOT:
+    return "NB-IOT";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+static bool internet_is_connected(config_internet_type_t type) {
+  switch (type) {
+  case CONFIG_INTERNET_WIFI:
+    return wifi_get_connection_status() != 0;
+  case CONFIG_INTERNET_LTE:
+    return lte_handler_is_connected();
+  case CONFIG_INTERNET_ETHERNET:
+    return eth_is_connected();
+  case CONFIG_INTERNET_NBIOT:
+    return is_internet_connected;
+  default:
+    return is_internet_connected;
+  }
+}
+
+static const char *server_type_to_str(config_server_type_t type) {
+  switch (type) {
+  case CONFIG_SERVERTYPE_MQTT:
+    return "MQTT";
+  case CONFIG_SERVERTYPE_COAP:
+    return "COAP";
+  case CONFIG_SERVERTYPE_HTTP:
+    return "HTTP";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+static bool server_is_connected(config_server_type_t type) {
+  switch (type) {
+  case CONFIG_SERVERTYPE_MQTT:
+    return mqtt_handler_is_connected();
+  case CONFIG_SERVERTYPE_COAP:
+    return coap_handler_is_connected();
+  case CONFIG_SERVERTYPE_HTTP:
+    return http_handler_is_connected();
+  default:
+    return false;
+  }
+}
+
+static void populate_web_config_strings(hmi_status_t *hmi_status) {
+  web_server_mode_t mode = web_config_handler_get_mode();
+
+  if (mode == WEB_MODE_AP) {
+    snprintf(hmi_status->web_url, sizeof(hmi_status->web_url),
+             "http://192.168.4.1/");
+    snprintf(hmi_status->web_hint, sizeof(hmi_status->web_hint),
+             "SSID: DA2-Gateway-Config");
+    return;
+  }
+
+  snprintf(hmi_status->web_url, sizeof(hmi_status->web_url),
+           "http://gateway.local/");
+  snprintf(hmi_status->web_hint, sizeof(hmi_status->web_hint),
+           "AP fallback: 192.168.4.1");
+}
 
 /* ================================================================== */
 /*  Power-Good Callback Registration                                  */
@@ -78,8 +194,8 @@ static void log_battery_status(const pwr_monitor_status_t *s) {
 }
 
 /**
- * @brief Update HMI display with current battery status.
- *        Called from the monitor task to refresh home page stats.
+ * @brief Update HMI display with current dashboard status.
+ *        Called from the monitor task to refresh the single HMI page.
  */
 static void update_hmi_battery_status(const pwr_monitor_status_t *s) {
   if (!hmi_is_active()) {
@@ -94,11 +210,19 @@ static void update_hmi_battery_status(const pwr_monitor_status_t *s) {
   hmi_status.bat_is_charging = s->bat_is_charging;
   hmi_status.bat_voltage_mv = s->bat_voltage_mv;
 
-  /* WiFi and LTE sections are not updated by power monitor.
-     HMI handler maintains these from other sources (wifi_connect, lte_connect).
-     For now, copy from cached state if available. */
+  populate_datetime_strings(&hmi_status);
 
-  /* Call HMI refresher — will update battery %, charging indicator, etc. */
+  snprintf(hmi_status.internet_type, sizeof(hmi_status.internet_type), "%s",
+           internet_type_to_str(g_internet_type));
+  hmi_status.internet_connected = internet_is_connected(g_internet_type);
+
+  snprintf(hmi_status.server_type, sizeof(hmi_status.server_type), "%s",
+           server_type_to_str(g_server_type));
+  hmi_status.server_connected = server_is_connected(g_server_type);
+
+  populate_web_config_strings(&hmi_status);
+
+  /* Call HMI refresher — renders the whole dashboard from this snapshot. */
   hmi_refresh_status(&hmi_status);
 }
 

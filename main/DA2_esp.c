@@ -30,6 +30,7 @@ typedef enum {
 
 static app_mode_t current_mode = APP_MODE_NORMAL;
 static int requested_mode = -1; /* set by uart_mode_switch_callback */
+static TaskHandle_t rgb_status_task_handle = NULL;
 
 /* Debounce timers + state */
 static esp_timer_handle_t gpio0_debounce_timer = NULL;
@@ -40,10 +41,15 @@ static bool debounce_gpio3_active = false;
 #define GPIO0_DEBOUNCE_MS 50  /* GPIO0 debounce window (ms) */
 #define GPIO3_DEBOUNCE_MS 50  /* GPIO3 debounce window (ms) */
 #define GPIO_STABLE_SAMPLES 3 /* Number of stable readings before accept */
+#define RGB_STATUS_UPDATE_MS 250
+#define RGB_BLINK_FAST_MS 250
+#define RGB_BLINK_SLOW_MS 500
 
 static bool battery_source_enabled = true; /* GPIO3: battery FET state */
 static bool s_ext_power_ok =
     true; /* VBUS present — updated by pwr_monitor callback */
+
+static void power_rail_write(stack_gpio_pin_num_t pin, bool level);
 
 /* =====================================================================
  *  Power Rail Wrapper
@@ -57,9 +63,94 @@ static bool s_ext_power_ok =
  *    STACK_GPIO_PIN_14  — BLED         (true = on)
  *
  *  Use power_rail_write() in place of bare stack_handler_gpio_write()
- *  for any of these five pins.  When s_ext_power_ok is false the
- *  wrapper silently drops any enable (true) request.
+ *  for any of these pins. When s_ext_power_ok is false, the wrapper
+ *  still blocks Fan + EN_5V enables but keeps the RGB rail available so
+ *  status warnings can be shown with short duty-cycle blinks.
  * ===================================================================== */
+
+static void rgb_led_apply(bool red_on, bool green_on, bool blue_on) {
+  power_rail_write(STACK_GPIO_PIN_12, !red_on);
+  power_rail_write(STACK_GPIO_PIN_13, !green_on);
+  power_rail_write(STACK_GPIO_PIN_14, !blue_on);
+}
+
+static bool rgb_blink_phase(uint32_t period_ms) {
+  TickType_t period_ticks = pdMS_TO_TICKS(period_ms);
+  if (period_ticks == 0) {
+    period_ticks = 1;
+  }
+  return ((xTaskGetTickCount() / period_ticks) & 0x1U) == 0;
+}
+
+static void rgb_status_refresh(void) {
+  pwr_monitor_status_t pwr_status = {0};
+  bool have_pwr_status = (pwr_monitor_get_status(&pwr_status) == ESP_OK);
+  bool battery_critical = false;
+  bool battery_low = false;
+  bool wan_online = is_internet_connected;
+  bool server_online =
+      (mcu_lan_handler_get_internet_status() == INTERNET_STATUS_ONLINE);
+
+  if (have_pwr_status && pwr_status.bat_present) {
+    battery_critical = pwr_status.bat_critical_low;
+    battery_low = battery_critical ||
+            (pwr_status.bat_soc_pct > 0 &&
+             pwr_status.bat_soc_pct <= PWR_BATT_LOW_SOC_PCT);
+  }
+
+  if (battery_critical) {
+    bool led_on = rgb_blink_phase(RGB_BLINK_FAST_MS);
+    rgb_led_apply(led_on, false, false);
+    return;
+  }
+
+  if (!server_online) {
+    bool led_on = rgb_blink_phase(wan_online ? RGB_BLINK_SLOW_MS
+                                             : RGB_BLINK_FAST_MS);
+    if (wan_online) {
+      rgb_led_apply(false, false, led_on);
+    } else {
+      rgb_led_apply(led_on, false, led_on);
+    }
+    return;
+  }
+
+  if (battery_low) {
+    bool led_on = rgb_blink_phase(RGB_BLINK_SLOW_MS);
+    rgb_led_apply(led_on, led_on, false);
+    return;
+  }
+
+  if (current_mode == APP_MODE_CONFIG) {
+    bool led_on = rgb_blink_phase(RGB_BLINK_SLOW_MS);
+    rgb_led_apply(false, led_on, led_on);
+    return;
+  }
+
+  rgb_led_apply(false, true, false);
+}
+
+static void rgb_status_task(void *arg) {
+  (void)arg;
+
+  for (;;) {
+    rgb_status_refresh();
+    vTaskDelay(pdMS_TO_TICKS(RGB_STATUS_UPDATE_MS));
+  }
+}
+
+static void rgb_status_task_start(void) {
+  if (rgb_status_task_handle != NULL) {
+    return;
+  }
+
+  BaseType_t rc = xTaskCreate(rgb_status_task, "rgb_status", 3072, NULL, 3,
+                              &rgb_status_task_handle);
+  if (rc != pdPASS) {
+    rgb_status_task_handle = NULL;
+    ESP_LOGE(TAG, "Failed to start RGB status task");
+  }
+}
 
 /**
  * @brief Write an IOX power-rail pin, blocking enable if VBUS is absent.
@@ -70,9 +161,6 @@ static void power_rail_write(stack_gpio_pin_num_t pin, bool level) {
     switch (pin) {
     case STACK_GPIO_PIN_15: /* fan    */
     case STACK_GPIO_PIN_11: /* EN_5V  */
-    case STACK_GPIO_PIN_12: /* RLED   */
-    case STACK_GPIO_PIN_13: /* GLED   */
-    case STACK_GPIO_PIN_14: /* BLED   */
       ESP_LOGD(TAG, "Rail P%d enable blocked (battery-only)", (int)pin);
       return;
     default:
@@ -86,10 +174,9 @@ static void power_rail_write(stack_gpio_pin_num_t pin, bool level) {
  * @brief Enforce power-rail state on VBUS change.
  *
  * Called by the pwr_monitor callback when power_good transitions.
- *   ext_power_ok = false → battery only: immediately force all 5 rails OFF.
- *   ext_power_ok = true  → VBUS returned: restore fan (always on) and the
- *                          remaining rails to their battery_source_enabled
- * state.
+ *   ext_power_ok = false → battery only: immediately force fan + EN_5V OFF.
+ *   ext_power_ok = true  → VBUS returned: restore fan (always on) and EN_5V
+ *                          to their requested state.
  */
 static void power_rails_apply(bool ext_power_ok) {
   if (s_ext_power_ok == ext_power_ok) {
@@ -98,27 +185,20 @@ static void power_rails_apply(bool ext_power_ok) {
   s_ext_power_ok = ext_power_ok;
 
   if (!ext_power_ok) {
-    /* Battery only — force all five rails off immediately */
+    /* Battery only — force non-essential rails off immediately */
     stack_handler_gpio_write(0, STACK_GPIO_PIN_15, false); /* fan OFF  */
     stack_handler_gpio_write(0, STACK_GPIO_PIN_11, false); /* EN_5V OFF */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_12, true);  /* RLED off  */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_13, true);  /* GLED off  */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_14, true);  /* BLED off  */
-    ESP_LOGW(TAG, "Power rails OFF — battery-only mode");
+    ESP_LOGW(TAG, "Power rails reduced — battery-only mode");
   } else {
     /* External power returned — restore normal state */
     stack_handler_gpio_write(0, STACK_GPIO_PIN_15, true); /* fan always on */
     stack_handler_gpio_write(0, STACK_GPIO_PIN_11,
                              battery_source_enabled); /* EN_5V */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_12,
-                             !battery_source_enabled); /* RLED  */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_13,
-                             !battery_source_enabled); /* GLED  */
-    stack_handler_gpio_write(0, STACK_GPIO_PIN_14,
-                             !battery_source_enabled); /* BLED  */
     ESP_LOGI(TAG, "Power rails restored — external power (batt_en=%d)",
              battery_source_enabled);
   }
+
+  rgb_status_refresh();
 }
 
 /**
@@ -530,6 +610,7 @@ void app_main(void) {
     }
   }
   pwr_monitor_register_power_good_cb(power_rails_apply);
+  rgb_status_task_start();
   hmi_task_init();          /* HMI display: init state only  */
   {
     esp_err_t hmi_ret = hmi_task_enter_mode(); /* Route UART to HMI, init display */
@@ -607,7 +688,7 @@ void app_main(void) {
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");
-// ESP_LOGI(TAG, "  GPIO3  = toggle POWER/RGB LED");
+  ESP_LOGI(TAG, "  GPIO3 = toggle BATTERY SOURCE enable/disable");
 
 // Enable sleep mode:
 #if CONFIG_PM_ENABLE
@@ -641,14 +722,9 @@ void app_main(void) {
                                battery_source_enabled); /* P10 = EN_3V3 */
       power_rail_write(STACK_GPIO_PIN_11,
                        battery_source_enabled); /* P11 = EN_5V  */
-      power_rail_write(STACK_GPIO_PIN_12,
-                       !battery_source_enabled); /* P12 = RLED   */
-      power_rail_write(STACK_GPIO_PIN_13,
-                       !battery_source_enabled); /* P13 = GLED   */
-      power_rail_write(STACK_GPIO_PIN_14,
-                       !battery_source_enabled); /* P14 = BLED   */
       stack_handler_gpio_write(1, STACK_GPIO_PIN_04,
                                battery_source_enabled); /* ADAPTER POWER*/
+      rgb_status_refresh();
     }
 
     /* UART command — CONFIG or NORMAL */

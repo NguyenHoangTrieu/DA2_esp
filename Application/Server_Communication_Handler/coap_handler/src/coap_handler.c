@@ -36,6 +36,7 @@ static TaskHandle_t  s_task_handle = NULL;
 static TaskHandle_t  s_polling_task_handle = NULL;
 static bool          s_task_running = false;
 static bool          s_polling_running = false;
+static volatile bool s_coap_server_connected = false;
 static int           s_last_rpc_id = -1;
 static StaticQueue_t *s_coap_publish_qcb = NULL;
 static uint8_t *s_coap_publish_qstorage = NULL;
@@ -122,6 +123,7 @@ static coap_response_t coap_response_handler(coap_session_t *s,
                                               const coap_pdu_t *recv,
                                               const int mid) {
     coap_pdu_code_t code = coap_pdu_get_code(recv);
+    s_coap_server_connected = true;
     if (COAP_RESPONSE_CLASS(code) != 2) {
         ESP_LOGE(TAG, "CoAP error %d.%02d MID=%d",
                  COAP_RESPONSE_CLASS(code), code & 0x1F, mid);
@@ -161,6 +163,7 @@ static coap_response_t coap_response_handler(coap_session_t *s,
 static void coap_nack_handler(coap_session_t *s, const coap_pdu_t *sent,
                                coap_nack_reason_t reason, coap_mid_t mid) {
     ESP_LOGE(TAG, "CoAP NACK reason=%d MID=%d", reason, mid);
+    s_coap_server_connected = false;
     /* Also signal publish context to stop waiting */
     coap_context_t *nack_ctx = coap_session_get_context(s);
     void *app = coap_context_get_app_data(nack_ctx);
@@ -245,6 +248,7 @@ static esp_err_t coap_post_to_resource(const char *resource_path, const uint8_t 
     coap_mid_t mid = coap_send(session, pdu);
     if (mid == COAP_INVALID_MID) {
         ESP_LOGE(TAG, "CoAP send failed");
+        s_coap_server_connected = false;
         mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
         coap_session_release(session);
         coap_free_context(ctx);
@@ -261,6 +265,10 @@ static esp_err_t coap_post_to_resource(const char *resource_path, const uint8_t 
         int io_ms = coap_io_process(ctx, 100 /* ms */);
         if (io_ms < 0) break;
         if (response_received) break;  /* Response/NACK received — no need to wait longer */
+    }
+
+    if (!response_received) {
+        s_coap_server_connected = false;
     }
 
     ESP_LOGI(TAG, "CoAP POST sent MID %d, path: %s, %zu bytes", mid, resource_path, len);
@@ -594,6 +602,7 @@ void coap_handler_task_start(void) {
         ESP_LOGI(TAG, "CoAP publish queue created: depth=%d", COAP_QUEUE_SIZE);
     }
 
+    s_coap_server_connected = false;
     s_task_running = true;
     {
         StackType_t *pub_stack = (StackType_t *)heap_caps_malloc(6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -625,6 +634,7 @@ void coap_handler_task_stop(void) {
     s_task_handle = NULL;
     s_polling_running = false;
     s_polling_task_handle = NULL;
+    s_coap_server_connected = false;
     /* Delete the queue so its internal-RAM storage is returned to the heap.
      * Without this, the next handler that calls xQueueCreate() may fail even
      * though total RAM is plentiful, because the old queue still holds the
@@ -642,6 +652,10 @@ void coap_handler_task_stop(void) {
         }
     }
     ESP_LOGI(TAG, "CoAP handler tasks stopped");
+}
+
+bool coap_handler_is_connected(void) {
+    return s_coap_server_connected;
 }
 
 bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {

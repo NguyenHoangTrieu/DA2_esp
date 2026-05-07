@@ -37,6 +37,7 @@ static TaskHandle_t  s_task_handle        = NULL;
 static TaskHandle_t  s_polling_task_handle = NULL;
 static bool          s_task_running       = false;
 static bool          s_polling_running    = false;
+static volatile bool s_http_server_connected = false;
 static int           s_last_rpc_id        = -1;
 // In-flight guard: set when a command is forwarded, cleared on successful POST response.
 static int           s_processing_rpc_id  = -1;
@@ -135,6 +136,7 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
     esp_err_t err = esp_http_client_perform(client);
     if (err == ESP_OK) {
         int status = esp_http_client_get_status_code(client);
+        s_http_server_connected = true;
         if (status >= 200 && status < 300) {
             ESP_LOGI(TAG, "HTTP POST OK – status %d, %zu bytes sent", status, len);
             mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
@@ -144,6 +146,7 @@ static esp_err_t http_post_payload(const uint8_t *payload, size_t len) {
         }
     } else {
         ESP_LOGE(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
+        s_http_server_connected = false;
         mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);
     }
 
@@ -277,6 +280,7 @@ static esp_err_t http_poll_rpc(void) {
     esp_err_t err = esp_http_client_perform(client);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to perform HTTP RPC GET: %s", esp_err_to_name(err));
+        s_http_server_connected = false;
         mcu_lan_handler_set_internet_status(INTERNET_STATUS_OFFLINE);  // Server unreachable
         goto cleanup;
     }
@@ -286,6 +290,7 @@ static esp_err_t http_poll_rpc(void) {
     int bytes_read = resp_ctx.offset;
 
     int status = esp_http_client_get_status_code(client);
+    s_http_server_connected = true;
     ESP_LOGD(TAG, "HTTP RPC: status=%d, body_len=%d", status, bytes_read);
     if (bytes_read > 0) {
         ESP_LOGD(TAG, "RPC Body: %.*s", bytes_read > 120 ? 120 : bytes_read, http_response);
@@ -642,6 +647,7 @@ void http_handler_task_start(void) {
         ESP_LOGI(TAG, "HTTP publish queue created: depth=%d", HTTP_QUEUE_SIZE);
     }
 
+    s_http_server_connected = false;
     s_task_running = true;
     {
         StackType_t *pub_stack = (StackType_t *)heap_caps_malloc(8192, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -673,6 +679,7 @@ void http_handler_task_stop(void) {
     s_task_handle = NULL;
     s_polling_running = false;
     s_polling_task_handle = NULL;
+    s_http_server_connected = false;
     if (g_http_publish_queue) {
         vQueueDelete(g_http_publish_queue);
         g_http_publish_queue = NULL;
@@ -686,6 +693,10 @@ void http_handler_task_stop(void) {
         }
     }
     ESP_LOGI(TAG, "HTTP handler tasks stopped");
+}
+
+bool http_handler_is_connected(void) {
+    return s_http_server_connected;
 }
 
 bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {

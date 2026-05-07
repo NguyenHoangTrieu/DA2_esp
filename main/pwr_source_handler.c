@@ -160,7 +160,6 @@ esp_err_t pwr_source_get_status(pwr_source_status_t *status)
         status->bat_current_ma  = fg.avg_current_ma;
         status->battery_present = fg.battery_present;
         status->fully_charged   = fg.fully_charged;
-        status->critical_low    = fg.critical_low;
 
         /* Fallback: Use OCV-based SoC estimate if BQ27441's IT algorithm failed (SoC=0%).
            This happens when INITCOMP is not set (IT not initialized on this chip). */
@@ -170,6 +169,26 @@ esp_err_t pwr_source_get_status(pwr_source_status_t *status)
                 ESP_LOGD(TAG, "Using OCV-based SoC: %u%% (Vbat=%u mV, IT_ALGO failed)",
                         status->soc_pct, fg.voltage_mv);
             }
+        }
+
+        /* BQ27441 SOCF can remain asserted after recovery, so derive the public
+         * critical flag from the corrected SoC/voltage values instead of trusting
+         * the raw latch bit directly. */
+        status->critical_low = false;
+        if (status->battery_present) {
+            if (status->vbat_mv > 0 &&
+                status->vbat_mv <= PWR_BATT_LOWER_THRESHOLD_MV) {
+                status->critical_low = true;
+            } else if (status->soc_pct > 0 &&
+                       status->soc_pct <= PWR_BATT_CRITICAL_SOC_PCT) {
+                status->critical_low = true;
+            }
+        }
+
+        if (fg.critical_low && !status->critical_low) {
+            ESP_LOGD(TAG,
+                     "Ignoring stale SOCF flag (SoC=%u%%, Vbat=%u mV)",
+                     status->soc_pct, status->vbat_mv);
         }
     }
 

@@ -28,6 +28,9 @@ void mqtt_handler_task_start(void);
 // Stop the MQTT handler
 void mqtt_handler_task_stop(void);
 
+// Return true when the MQTT client currently has a live broker connection.
+bool mqtt_handler_is_connected(void);
+
 // Unified function to enqueue any data for publishing
 bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
 
