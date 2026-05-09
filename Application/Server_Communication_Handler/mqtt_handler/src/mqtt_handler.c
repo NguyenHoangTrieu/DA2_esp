@@ -6,6 +6,8 @@
 #include "mqtt_handler.h"
 #include "config_handler.h"
 #include "mcu_lan_handler.h"
+#include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "38kozd1weulcnl6ytz8f"
@@ -13,9 +15,13 @@
 #define SUBSCRIBE_TOPIC "v1/devices/me/rpc/request/+"
 #define ATTRIBUTE_TOPIC "v1/devices/me/attributes"
 #define FIRMWARE_STATUS_TOPIC "v1/devices/me/attributes"
-#define DATA_BUFFER_SIZE (1024) // 1KB
-#define JSON_TX_BUFFER_SIZE (3072)
-#define HEX_STRING_BUFFER_SIZE (DATA_BUFFER_SIZE * 2 + 1)
+#define DATA_BUFFER_SIZE (2048) // 2KB – must match MQTT_PUBLISH_DATA_MAX_LEN
+#define JSON_TX_BUFFER_SIZE (4224)  // 2048B raw → 4096 hex chars + {"data":"..."} overhead
+#define HEX_STRING_BUFFER_SIZE (DATA_BUFFER_SIZE * 2 + 1) // 4097
+#define MQTT_PUBLISH_QUEUE_DEPTH 32
+#define MQTT_PUBLISH_ENQUEUE_WAIT_MS 250
+/* Hard throttle after each publish limits throughput; set to 0 for benchmark. */
+#define MQTT_POST_PUBLISH_DELAY_MS 0
 
 static const char *TAG = "mqtt_handler";
 
@@ -24,7 +30,11 @@ static TaskHandle_t m_pub_task = NULL;
 static volatile uint8_t m_mqtt_connected = false;
 
 QueueHandle_t g_mqtt_publish_queue = NULL;
+static StaticQueue_t *s_mqtt_publish_qcb = NULL;
+static uint8_t *s_mqtt_publish_qstorage = NULL;
 static bool mqtt_task_close = false;
+static int g_last_rpc_id = -1;
+
 
 // Global MQTT config
 mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
@@ -32,6 +42,7 @@ mqtt_config_context_t g_mqtt_ctx = {.broker_uri = BROKER_URI,
                                     .subscribe_topic = SUBSCRIBE_TOPIC,
                                     .attribute_topic = ATTRIBUTE_TOPIC,
                                     .publish_topic = PUBLISH_TOPIC};
+
 
 /**
  * @brief Convert binary data to hex string
@@ -72,7 +83,7 @@ void mqtt_publish_firmware_status(const char *status, const char *fw_version) {
     return;
   }
 
-  int msg_id = esp_mqtt_client_publish(m_client, FIRMWARE_STATUS_TOPIC, payload,
+  int msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.attribute_topic, payload,
                                        len, 1, 0);
   if (msg_id >= 0) {
     ESP_LOGI(TAG, "✓ Firmware status published: %s", status);
@@ -119,12 +130,8 @@ static size_t hex_string_to_binary(const char *hex_str, uint8_t *binary,
 
 void mqtt_receive_enqueue(const char *data, size_t len) {
   if (data == NULL || len == 0) {
-    ESP_LOGW(TAG, "Invalid parameters");
     return;
   }
-
-  ESP_LOGI(TAG, "MQTT RX: %d bytes", len);
-  ESP_LOGI(TAG, "Raw hex string: %.*s", len, data);
 
   // ===== Convert hex string to binary =====
   uint8_t binary_data[512];
@@ -136,19 +143,11 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
     return;
   }
 
-  ESP_LOGI(TAG, "Decoded: %d bytes", binary_len);
-  ESP_LOG_BUFFER_HEX_LEVEL(TAG, binary_data, binary_len, ESP_LOG_INFO);
-
   // ===== Parse binary header =====
 
   // 1. Check for Config Command: "CF" (0x43 0x46)
   if (binary_len >= 2 && binary_data[0] == 0x43 && binary_data[1] == 0x46) {
-    ESP_LOGI(TAG, "→ Config command detected (CF)");
-
     // Format: CF + config_text
-    // Example hex: 43 46 4D 4C 3A 43 46 46 57
-    //              C  F  M  L  :  C  F  F  W
-    // Config text: "ML:CFFW"
 
     // Extract config data (skip "CF" prefix = 2 bytes)
     const char *cmd_data = (const char *)&binary_data[2];
@@ -159,56 +158,44 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       return;
     }
 
-    ESP_LOGI(TAG, "Config text: %.*s", cmd_len, cmd_data);
-
     // Parse command type from first 2 chars (ML, WF, MQ, etc.)
     config_type_t type = config_parse_type(cmd_data, cmd_len);
 
     if (type != CONFIG_TYPE_UNKNOWN) {
-      config_command_t cmd;
-      cmd.type = type;
-      cmd.data_len = cmd_len;
-      memcpy(cmd.raw_data, cmd_data, cmd_len);
-      cmd.raw_data[cmd_len] = '\0';
+      config_command_t *cmd = (config_command_t *)malloc(sizeof(config_command_t));
+      if (cmd == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate config command buffer");
+        return;
+      }
+      memset(cmd, 0, sizeof(*cmd));
+      cmd->type = type;
+      cmd->data_len = cmd_len;
+      cmd->source = CMD_SOURCE_MQTT;  // MQTT commands → route response to server
+      memcpy(cmd->raw_data, cmd_data, cmd_len);
+      cmd->raw_data[cmd_len] = '\0';
 
       extern QueueHandle_t g_config_handler_queue;
       if (g_config_handler_queue && xQueueSend(g_config_handler_queue, &cmd,
                                                pdMS_TO_TICKS(100)) == pdTRUE) {
-        ESP_LOGI(TAG, "✓ Config forwarded to config handler");
+        ESP_LOGI(TAG, "✓ Config forwarded to handler: %.*s", cmd_len, cmd_data);
       } else {
-        ESP_LOGW(TAG, "✗ Failed to send to config handler");
+        ESP_LOGW(TAG, "Failed to send to config handler");
+        free(cmd);
       }
     } else {
-      ESP_LOGW(TAG, "Unknown config type");
+      ESP_LOGW(TAG, "Unknown config type: %.*s", cmd_len, cmd_data);
     }
     return;
   }
 
   // 2. Check for Data Command: "DT" (0x44 0x54)
-  // Format: DT + handler(3) + length(2) + payload
-  // Example: 44 54 5A 49 47 00 06 01 02 03 04 05 06
-  //          D  T  Z  I  G  len=6  [payload 6 bytes]
-
   if (binary_len >= 7 && binary_data[0] == 0x44 && binary_data[1] == 0x54) {
-    ESP_LOGI(TAG, "→ Data command detected (DT)");
-
     // Extract handler type (3 bytes after "DT")
     uint8_t handler_type[4] = {binary_data[2], binary_data[3], binary_data[4],
                                '\0'};
 
-    ESP_LOGI(TAG, "Handler: %s", handler_type);
-
     // Extract payload length (2 bytes, big-endian)
     uint16_t payload_len = ((uint16_t)binary_data[5] << 8) | binary_data[6];
-
-    ESP_LOGI(TAG, "Payload length field: %u bytes", payload_len);
-
-    // Validate length
-    if ((payload_len + 7) != binary_len) {
-      ESP_LOGW(TAG, "Length mismatch: expect %u, got %u", payload_len + 7,
-               binary_len);
-      // Continue anyway, use actual length
-    }
 
     // Map to handler ID
     handler_id_t target_id;
@@ -218,6 +205,8 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
       target_id = HANDLER_LORA;
     } else if (memcmp(handler_type, "CAN", 3) == 0) {
       target_id = HANDLER_CAN;
+    } else if (memcmp(handler_type, "RS4", 3) == 0) {
+      target_id = HANDLER_RS485;
     } else {
       ESP_LOGW(TAG, "Unknown handler: %s", handler_type);
       return;
@@ -226,9 +215,6 @@ void mqtt_receive_enqueue(const char *data, size_t len) {
     // Extract actual payload (skip DT + handler + length = 7 bytes)
     const uint8_t *payload = &binary_data[7];
     uint16_t actual_payload_len = binary_len - 7;
-
-    ESP_LOGI(TAG, "Actual payload: %u bytes", actual_payload_len);
-    ESP_LOG_BUFFER_HEX_LEVEL(TAG, payload, actual_payload_len, ESP_LOG_INFO);
 
     // Forward to MCU LAN
     if (mcu_lan_enqueue_downlink(target_id, (uint8_t *)payload,
@@ -292,14 +278,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
   switch (event->event_id) {
   case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    // Set flags IMMEDIATELY — never call vTaskDelay inside an event handler:
+    // blocking the MQTT task prevents SUBACK/PUBACK from being processed,
+    // causing the broker to reset the TCP connection (errno=128 ECONNRESET).
+    m_mqtt_connected = true;
+    mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.attribute_topic, 1);
     esp_mqtt_client_subscribe(event->client, g_mqtt_ctx.subscribe_topic, 1);
     esp_mqtt_client_publish(event->client, g_mqtt_ctx.attribute_topic,
                             "{\"chip_type\":\"esp32s3\", \"fw\":\"1.0.1\"}", 0,
                             1, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    m_mqtt_connected = true;
-    mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
     break;
 
   case MQTT_EVENT_DISCONNECTED:
@@ -318,6 +306,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
     ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
     ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
+
+    // Extract RPC Request ID from topic if it is an RPC request
+    char topic_buf[128];
+    snprintf(topic_buf, sizeof(topic_buf), "%.*s",
+             event->topic_len < 127 ? event->topic_len : 127, event->topic);
+    int rpc_id = -1;
+    if (sscanf(topic_buf, "v1/devices/me/rpc/request/%d", &rpc_id) == 1) {
+      g_last_rpc_id = rpc_id;
+      ESP_LOGI(TAG, "Stored RPC request ID: %d", g_last_rpc_id);
+    }
 
     // Check if data is JSON (starts with '{')
     if (event->data_len > 0 && event->data[0] == '{') {
@@ -370,7 +368,7 @@ static void mqtt_publish_task(void *arg) {
 
   if (m_mqtt_connected) {
     // Publish firmware update success
-    mqtt_publish_firmware_status("success", "1.0.3");
+    mqtt_publish_firmware_status("success", DA2_CURRENT_VERSION_STR);
     ESP_LOGI(TAG, "Firmware update notification sent");
   } else {
     ESP_LOGW(TAG, "MQTT not connected, skipping firmware status");
@@ -380,15 +378,22 @@ static void mqtt_publish_task(void *arg) {
     if (g_mqtt_publish_queue) {
       if (xQueueReceive(g_mqtt_publish_queue, &incoming_data,
                         pdMS_TO_TICKS(500)) == pdTRUE) {
-
-        // Check MQTT connection
+        // Wait for MQTT reconnection instead of dropping — esp-mqtt auto-reconnects
         if (!m_mqtt_connected) {
-          ESP_LOGW(TAG, "MQTT not connected, dropping data");
-          vTaskDelay(pdMS_TO_TICKS(100));
-          continue;
+          ESP_LOGW(TAG, "MQTT not connected, waiting up to 10s for reconnect...");
+          int wait_ms = 0;
+          while (!m_mqtt_connected && wait_ms < 10000) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            wait_ms += 200;
+          }
+          if (!m_mqtt_connected) {
+            ESP_LOGE(TAG, "MQTT reconnect timeout (10s), discarding queued item");
+            continue;
+          }
+          ESP_LOGI(TAG, "MQTT reconnected after %d ms, retrying publish", wait_ms);
         }
 
-        if (!incoming_data.data || incoming_data.length == 0) {
+        if (incoming_data.length == 0) {
           ESP_LOGW(TAG, "Invalid data received from queue");
           continue;
         }
@@ -417,9 +422,27 @@ static void mqtt_publish_task(void *arg) {
                  "Publishing %d bytes JSON (raw: %d bytes → hex: %d chars)",
                  json_len, copy_len, strlen(hex_string_buffer));
 
-        int msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.publish_topic,
-                                             (const char *)json_tx_buffer,
-                                             json_len, 1, 0);
+        int msg_id;
+        if (g_last_rpc_id >= 0) {
+          /* Derive response topic from subscribe topic: strip "/request/+" → append "/response/{id}" */
+          char base_topic[128];
+          strncpy(base_topic, g_mqtt_ctx.subscribe_topic, sizeof(base_topic) - 1);
+          base_topic[sizeof(base_topic) - 1] = '\0';
+          char *req_pos = strstr(base_topic, "/request");
+          if (req_pos) *req_pos = '\0';
+          /* rpc_topic must fit: base(≤127) + "/response/" (10) + int(≤11) + NUL = 149 max */
+          char rpc_topic[160];
+          snprintf(rpc_topic, sizeof(rpc_topic), "%s/response/%d", base_topic, g_last_rpc_id);
+          g_last_rpc_id = -1; // Consume the RPC ID
+          msg_id = esp_mqtt_client_publish(m_client, rpc_topic,
+                                           (const char *)json_tx_buffer,
+                                           json_len, 1, 0);
+          ESP_LOGI(TAG, "Routed to RPC response topic: %s", rpc_topic);
+        } else {
+          msg_id = esp_mqtt_client_publish(m_client, g_mqtt_ctx.publish_topic,
+                                           (const char *)json_tx_buffer,
+                                           json_len, 1, 0);
+        }
 
         if (msg_id >= 0) {
           ESP_LOGI(TAG, "✓ Published, msg_id=%d", msg_id);
@@ -427,7 +450,11 @@ static void mqtt_publish_task(void *arg) {
           ESP_LOGE(TAG, "✗ Publish failed");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if (MQTT_POST_PUBLISH_DELAY_MS > 0) {
+          vTaskDelay(pdMS_TO_TICKS(MQTT_POST_PUBLISH_DELAY_MS));
+        } else {
+          taskYIELD();
+        }
       }
     } else {
       vTaskDelay(pdMS_TO_TICKS(100));
@@ -460,6 +487,15 @@ static void mqtt_reinit(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 30000;
+
+  /* Enforce short keepalive for cellular links to bypass aggressive carrier NAT timeouts */
+  if (g_internet_type == CONFIG_INTERNET_LTE && ka > 30) {
+      ESP_LOGW(TAG, "Clamping MQTT keepalive from %u to 30s for LTE stability", ka);
+      ka = 30;
+  }
+
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
           {
@@ -474,18 +510,19 @@ static void mqtt_reinit(void) {
           },
       .session =
           {
-              .keepalive = 120,
+              .keepalive = (int)ka,
               .disable_clean_session = 0,
           },
       .network =
           {
-              .timeout_ms = 10000,
+              .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
+              .reconnect_timeout_ms = 30000,
           },
       .buffer =
           {
-              .size = 65536, // 64KB
+              .size = 65536,
               .out_size = 65536,
           },
   };
@@ -495,12 +532,12 @@ static void mqtt_reinit(void) {
     esp_mqtt_client_register_event(m_client, ESP_EVENT_ANY_ID,
                                    mqtt_event_handler, NULL);
     esp_mqtt_client_start(m_client);
-    ESP_LOGI(TAG, "MQTT client reinitialized");
+    ESP_LOGI(TAG, "MQTT client reinitialized (keepalive=%us, timeout=%lums)",
+             ka, (unsigned long)tmo);
   } else {
     ESP_LOGE(TAG, "Failed to reinitialize MQTT client");
   }
 }
-
 /**
  * @brief FreeRTOS task to monitor config queue.
  */
@@ -541,7 +578,11 @@ static void mqtt_config_task(void *arg) {
         strncpy(g_mqtt_ctx.publish_topic, mqtt_cfg.publish_topic,
                 sizeof(g_mqtt_ctx.publish_topic) - 1);
         g_mqtt_ctx.publish_topic[sizeof(g_mqtt_ctx.publish_topic) - 1] = '\0';
-        save_mqtt_config_to_nvs();
+
+        // Update optional session params (keep existing value if new one is 0)
+        if (mqtt_cfg.keepalive_s) g_mqtt_ctx.keepalive_s = mqtt_cfg.keepalive_s;
+        if (mqtt_cfg.timeout_ms)  g_mqtt_ctx.timeout_ms  = mqtt_cfg.timeout_ms;
+
         mqtt_reinit();
       }
     } else {
@@ -559,6 +600,15 @@ static void mqtt_config_task(void *arg) {
 void mqtt_handler_task_start(void) {
   mqtt_task_close = false;
 
+  uint16_t ka = g_mqtt_ctx.keepalive_s ? g_mqtt_ctx.keepalive_s : 30;
+  uint32_t tmo = g_mqtt_ctx.timeout_ms  ? g_mqtt_ctx.timeout_ms  : 30000;
+
+  /* Enforce short keepalive for cellular links to bypass aggressive carrier NAT timeouts */
+  if (g_internet_type == CONFIG_INTERNET_LTE && ka > 30) {
+      ESP_LOGW(TAG, "Clamping MQTT keepalive from %u to 30s for LTE stability", ka);
+      ka = 30;
+  }
+
   esp_mqtt_client_config_t mqtt_cfg = {
       .broker =
           {
@@ -573,14 +623,15 @@ void mqtt_handler_task_start(void) {
           },
       .session =
           {
-              .keepalive = 120,
+              .keepalive = (int)ka,
               .disable_clean_session = 0,
           },
       .network =
           {
-              .timeout_ms = 10000,
+              .timeout_ms = (int)tmo,
               .refresh_connection_after_ms = 0,
               .disable_auto_reconnect = false,
+              .reconnect_timeout_ms = 30000,
           },
       .buffer =
           {
@@ -595,19 +646,64 @@ void mqtt_handler_task_start(void) {
   esp_mqtt_client_start(m_client);
 
   if (!g_mqtt_publish_queue) {
-    g_mqtt_publish_queue = xQueueCreate(10, sizeof(mqtt_publish_data_t));
-    if (!g_mqtt_publish_queue) {
+    size_t q_bytes = MQTT_PUBLISH_QUEUE_DEPTH * sizeof(mqtt_publish_data_t);
+    s_mqtt_publish_qstorage = (uint8_t *)heap_caps_malloc(q_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_mqtt_publish_qcb = (StaticQueue_t *)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    if (!s_mqtt_publish_qstorage || !s_mqtt_publish_qcb) {
+      if (s_mqtt_publish_qstorage) {
+        heap_caps_free(s_mqtt_publish_qstorage);
+        s_mqtt_publish_qstorage = NULL;
+      }
+      if (s_mqtt_publish_qcb) {
+        heap_caps_free(s_mqtt_publish_qcb);
+        s_mqtt_publish_qcb = NULL;
+      }
       ESP_LOGE(TAG, "Failed to create publish queue");
+    } else {
+      g_mqtt_publish_queue = xQueueCreateStatic(
+          MQTT_PUBLISH_QUEUE_DEPTH,
+          sizeof(mqtt_publish_data_t),
+          s_mqtt_publish_qstorage,
+          s_mqtt_publish_qcb);
+    }
+
+    if (!g_mqtt_publish_queue) {
+      if (s_mqtt_publish_qstorage) {
+        heap_caps_free(s_mqtt_publish_qstorage);
+        s_mqtt_publish_qstorage = NULL;
+      }
+      if (s_mqtt_publish_qcb) {
+        heap_caps_free(s_mqtt_publish_qcb);
+        s_mqtt_publish_qcb = NULL;
+      }
+      ESP_LOGE(TAG, "Failed to create publish queue");
+    } else {
+      ESP_LOGI(TAG, "Publish queue created: depth=%d", MQTT_PUBLISH_QUEUE_DEPTH);
     }
   }
 
   // Start publish task
   if (m_pub_task == NULL) {
-    xTaskCreate(mqtt_publish_task, "mqtt_pub", 8192, NULL, 5, &m_pub_task);
+    StackType_t *pub_stack = (StackType_t *)heap_caps_malloc(8192, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    StaticTask_t *pub_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (pub_stack && pub_tcb) {
+        m_pub_task = xTaskCreateStatic(mqtt_publish_task, "mqtt_pub", 8192, NULL, 5, pub_stack, pub_tcb);
+    } else {
+        ESP_LOGE(TAG, "Failed to allocate mqtt_pub task in PSRAM");
+    }
   }
 
   // Start config task
-  xTaskCreate(mqtt_config_task, "mqtt_config", 3072, NULL, 5, NULL);
+  {
+      StackType_t *cfg_stack = (StackType_t *)heap_caps_malloc(3072, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      StaticTask_t *cfg_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      if (cfg_stack && cfg_tcb) {
+          xTaskCreateStatic(mqtt_config_task, "mqtt_config", 3072, NULL, 5, cfg_stack, cfg_tcb);
+      } else {
+          ESP_LOGE(TAG, "Failed to allocate mqtt_config task in PSRAM");
+      }
+  }
 
   ESP_LOGI(TAG, "MQTT handler started");
 }
@@ -631,15 +727,31 @@ void mqtt_handler_task_stop(void) {
     m_client = NULL;
   }
 
-  // Clear queue if exists
+  // Clear and DELETE the queue so its internal-RAM storage is returned to
+  // the heap before the next protocol handler (e.g. CoAP) tries to allocate.
   if (g_mqtt_publish_queue) {
     mqtt_publish_data_t dummy;
     while (xQueueReceive(g_mqtt_publish_queue, &dummy, 0) == pdTRUE) {
       // Drain queue
     }
+    vQueueDelete(g_mqtt_publish_queue);
+    g_mqtt_publish_queue = NULL;
+
+    if (s_mqtt_publish_qstorage) {
+      heap_caps_free(s_mqtt_publish_qstorage);
+      s_mqtt_publish_qstorage = NULL;
+    }
+    if (s_mqtt_publish_qcb) {
+      heap_caps_free(s_mqtt_publish_qcb);
+      s_mqtt_publish_qcb = NULL;
+    }
   }
 
   ESP_LOGI(TAG, "MQTT handler stopped");
+}
+
+bool mqtt_handler_is_connected(void) {
+  return m_mqtt_connected && m_client != NULL;
 }
 
 /**
@@ -656,19 +768,24 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     return false;
   }
 
-  if (!m_mqtt_connected) {
-    ESP_LOGW(TAG, "MQTT not connected, dropping data");
-    return false;
+  // Do NOT gate on m_mqtt_connected — esp-mqtt auto-reconnects and the publish
+  // task will wait for reconnection before sending.  Dropping here causes permanent
+  // data loss during transient (1-2s) disconnects.
+  if (data_len > MQTT_PUBLISH_DATA_MAX_LEN) {
+    ESP_LOGW(TAG, "Payload too large (%zu > %d), truncating", data_len,
+             MQTT_PUBLISH_DATA_MAX_LEN);
+    data_len = MQTT_PUBLISH_DATA_MAX_LEN;
   }
 
-  mqtt_publish_data_t queue_data = {.data = (uint8_t *)data,
-                                    .length = data_len};
+  mqtt_publish_data_t queue_data = {
+      .length = data_len,
+      .enqueued_at_us = esp_timer_get_time(),
+  };
+  memcpy(queue_data.data, data, data_len);
 
-  if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(100)) ==
+  if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(MQTT_PUBLISH_ENQUEUE_WAIT_MS)) ==
       pdTRUE) {
     ESP_LOGI(TAG, "Enqueued %d bytes for MQTT publish", data_len);
-    ESP_LOGI(TAG, "Receive Data:");
-    ESP_LOG_BUFFER_HEXDUMP(TAG, data, data_len, ESP_LOG_INFO);
     return true;
   } else {
     ESP_LOGW(TAG, "Failed to enqueue data - queue full");

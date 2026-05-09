@@ -1,0 +1,61 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Gateway Configuration Tool</title>
+  <!--
+    DUAL-PURPOSE FILE:
+    1. Development: Vite serves /src/main.js as ES modules  (npm run dev)
+    2. Production:  "npm run build" -> web/firmware/index.html (all JS+CSS inlined)
+       CMake EMBED_TXTFILES embeds web/firmware/index.html into firmware flash.
+    Always run "npm run build" before "idf.py build".
+  -->
+</head>
+<body>
+
+<!-- Title Bar -->
+<header id="titleBar">
+  <span class="title-text">&#x1F50C; ESP32 Gateway Configuration Tool</span>
+  <span class="title-ver" id="titleVer">v4.0.0</span>
+</header>
+
+<!-- Top Bar (status + actions) -->
+<div id="topBar">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="statusHost">gateway.local</span>
+  <button class="top-btn" id="btnReadConfig">&#x1F4D6; Read Config</button>
+  <button class="top-btn" id="btnSaveFile">&#x1F4BE; Save File</button>
+  <button class="top-btn" id="btnLoadFile">&#x1F4C2; Load File</button>
+  <span class="status-text" id="statusText">Ready</span>
+</div>
+
+<!-- Mode Selector -->
+<div id="modeRow">
+  <label class="mode-label">
+    <input type="checkbox" id="advancedToggle">
+    <span>Advanced Mode</span>
+  </label>
+</div>
+
+<!-- Basic Mode Panel -->
+<div id="basicPanel">
+  <div class="tab-bar" id="basicTabBar"></div>
+  <div id="basicContent"></div>
+</div>
+
+<!-- Advanced Mode Panel -->
+<div id="advancedPanel" class="hidden">
+  <div class="tab-bar" id="advancedTabBar"></div>
+  <div id="advancedContent"></div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Hidden file input for Load File -->
+<input type="file" id="fileInput" accept=".json" style="display:none">
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

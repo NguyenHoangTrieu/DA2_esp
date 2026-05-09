@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,6 +18,7 @@ Warning: The USB Host Library API is still a beta version and may be subject to 
 #include "freertos/semphr.h"
 #include "esp_private/critical_section.h"
 #include "esp_err.h"
+#include "esp_check.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_bit_defs.h"
@@ -28,6 +29,7 @@ Warning: The USB Host Library API is still a beta version and may be subject to 
 #include "esp_private/usb_phy.h"
 #include "usb/usb_host.h"
 
+#if SOC_USB_OTG_SUPPORTED
 #include "esp_idf_version.h"
 // For USB PHY Compatibility in IDF 5.x
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
@@ -35,6 +37,7 @@ Warning: The USB Host Library API is still a beta version and may be subject to 
 #else
 #include "soc/usb_periph.h"
 #endif
+#endif // SOC_USB_OTG_SUPPORTED
 
 DEFINE_CRIT_SECTION_LOCK_STATIC(host_lock);
 #define HOST_ENTER_CRITICAL_ISR()       esp_os_enter_critical_isr(&host_lock)
@@ -158,9 +161,10 @@ typedef struct {
     struct {
         SemaphoreHandle_t event_sem;
         SemaphoreHandle_t mux_lock;
-        usb_phy_handle_t phy_handle;    // Will be NULL if host library is installed with skip_phy_setup
-        void *enum_client;              // Pointer to Enum driver (acting as a client). Used to reroute completed USBH control transfers
-        void *hub_client;               // Pointer to External Hub driver (acting as a client). Used to reroute completed USBH control transfers. NULL, when External Hub Driver not available.
+        TimerHandle_t auto_suspend_timer;   // Freertos timer used for automatic suspend of the root port
+        usb_phy_handle_t phy_handle;        // Will be NULL if host library is installed with skip_phy_setup
+        void *enum_client;                  // Pointer to Enum driver (acting as a client). Used to reroute completed USBH control transfers
+        void *hub_client;                   // Pointer to External Hub driver (acting as a client). Used to reroute completed USBH control transfers. NULL, when External Hub Driver not available.
     } constant;
 } host_lib_t;
 
@@ -241,6 +245,28 @@ static inline bool is_internal_client(void *client)
     }
 #endif // ENABLE_USB_HUBS
     return false;
+}
+
+/**
+ * @brief Reset the automatic suspend timer
+ *
+ * The timer resets automatically, whenever usb host lib or usb host client are handling any events
+ */
+static inline void reset_auto_suspend_timer(void)
+{
+    if (xTimerIsTimerActive(p_host_lib_obj->constant.auto_suspend_timer) == pdTRUE) {
+        xTimerReset(p_host_lib_obj->constant.auto_suspend_timer, portMAX_DELAY);
+    }
+}
+
+/**
+ * @brief Stop the automatic suspend timer
+ *
+ * The timer is automatically stopped in case it is running and all the devices have been freed
+ */
+static void stop_auto_suspend_timer(void)
+{
+    xTimerStop(p_host_lib_obj->constant.auto_suspend_timer, portMAX_DELAY);
 }
 
 static void send_event_msg_to_clients(const usb_host_client_event_msg_t *event_msg, bool send_to_all, uint8_t opened_dev_addr)
@@ -344,19 +370,43 @@ static void usbh_event_callback(usbh_event_data_t *event_data, void *arg)
         break;
     }
     case USBH_EVENT_DEV_FREE: {
-        // Let the Hub driver know that the device is free and its port can be recycled
-        // Port could be absent, no need to verify
-        hub_port_recycle(event_data->dev_free_data.parent_dev_hdl,
-                         event_data->dev_free_data.port_num,
-                         event_data->dev_free_data.dev_uid);
+        // Let the Hub driver know that the device is free and its node can be free and port re-enabled
+        // Node could be already freed on device disconnect (when clients still holding the device opened), no need to verify result
+        hub_node_recycle(event_data->dev_free_data.dev_uid);
         break;
     }
     case USBH_EVENT_ALL_FREE: {
+        // No device connected to the root port, stop the auto suspend timer (if running)
+        stop_auto_suspend_timer();
+
         // Notify the lib handler that all devices are free
         HOST_ENTER_CRITICAL();
         p_host_lib_obj->dynamic.lib_event_flags |= USB_HOST_LIB_EVENT_FLAGS_ALL_FREE;
         _unblock_lib(false);
         HOST_EXIT_CRITICAL();
+        break;
+    }
+    case USBH_EVENT_DEV_SUSPEND: {
+        // Prepare a DEV_SUSPENDED client event message, the send it only to clients, which opened the device
+        usb_host_client_event_msg_t event_msg = {
+            .event = USB_HOST_CLIENT_EVENT_DEV_SUSPENDED,
+            .dev_suspend_resume.dev_hdl = event_data->dev_suspend_resume_data.dev_hdl,
+        };
+        send_event_msg_to_clients(&event_msg, false, event_data->dev_suspend_resume_data.dev_addr);
+        break;
+    }
+    case USBH_EVENT_DEV_RESUME: {
+        // Prepare a DEV_RESUMED client event message, the send it only to clients, which opened the device
+        usb_host_client_event_msg_t event_msg = {
+            .event = USB_HOST_CLIENT_EVENT_DEV_RESUMED,
+            .dev_suspend_resume.dev_hdl = event_data->dev_suspend_resume_data.dev_hdl,
+        };
+        send_event_msg_to_clients(&event_msg, false, event_data->dev_suspend_resume_data.dev_addr);
+        break;
+    }
+    case USBH_EVENT_ALL_IDLE: {
+        // All EPs of all devices are idle, mark root hub, as ready to be suspended
+        hub_root_mark_suspend();
         break;
     }
     default:
@@ -397,16 +447,16 @@ static void enum_event_callback(enum_event_data_t *event_data, void *arg)
         break;
     case ENUM_EVENT_RESET_REQUIRED:
         // Device may be gone, don't need to verify result
-        hub_port_reset(event_data->reset_req.parent_dev_hdl, event_data->reset_req.parent_port_num);
+        hub_node_reset(event_data->node_uid);
         break;
     case ENUM_EVENT_COMPLETED:
         // Notify port that device completed enumeration
-        hub_port_active(event_data->complete.parent_dev_hdl, event_data->complete.parent_port_num);
+        hub_node_active(event_data->node_uid);
         // Propagate a new device event
-        ESP_ERROR_CHECK(usbh_devs_new_dev_event(event_data->complete.dev_hdl));
+        ESP_ERROR_CHECK(usbh_devs_new_dev_event(event_data->dev_hdl));
         break;
     case ENUM_EVENT_CANCELED:
-        hub_port_disable(event_data->canceled.parent_dev_hdl, event_data->canceled.parent_port_num);
+        hub_node_disable(event_data->node_uid);
         break;
     default:
         abort();    // Should never occur
@@ -442,6 +492,39 @@ static void get_config_desc_transfer_cb(usb_transfer_t *transfer)
     xSemaphoreGive(transfer_done);
 }
 
+/**
+ * @brief Automatic suspend timer timer callback
+ *
+ * - The callback is called once the timer expires
+ * - The timer is configured using usb_host_lib_set_auto_suspend()
+ * - Callback unblocks the usb_host_lib_handle_events() and delivers suspend USB Host lib event
+ * - Event flag is dellivered, only if:
+ *      - A device is connected to the the root port
+ *      - The root port is not already in suspended state
+ * @param[in] xTimer Timer handle
+ */
+static void auto_suspend_timer_cb(TimerHandle_t xTimer)
+{
+    // Check if any device is connected first
+    int num_devs;
+    if (usbh_devs_num(&num_devs), num_devs == 0) {
+        // No device connected, no device to be suspended. Return without unblocking the host lib task
+        return;
+    }
+
+    // Check if the root port is already suspended
+    if (hub_root_is_suspended()) {
+        // Root port already suspended, no need to deliver the callback
+        return;
+    }
+
+    // Unblock host lib and deliver event
+    HOST_ENTER_CRITICAL();
+    p_host_lib_obj->dynamic.lib_event_flags |= USB_HOST_LIB_EVENT_FLAGS_AUTO_SUSPEND;
+    _unblock_lib(false);
+    HOST_EXIT_CRITICAL();
+}
+
 // ------------------------------------------------ Library Functions --------------------------------------------------
 
 // ----------------------- Public --------------------------
@@ -457,7 +540,8 @@ esp_err_t usb_host_install(const usb_host_config_t *config)
     host_lib_t *host_lib_obj = heap_caps_calloc(1, sizeof(host_lib_t), MALLOC_CAP_DEFAULT);
     SemaphoreHandle_t event_sem = xSemaphoreCreateBinary();
     SemaphoreHandle_t mux_lock = xSemaphoreCreateMutex();
-    if (host_lib_obj == NULL || event_sem == NULL || mux_lock == NULL) {
+    TimerHandle_t auto_suspend_timer = xTimerCreate("auto_suspend_tmr", pdMS_TO_TICKS(1000), pdFALSE, NULL, auto_suspend_timer_cb);
+    if (host_lib_obj == NULL || event_sem == NULL || mux_lock == NULL || auto_suspend_timer == NULL) {
         ret = ESP_ERR_NO_MEM;
         goto alloc_err;
     }
@@ -465,11 +549,12 @@ esp_err_t usb_host_install(const usb_host_config_t *config)
     TAILQ_INIT(&host_lib_obj->mux_protected.client_tailq);
     host_lib_obj->constant.event_sem = event_sem;
     host_lib_obj->constant.mux_lock = mux_lock;
+    host_lib_obj->constant.auto_suspend_timer = auto_suspend_timer;
 
     /*
     Install each layer of the Host stack (listed below) from the lowest layer to the highest
     - USB PHY
-    - HCD
+    - ! HCD is not installed, the HCD port is initialized by the Hub driver
     - USBH
     - Enum
     - Hub
@@ -505,34 +590,6 @@ esp_err_t usb_host_install(const usb_host_config_t *config)
             ESP_LOGE(USB_HOST_TAG, "PHY install error: %s", esp_err_to_name(ret));
             goto phy_err;
         }
-    }
-
-    // Install HCD
-    // Prepare HCD configuration
-    hcd_fifo_settings_t user_fifo_config;
-    hcd_config_t hcd_config = {
-        .intr_flags = config->intr_flags,
-        .peripheral_map = peripheral_map,
-        .fifo_config = NULL, // Default: use bias strategy from Kconfig
-    };
-
-    // Check if user has provided a custom FIFO configuration
-    if (config->fifo_settings_custom.rx_fifo_lines != 0 ||
-            config->fifo_settings_custom.nptx_fifo_lines != 0 ||
-            config->fifo_settings_custom.ptx_fifo_lines != 0) {
-
-        // Populate user FIFO configuration with provided values
-        user_fifo_config.rx_fifo_lines = config->fifo_settings_custom.rx_fifo_lines;
-        user_fifo_config.nptx_fifo_lines = config->fifo_settings_custom.nptx_fifo_lines;
-        user_fifo_config.ptx_fifo_lines = config->fifo_settings_custom.ptx_fifo_lines;
-
-        // Pass custom configuration to HCD
-        hcd_config.fifo_config = &user_fifo_config;
-    }
-    ret = hcd_install(&hcd_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(USB_HOST_TAG, "HCD install error: %s", esp_err_to_name(ret));
-        goto hcd_err;
     }
 
     // Install USBH
@@ -572,7 +629,25 @@ esp_err_t usb_host_install(const usb_host_config_t *config)
         .proc_req_cb_arg = NULL,
         .event_cb = hub_event_callback,
         .event_cb_arg = NULL,
+        .intr_flags = config->intr_flags,
+        .fifo_config = NULL,
     };
+
+    // Check if user has provided a custom FIFO configuration
+    hcd_fifo_settings_t user_fifo_config;
+    if (config->fifo_settings_custom.rx_fifo_lines != 0 ||
+            config->fifo_settings_custom.nptx_fifo_lines != 0 ||
+            config->fifo_settings_custom.ptx_fifo_lines != 0) {
+
+        // Populate user FIFO configuration with provided values
+        user_fifo_config.rx_fifo_lines = config->fifo_settings_custom.rx_fifo_lines;
+        user_fifo_config.nptx_fifo_lines = config->fifo_settings_custom.nptx_fifo_lines;
+        user_fifo_config.ptx_fifo_lines = config->fifo_settings_custom.ptx_fifo_lines;
+
+        // Pass custom configuration to HCD
+        hub_config.fifo_config = &user_fifo_config;
+    }
+
     ret = hub_install(&hub_config, &host_lib_obj->constant.hub_client);
     if (ret != ESP_OK) {
         ESP_LOGE(USB_HOST_TAG, "Hub driver Install error: %s", esp_err_to_name(ret));
@@ -604,8 +679,6 @@ hub_err:
 enum_err:
     ESP_ERROR_CHECK(usbh_uninstall());
 usbh_err:
-    ESP_ERROR_CHECK(hcd_uninstall());
-hcd_err:
     if (host_lib_obj->constant.phy_handle) {
         ESP_ERROR_CHECK(usb_del_phy(host_lib_obj->constant.phy_handle));
     }
@@ -616,6 +689,9 @@ alloc_err:
     }
     if (event_sem) {
         vSemaphoreDelete(event_sem);
+    }
+    if (auto_suspend_timer) {
+        xTimerDelete(auto_suspend_timer, portMAX_DELAY);
     }
     heap_caps_free(host_lib_obj);
     return ret;
@@ -646,13 +722,12 @@ esp_err_t usb_host_uninstall(void)
     - Hub
     - Enum
     - USBH
-    - HCD
+    - !HCD: The port is deinitialized by the Hub driver
     - USB PHY
     */
     ESP_ERROR_CHECK(hub_uninstall());
     ESP_ERROR_CHECK(enum_uninstall());
     ESP_ERROR_CHECK(usbh_uninstall());
-    ESP_ERROR_CHECK(hcd_uninstall());
     // If the USB PHY was setup, then delete it
     if (host_lib_obj->constant.phy_handle) {
         ESP_ERROR_CHECK(usb_del_phy(host_lib_obj->constant.phy_handle));
@@ -661,6 +736,7 @@ esp_err_t usb_host_uninstall(void)
     // Free memory objects
     vSemaphoreDelete(host_lib_obj->constant.mux_lock);
     vSemaphoreDelete(host_lib_obj->constant.event_sem);
+    xTimerDelete(host_lib_obj->constant.auto_suspend_timer, portMAX_DELAY);
     heap_caps_free(host_lib_obj);
     return ESP_OK;
 }
@@ -684,6 +760,9 @@ esp_err_t usb_host_lib_handle_events(TickType_t timeout_ticks, uint32_t *event_f
             // Timed out waiting for semaphore or currently no events
             break;
         }
+
+        // Reset the automatic suspend timer, USB Host lib is handling events
+        reset_auto_suspend_timer();
 
         // Read and clear process pending flags
         HOST_ENTER_CRITICAL();
@@ -743,6 +822,7 @@ esp_err_t usb_host_lib_info(usb_host_lib_info_t *info_ret)
     // Write back return values
     info_ret->num_devices = num_devs_temp;
     info_ret->num_clients = num_clients_temp;
+    info_ret->root_port_suspended = hub_root_is_suspended();
     return ESP_OK;
 }
 
@@ -756,6 +836,122 @@ esp_err_t usb_host_lib_set_root_port_power(bool enable)
     }
 
     return ret;
+}
+
+esp_err_t usb_host_lib_root_port_suspend(void)
+{
+    HOST_ENTER_CRITICAL();
+    HOST_CHECK_FROM_CRIT(p_host_lib_obj != NULL, ESP_ERR_INVALID_STATE);
+    HOST_EXIT_CRITICAL();
+    esp_err_t ret;
+
+    // Check if any device is connected first
+    int num_devs;
+    if (usbh_devs_num(&num_devs), num_devs == 0) {
+        ret = ESP_ERR_NOT_FOUND;                        // No device connected
+        goto exit;
+    }
+
+    // Check if any transfers are submitted
+    ret = hub_root_can_suspend();
+    if (ret == ESP_ERR_NOT_FINISHED) {
+        ESP_LOGW(USB_HOST_TAG, "Suspending the root port but transfers still submitted");
+    } else if (ret == ESP_ERR_TIMEOUT) {
+        // Root port is already issuing a suspend command and is within a SUSPEND_ENTRY_MS timeout
+        ret = ESP_OK;
+        goto exit;
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(USB_HOST_TAG, "USB Host lib is not in correct state to be suspended");
+        goto exit;
+    }
+
+    // No URB in-flight: Suspend all devices (Halt and flush all EPs of all devices)
+    usbh_devs_set_pm_actions_all(USBH_DEV_SUSPEND);
+    ret = ESP_OK;
+    // We don't call hub_root_mark_suspend() here, but in usbh_event_callback(),
+    // to ensure all EPs of all devices are Halted and Flushed first, before calling root port suspend
+    // Otherwise, there would be no guarantee, that the lib handle events processes action flags from USBH first and then from HUB
+
+exit:
+    return ret;
+}
+
+esp_err_t usb_host_lib_root_port_resume(void)
+{
+    HOST_ENTER_CRITICAL();
+    HOST_CHECK_FROM_CRIT(p_host_lib_obj != NULL, ESP_ERR_INVALID_STATE);
+    HOST_EXIT_CRITICAL();
+    esp_err_t ret;
+
+    // Check if any device is connected first
+    int num_devs;
+    if (usbh_devs_num(&num_devs), num_devs == 0) {
+        ret = ESP_ERR_NOT_FOUND;                        // No device connected
+        goto exit;
+    }
+
+    // Check if we can resume the root port
+    ret = hub_root_can_resume();
+    if (ret == ESP_ERR_TIMEOUT) {
+        // Root port is already issuing a resume command and is within a RESUME_RECOVERY_MS or a RESUME_HOLD_MS timeout
+        ret = ESP_OK;
+        goto exit;
+    } else if (ret != ESP_OK) {
+        ESP_LOGE(USB_HOST_TAG, "USB Host lib is not in correct state to be resumed");
+        goto exit;
+    }
+
+    // Mark root port as ready to be resumed
+    ret = hub_root_mark_resume();
+    if (ret != ESP_OK) {
+        ESP_LOGE(USB_HOST_TAG, "Root hub resume err: %s", esp_err_to_name(ret));
+    }
+
+    // We have marked the root port as ready for resume, once the port is fully resumed
+    // all EPs of all devices will be cleared and and resume events distributed from PORT_REQ_RESUME request
+    // Otherwise, we can't guarantee a sequence root port resume -> EP clear -> resume event
+
+exit:
+    return ret;
+}
+
+esp_err_t usb_host_lib_set_auto_suspend(usb_host_lib_auto_suspend_tmr_t timer_type, size_t timer_interval_ms)
+{
+    HOST_ENTER_CRITICAL();
+    HOST_CHECK_FROM_CRIT(p_host_lib_obj != NULL, ESP_ERR_INVALID_STATE);
+    HOST_EXIT_CRITICAL();
+
+    TimerHandle_t suspend_tmr = p_host_lib_obj->constant.auto_suspend_timer;
+
+    // Interval is 0, stop the timer
+    if (timer_interval_ms == 0) {
+        if (xTimerIsTimerActive(suspend_tmr) == pdTRUE) {
+            ESP_RETURN_ON_FALSE(xTimerStop(suspend_tmr, portMAX_DELAY), ESP_FAIL, USB_HOST_TAG, "Timer could not be stopped");
+        }
+        ESP_LOGD(USB_HOST_TAG, "Auto suspend timer stopped");
+        return ESP_OK;
+    }
+
+    // Set timer reload mode: One-Shot or periodic
+    switch (timer_type) {
+    case USB_HOST_LIB_AUTO_SUSPEND_ONE_SHOT:
+        vTimerSetReloadMode(suspend_tmr, pdFALSE);
+        break;
+    case USB_HOST_LIB_AUTO_SUSPEND_PERIODIC:
+        vTimerSetReloadMode(suspend_tmr, pdTRUE);
+        break;
+    default:
+        return ESP_FAIL;
+    }
+
+    // Change the timer period, this also starts the timer if stopped
+    ESP_RETURN_ON_FALSE(xTimerChangePeriod(suspend_tmr, pdMS_TO_TICKS(timer_interval_ms), portMAX_DELAY),
+                        ESP_FAIL, USB_HOST_TAG, "Timer period could not be changed");
+
+    ESP_LOGD(USB_HOST_TAG, "Auto suspend timer set to %d ms, %s mode and started",
+             timer_interval_ms, ((timer_type == USB_HOST_LIB_AUTO_SUSPEND_ONE_SHOT) ? ("One-Shot") : ("Periodic")));
+
+    return ESP_OK;
 }
 
 // ------------------------------------------------ Client Functions ---------------------------------------------------
@@ -937,6 +1133,9 @@ esp_err_t usb_host_client_handle_events(usb_host_client_handle_t client_hdl, Tic
             // Timed out waiting for semaphore or currently no events
             break;
         }
+
+        // Reset the automatic suspend timer, USB Host client is handling events
+        reset_auto_suspend_timer();
 
         HOST_ENTER_CRITICAL();
         // Handle pending endpoints
@@ -1488,6 +1687,18 @@ esp_err_t usb_host_interface_release(usb_host_client_handle_t client_hdl, usb_de
 
     // Take mux lock. This protects the client being released or other clients from claiming interfaces
     xSemaphoreTake(p_host_lib_obj->constant.mux_lock, portMAX_DELAY);
+
+    // In case the underlying pipe was halted while having an URB in-flight,
+    // usb_host_client_handle_events() may not have had a chance to process the URB yet,
+    // in case it is handled from low priority task and we are calling this function from a high priority task.
+    HOST_ENTER_CRITICAL();
+    const bool pending_ep = !TAILQ_EMPTY(&client_obj->dynamic.pending_ep_tailq);
+    HOST_EXIT_CRITICAL();
+    if (pending_ep) {
+        // We wait 10 FreeRTOS ticks to give the class driver task chance to run and process the URB.
+        vTaskDelay(10);
+    }
+
     esp_err_t ret = interface_release(client_obj, dev_hdl, bInterfaceNumber);
     xSemaphoreGive(p_host_lib_obj->constant.mux_lock);
 
@@ -1620,7 +1831,19 @@ esp_err_t usb_host_transfer_submit(usb_transfer_t *transfer)
     ep_wrap->dynamic.num_urb_inflight++;
     HOST_EXIT_CRITICAL();
 
+    // Check if the root port is suspended (global suspend)
+    if (hub_root_is_suspended()) {
+        // Root port is suspended at the time we are submitting a transfer
+        ESP_LOGD(USB_HOST_TAG, "Resuming the root port");
+
+        ret = usb_host_lib_root_port_resume();
+        if (ret != ESP_OK) {
+            goto submit_err;
+        }
+    }
+
     ret = usbh_ep_enqueue_urb(ep_hdl, urb_obj);
+
     if (ret != ESP_OK) {
         ESP_LOGE(USB_HOST_TAG, "Enqueue URB error: %s", esp_err_to_name(ret));
         goto submit_err;
@@ -1653,10 +1876,26 @@ esp_err_t usb_host_transfer_submit_control(usb_host_client_handle_t client_hdl, 
     urb_obj->usb_host_client = (void *)client_hdl;
 
     esp_err_t ret;
+    // Check if the root port is suspended (global suspend)
+    if (hub_root_is_suspended()) {
+        // Root port is suspended at the time we are submitting a ctrl transfer
+        ESP_LOGD(USB_HOST_TAG, "Resuming the root port");
+
+        ret = usb_host_lib_root_port_resume();
+        if (ret != ESP_OK) {
+            goto submit_err;
+        }
+    }
+
     ret = usbh_dev_submit_ctrl_urb(dev_hdl, urb_obj);
+
     if (ret != ESP_OK) {
         ESP_LOGE(USB_HOST_TAG, "Submit CTRL URB error: %s", esp_err_to_name(ret));
-        urb_obj->usb_host_inflight = false;
+        goto submit_err;
     }
+    return ret;
+
+submit_err:
+    urb_obj->usb_host_inflight = false;
     return ret;
 }

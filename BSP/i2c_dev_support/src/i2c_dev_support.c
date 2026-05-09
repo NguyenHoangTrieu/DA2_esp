@@ -156,7 +156,7 @@ esp_err_t i2c_dev_support_write(i2c_master_dev_handle_t dev_handle,
         return ESP_ERR_INVALID_ARG;
     }
 
-    return i2c_master_transmit(dev_handle, data, len, pdMS_TO_TICKS(timeout_ms));
+    return i2c_master_transmit(dev_handle, data, len, (int)timeout_ms);
 }
 
 esp_err_t i2c_dev_support_read(i2c_master_dev_handle_t dev_handle,
@@ -165,7 +165,7 @@ esp_err_t i2c_dev_support_read(i2c_master_dev_handle_t dev_handle,
         return ESP_ERR_INVALID_ARG;
     }
 
-    return i2c_master_receive(dev_handle, data, len, pdMS_TO_TICKS(timeout_ms));
+    return i2c_master_receive(dev_handle, data, len, (int)timeout_ms);
 }
 
 esp_err_t i2c_dev_support_write_read(i2c_master_dev_handle_t dev_handle,
@@ -177,5 +177,5 @@ esp_err_t i2c_dev_support_write_read(i2c_master_dev_handle_t dev_handle,
     }
 
     return i2c_master_transmit_receive(dev_handle, write_data, write_len,
-                                      read_data, read_len, pdMS_TO_TICKS(timeout_ms));
+                                      read_data, read_len, (int)timeout_ms);
 }

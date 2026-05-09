@@ -41,4 +41,9 @@ ENV/
 # *.bin
 *.elf
 *.map
-TODO.md
+# TODO.md
+
+.cache/
+Application/Web_Config_Handler/web/node_modules/
+Application/Web_Config_Handler/web/dist/
+Application/Web_Config_Handler/web/firmware/

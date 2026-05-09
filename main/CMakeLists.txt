@@ -5,25 +5,36 @@ file(GLOB I2C_DEVICES "../BSP/i2c_dev_support/src/*.c")
 idf_component_register(SRCS "DA2_esp.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_connect.c"
                                 "../Application/Internet_Communication_Handler/lte_handler/src/lte_connect.c"
+                                "../Application/Internet_Communication_Handler/ethernet_handler/src/eth_connect.c"
+                                "../Application/Internet_Monitor_Handler/src/internet_monitor.c"
                                 "../Application/Internet_Communication_Handler/wifi_handler/src/wifi_scan.c"
                                 "../Application/Server_Communication_Handler/mqtt_handler/src/mqtt_handler.c"
+                                "../Application/Server_Communication_Handler/http_handler/src/http_handler.c"
+                                "../Application/Server_Communication_Handler/coap_handler/src/coap_handler.c"
                                 "../Application/Config_Handler/src/config_handler.c"
                                 "../Application/Config_Handler/src/config_load_save.c"
                                 "../Application/FOTA/src/fota_handler.c"
-                                "../Application/PPP_Server/src/ppp_server.c"
-                                "../Application/Data_Communication_Handler/src/usb_handler.c"
+                                "../Application/FOTA/src/fota_ap.c"
                                 "../Application/Data_Communication_Handler/src/uart_handler.c"
-                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler.c"
-                                "../BSP/rbg_led_ws_handler/rbg_handler.c"
+                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler_uplink.c"
+                                "../Application/MCU_LAN_Handler/src/mcu_lan_handler_downlink.c"
+                                "../Application/Web_Config_Handler/src/web_server.c"
+                                "../Application/Web_Config_Handler/src/api_config.c"
+                                "../Application/Web_Config_Handler/src/api_status.c"
+                                "../Application/Web_Config_Handler/src/captive_dns.c"
                                 ${MODEM_UART_SRCS}
                                 ${MODEM_USB_SRCS}
                                 ${I2C_DEVICES}
                                 "../BSP/bg96_communication/src/bg96_comm.c"
                                 "../BSP/sim7600_communication/src/sim7600_comm.c"
                                 "../BSP/MCU_LAN_Communication/src/lan_comm.c"
+                                "../BSP/stack_handler/src/stack_handler.c"
                                 "../Middleware/LTE_Handler/src/lte_handler.c"
-                                "oled_monitor_task.c"
                                 "pwr_source_handler.c"
+                                "pwr_monitor_task.c"
+                                "../BSP/hmi_handler/src/hmi_handler.c"
+                                "../Middleware/HMI_Display/src/hmi_display.c"
+                                "../Application/HMI_Task/src/hmi_task.c"
                     PRIV_REQUIRES 
                                 esp_wifi
                                 nvs_flash
@@ -40,26 +51,39 @@ idf_component_register(SRCS "DA2_esp.c"
                                 mbedtls
                                 esp_driver_usb_serial_jtag
                                 esp_http_client
+                                esp_http_server
+                                cjson
+                                coap
                                 app_update
                                 esp_https_ota
                                 esp_netif
+                                esp_eth
                                 esp_psram
                                 esp_ringbuf
+                                mdns
                     INCLUDE_DIRS "." 
                                 "../Application/Internet_Communication_Handler/wifi_handler/include"
                                 "../Application/Internet_Communication_Handler/lte_handler/include"
+                                "../Application/Internet_Communication_Handler/ethernet_handler/include"
+                                "../Application/Internet_Monitor_Handler/include"
                                 "../Application/Server_Communication_Handler/mqtt_handler/include"
+                                "../Application/Server_Communication_Handler/http_handler/include"
+                                "../Application/Server_Communication_Handler/coap_handler/include"
                                 "../Application/Config_Handler/include"
                                 "../Application/FOTA/include"
-                                "../Application/PPP_Server/include"
                                 "../Application/Data_Communication_Handler/include"
                                 "../Application/MCU_LAN_Handler/include"
-                                "../BSP/rbg_led_ws_handler"
+                                "../Application/Web_Config_Handler/include"
                                 "../BSP/esp_modem_uart/include"
                                 "../BSP/esp_modem_usb/include"
                                 "../BSP/bg96_communication/include"
                                 "../BSP/sim7600_communication/include"
                                 "../BSP/MCU_LAN_Communication/include"
                                 "../BSP/i2c_dev_support/include"
+                                "../BSP/stack_handler/include"
+                                "../BSP/hmi_handler/include"
                                 "../Middleware/LTE_Handler/include"
-                    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem)
+                                "../Middleware/HMI_Display/include"
+                                "../Application/HMI_Task/include"
+                    EMBED_TXTFILES ${project_dir}/server_certs/ca_cert.pem
+                                   ${project_dir}/Application/Web_Config_Handler/web/firmware/index.html)

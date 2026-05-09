@@ -1,0 +1,496 @@
+/* ============================================================
+   ESP32 Gateway Config — Light theme matching Python app palette
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #F5F5F5;
+  --surface:    #FFFFFF;
+  --border:     #E0E0E0;
+  --accent:     #1565C0;
+  --accent-lt:  #E3F2FD;
+  --ok:         #4CAF50;
+  --err:        #F44336;
+  --warn:       #FF9800;
+  --muted:      #757575;
+  --hint:       #888888;
+  --text:       #212121;
+  --json-bg:    #FAFAFA;
+  --terminal-bg:#1E1E1E;
+  --terminal-fg:#CCCCCC;
+  --radius:     4px;
+  --gap:        10px;
+  --max-w:      1300px;
+  --font:       'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono:       'Consolas', 'Courier New', monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hidden { display: none !important; }
+
+/* ── Title Bar ──────────────────────────────────────────── */
+#titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.title-text { letter-spacing: 0.02em; }
+.title-ver  { font-size: 11px; font-weight: 400; opacity: 0.8; }
+
+/* ── Top Bar ────────────────────────────────────────────── */
+#topBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+}
+.status-dot.offline { background: var(--err); }
+
+#statusHost {
+  font-weight: 500;
+  color: var(--accent);
+  margin-right: 8px;
+}
+
+.top-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+.top-btn:hover { border-color: var(--accent); background: var(--accent-lt); }
+
+.status-text {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Mode Selector ──────────────────────────────────────── */
+#modeRow {
+  padding: 6px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.mode-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mode-label input { accent-color: var(--accent); }
+
+/* ── Tab Bar ────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  padding: 6px 14px;
+  cursor: pointer;
+  border-radius: var(--radius) var(--radius) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+.tab-btn:hover { background: var(--bg); color: var(--text); }
+.tab-btn.active {
+  background: var(--bg);
+  color: var(--accent);
+  border-color: var(--border);
+  border-bottom: 1px solid var(--bg);
+  margin-bottom: -1px;
+}
+
+/* ── Tab Content ────────────────────────────────────────── */
+.tab-pane {
+  padding: 16px;
+  max-width: var(--max-w);
+}
+
+/* ── Cards / LabelFrames ────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: var(--gap);
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Form layout ────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+.form-group { display: flex; flex-direction: column; gap: 3px; }
+.form-group.full { grid-column: 1 / -1; }
+
+label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="url"],
+select,
+textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: var(--font);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input.error, select.error { border-color: var(--err); }
+.error-msg { font-size: 11px; color: var(--err); }
+
+input[type="checkbox"] {
+  width: 15px; height: 15px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+.checkbox-row label { font-size: 12px; color: var(--text); cursor: pointer; }
+
+.hint { font-size: 11px; color: var(--hint); font-style: italic; }
+
+select option { background: var(--surface); }
+
+/* Read-only info label */
+.info-label {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  transition: background 0.15s, opacity 0.15s;
+  background: var(--surface);
+  color: var(--text);
+}
+.btn:hover { border-color: var(--accent); background: var(--accent-lt); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-set {
+  background: var(--ok);
+  color: #fff;
+  border-color: var(--ok);
+}
+.btn-set:hover { background: #43A047; }
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-accent:hover { background: #0D47A1; }
+
+.btn-danger {
+  background: var(--err);
+  color: #fff;
+  border-color: var(--err);
+}
+.btn-danger:hover { background: #D32F2F; }
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+/* ── Toast ──────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+  z-index: 9999;
+  color: #fff;
+}
+#toast.show  { opacity: 1; }
+#toast.ok    { background: var(--ok); }
+#toast.err   { background: var(--err); }
+
+/* ── BLE Native tab ─────────────────────────────────────── */
+.bn-tabbar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 12px;
+}
+.bn-tab {
+  padding: 6px 18px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s;
+}
+.bn-tab:hover  { background: var(--accent-lt); color: var(--accent); }
+.bn-tab.active { background: var(--surface); color: var(--accent); font-weight: 600; border-bottom: 2px solid var(--surface); margin-bottom: -2px; }
+
+.bn-pane { /* visible BLE Native sub-pane */ }
+
+.bn-cmd-header {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.bn-cmd-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+.bn-cmd-row input {
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--mono);
+  background: var(--surface);
+  color: var(--text);
+}
+.bn-cmd-row input:focus { outline: none; border-color: var(--accent); }
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--text);
+}
+.btn-sm:hover  { border-color: var(--accent); background: var(--accent-lt); }
+.btn-del { color: var(--err); border-color: var(--err); }
+.btn-del:hover { background: #FFEBEE; }
+#toast.warn  { background: var(--warn); }
+
+/* ── Two-pane layout (BLE/LoRa/Zigbee advanced) ────────── */
+.two-pane {
+  display: grid;
+  grid-template-columns: 55% 45%;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .two-pane { grid-template-columns: 1fr; }
+}
+.pane-left { overflow-y: auto; max-height: calc(100vh - 200px); }
+.pane-right { overflow-y: auto; max-height: calc(100vh - 200px); }
+
+/* ── JSON Preview ───────────────────────────────────────── */
+.json-preview {
+  width: 100%;
+  min-height: 200px;
+  background: var(--json-bg);
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  resize: vertical;
+  color: var(--text);
+}
+
+/* ── Accordion (functions) ──────────────────────────────── */
+.accordion-group {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-lt);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.accordion-header .arrow { transition: transform 0.15s; }
+.accordion-header.collapsed .arrow { transform: rotate(-90deg); }
+.accordion-body { padding: 4px 0; }
+.accordion-body.collapsed { display: none; }
+
+/* Function item */
+.fn-item {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 10px;
+}
+.fn-item:last-child { border-bottom: none; }
+.fn-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 3px 0;
+}
+.fn-header .fn-arrow { font-size: 10px; color: var(--muted); transition: transform 0.15s; }
+.fn-header .fn-arrow.open { transform: rotate(90deg); }
+.fn-name { font-size: 12px; font-weight: 600; color: var(--accent); }
+.fn-async-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--warn);
+  color: #fff;
+  font-weight: 700;
+}
+.fn-body { padding: 6px 0 6px 16px; }
+.fn-body.collapsed { display: none; }
+
+/* GPIO row */
+.gpio-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+.gpio-row select, .gpio-row button { font-size: 11px; }
+
+/* ── Response area (basic module tabs) ──────────────────── */
+.response-area {
+  background: var(--json-bg);
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  min-height: 80px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.response-area .ok    { color: #2E7D32; }
+.response-area .error { color: #C62828; }
+.response-area .info  { color: var(--accent); }
+
+/* ── Status panel (config form right side) ──────────────── */
+.status-panel {
+  font-size: 12px;
+  padding: 8px;
+}
+.status-panel .last-action { color: var(--ok); font-weight: 500; }
+.status-panel .last-error  { color: var(--err); font-weight: 500; }
+
+/* ── Quick control buttons grid ─────────────────────────── */
+.quick-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.quick-grid .btn { font-size: 11px; padding: 4px 10px; }
+
+/* ── Connection section (basic module) ──────────────────── */
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.conn-row label { min-width: 80px; font-weight: 500; }
+.conn-row input { flex: 1; }

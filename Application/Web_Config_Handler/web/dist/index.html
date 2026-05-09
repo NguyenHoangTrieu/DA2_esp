@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 Gateway Configuration Tool</title>
+<!--
+  DUAL-PURPOSE FILE:
+  1. Development: Vite serves /src/main.js as ES module (npm run dev)
+  2. Production:  vite-plugin-singlefile inlines all JS+CSS into this file
+     CMake EMBED_TXTFILES embeds the built index.html into firmware flash.
+  Always run "npm run build" before "idf.py build".
+-->
+  <style rel="stylesheet" crossorigin>*,*:before,*:after{box-sizing:border-box;margin:0;padding:0}:root{--bg: #F5F5F5;--surface: #FFFFFF;--border: #E0E0E0;--accent: #1565C0;--accent-lt: #E3F2FD;--ok: #4CAF50;--err: #F44336;--warn: #FF9800;--muted: #757575;--hint: #888888;--text: #212121;--json-bg: #FAFAFA;--terminal-bg:#1E1E1E;--terminal-fg:#CCCCCC;--radius: 4px;--gap: 10px;--max-w: 1300px;--font: "Segoe UI", system-ui, -apple-system, sans-serif;--mono: "Consolas", "Courier New", monospace}html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.5}.hidden{display:none!important}#titleBar{display:flex;align-items:center;justify-content:space-between;background:var(--accent);color:#fff;padding:8px 16px;font-size:15px;font-weight:600}.title-text{letter-spacing:.02em}.title-ver{font-size:11px;font-weight:400;opacity:.8}#topBar{display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}.status-dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex-shrink:0}.status-dot.offline{background:var(--err)}#statusHost{font-weight:500;color:var(--accent);margin-right:8px}.top-btn{padding:4px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:500;transition:background .15s,border-color .15s}.top-btn:hover{border-color:var(--accent);background:var(--accent-lt)}.status-text{margin-left:auto;font-size:12px;color:var(--muted)}#modeRow{padding:6px 16px;background:var(--surface);border-bottom:1px solid var(--border)}.mode-label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500}.mode-label input{accent-color:var(--accent)}.tab-bar{display:flex;gap:2px;padding:6px 12px 0;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}.tab-btn{padding:6px 14px;cursor:pointer;border-radius:var(--radius) var(--radius) 0 0;border:1px solid transparent;border-bottom:none;background:transparent;color:var(--muted);font-family:var(--font);font-size:12px;font-weight:500;transition:background .15s,color .15s;-webkit-user-select:none;user-select:none}.tab-btn:hover{background:var(--bg);color:var(--text)}.tab-btn.active{background:var(--bg);color:var(--accent);border-color:var(--border);border-bottom:1px solid var(--bg);margin-bottom:-1px}.tab-pane{padding:16px;max-width:var(--max-w)}.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:var(--gap)}.card-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}@media (max-width: 600px){.form-grid{grid-template-columns:1fr}}.form-group{display:flex;flex-direction:column;gap:3px}.form-group.full{grid-column:1 / -1}label{font-size:12px;color:var(--muted);font-weight:500}input[type=text],input[type=password],input[type=number],input[type=url],select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:5px 8px;font-size:12px;font-family:var(--font);width:100%;outline:none;transition:border-color .15s}input:focus,select:focus,textarea:focus{border-color:var(--accent)}input.error,select.error{border-color:var(--err)}.error-msg{font-size:11px;color:var(--err)}input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}.checkbox-row{display:flex;align-items:center;gap:6px;padding:3px 0}.checkbox-row label{font-size:12px;color:var(--text);cursor:pointer}.hint{font-size:11px;color:var(--hint);font-style:italic}select option{background:var(--surface)}.info-label{font-size:13px;color:var(--accent);font-weight:600}.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-size:12px;font-weight:600;font-family:var(--font);transition:background .15s,opacity .15s;background:var(--surface);color:var(--text)}.btn:hover{border-color:var(--accent);background:var(--accent-lt)}.btn:disabled{opacity:.5;cursor:not-allowed}.btn-set{background:var(--ok);color:#fff;border-color:var(--ok)}.btn-set:hover{background:#43a047}.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-accent:hover{background:#0d47a1}.btn-danger{background:var(--err);color:#fff;border-color:var(--err)}.btn-danger:hover{background:#d32f2f}.btn-row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}#toast{position:fixed;bottom:20px;right:20px;padding:8px 16px;border-radius:var(--radius);font-size:12px;font-weight:500;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9999;color:#fff}#toast.show{opacity:1}#toast.ok{background:var(--ok)}#toast.err{background:var(--err)}#toast.warn{background:var(--warn)}.two-pane{display:grid;grid-template-columns:55% 45%;gap:12px;align-items:start}@media (max-width: 900px){.two-pane{grid-template-columns:1fr}}.pane-left,.pane-right{overflow-y:auto;max-height:calc(100vh - 200px)}.json-preview{width:100%;min-height:200px;background:var(--json-bg);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:var(--radius);padding:8px;resize:vertical;color:var(--text)}.accordion-group{margin-bottom:8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}.accordion-header{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:pointer;-webkit-user-select:none;user-select:none;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-lt);border-radius:var(--radius) var(--radius) 0 0}.accordion-header .arrow{transition:transform .15s}.accordion-header.collapsed .arrow{transform:rotate(-90deg)}.accordion-body{padding:4px 0}.accordion-body.collapsed{display:none}.fn-item{border-bottom:1px solid var(--border);padding:4px 10px}.fn-item:last-child{border-bottom:none}.fn-header{display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0}.fn-header .fn-arrow{font-size:10px;color:var(--muted);transition:transform .15s}.fn-header .fn-arrow.open{transform:rotate(90deg)}.fn-name{font-size:12px;font-weight:600;color:var(--accent)}.fn-async-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--warn);color:#fff;font-weight:700}.fn-body{padding:6px 0 6px 16px}.fn-body.collapsed{display:none}.gpio-row{display:flex;align-items:center;gap:6px;margin:3px 0}.gpio-row select,.gpio-row button{font-size:11px}.response-area{background:var(--json-bg);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:var(--radius);padding:6px 8px;min-height:80px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}.response-area .ok{color:#2e7d32}.response-area .error{color:#c62828}.response-area .info{color:var(--accent)}.status-panel{font-size:12px;padding:8px}.status-panel .last-action{color:var(--ok);font-weight:500}.status-panel .last-error{color:var(--err);font-weight:500}.quick-grid{display:flex;flex-wrap:wrap;gap:6px}.quick-grid .btn{font-size:11px;padding:4px 10px}.conn-row{display:flex;align-items:center;gap:6px;margin:4px 0}.conn-row label{min-width:80px;font-weight:500}.conn-row input{flex:1}</style>
+  <script type="module" crossorigin>(function polyfill() {
+  const relList = document.createElement("link").relList;
+  if (relList && relList.supports && relList.supports("modulepreload")) {
+    return;
+  }
+  for (const link of document.querySelectorAll('link[rel="modulepreload"]')) {
+    processPreload(link);
+  }
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type !== "childList") {
+        continue;
+      }
+      for (const node of mutation.addedNodes) {
+        if (node.tagName === "LINK" && node.rel === "modulepreload")
+          processPreload(node);
+      }
+    }
+  }).observe(document, { childList: true, subtree: true });
+  function getFetchOpts(link) {
+    const fetchOpts = {};
+    if (link.integrity) fetchOpts.integrity = link.integrity;
+    if (link.referrerPolicy) fetchOpts.referrerPolicy = link.referrerPolicy;
+    if (link.crossOrigin === "use-credentials")
+      fetchOpts.credentials = "include";
+    else if (link.crossOrigin === "anonymous") fetchOpts.credentials = "omit";
+    else fetchOpts.credentials = "same-origin";
+    return fetchOpts;
+  }
+  function processPreload(link) {
+    if (link.ep)
+      return;
+    link.ep = true;
+    const fetchOpts = getFetchOpts(link);
+    fetch(link.href, fetchOpts);
+  }
+})();
+(function() {
+  const a = document.createElement("link").relList;
+  if (a && a.supports && a.supports("modulepreload")) return;
+  for (const n of document.querySelectorAll('link[rel="modulepreload"]')) e(n);
+  new MutationObserver((n) => {
+    for (const i of n) if (i.type === "childList") for (const m of i.addedNodes) m.tagName === "LINK" && m.rel === "modulepreload" && e(m);
+  }).observe(document, { childList: true, subtree: true });
+  function l(n) {
+    const i = {};
+    return n.integrity && (i.integrity = n.integrity), n.referrerPolicy && (i.referrerPolicy = n.referrerPolicy), n.crossOrigin === "use-credentials" ? i.credentials = "include" : n.crossOrigin === "anonymous" ? i.credentials = "omit" : i.credentials = "same-origin", i;
+  }
+  function e(n) {
+    if (n.ep) return;
+    n.ep = true;
+    const i = l(n);
+    fetch(n.href, i);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+(function() {
+  const t = document.createElement("link").relList;
+  if (t && t.supports && t.supports("modulepreload")) return;
+  for (const e of document.querySelectorAll('link[rel="modulepreload"]')) l(e);
+  new MutationObserver((e) => {
+    for (const n of e) if (n.type === "childList") for (const i of n.addedNodes) i.tagName === "LINK" && i.rel === "modulepreload" && l(i);
+  }).observe(document, { childList: true, subtree: true });
+  function a(e) {
+    const n = {};
+    return e.integrity && (n.integrity = e.integrity), e.referrerPolicy && (n.referrerPolicy = e.referrerPolicy), e.crossOrigin === "use-credentials" ? n.credentials = "include" : e.crossOrigin === "anonymous" ? n.credentials = "omit" : n.credentials = "same-origin", n;
+  }
+  function l(e) {
+    if (e.ep) return;
+    e.ep = true;
+    const n = a(e);
+    fetch(e.href, n);
+  }
+})();
+async function pe(t, a, l) {
+  const e = { method: t, headers: { "Content-Type": "application/json" } };
+  l !== void 0 && (e.body = JSON.stringify(l));
+  const n = await fetch(a, e);
+  if (!n.ok) {
+    const i = await n.text().catch(() => "");
+    throw new Error(`HTTP ${n.status}: ${i}`);
+  }
+  return n.json();
+}
+const Oe = () => pe("GET", "/api/config"), K = (t) => pe("POST", "/api/config", t), Ke = () => pe("GET", "/api/status");
+function xe(t, a = "gateway_config.json") {
+  const l = new Blob([JSON.stringify(t, null, 2)], { type: "application/json" }), e = document.createElement("a");
+  e.href = URL.createObjectURL(l), e.download = a, e.click(), URL.revokeObjectURL(e.href);
+}
+function we() {
+  return new Promise((t, a) => {
+    const l = document.getElementById("fileInput"), e = () => {
+      l.removeEventListener("change", e);
+      const n = l.files[0];
+      if (!n) {
+        a(new Error("No file selected"));
+        return;
+      }
+      const i = new FileReader();
+      i.onload = () => {
+        try {
+          t(JSON.parse(i.result));
+        } catch (m) {
+          a(new Error("Invalid JSON: " + m.message));
+        }
+      }, i.onerror = () => a(new Error("File read error")), i.readAsText(n), l.value = "";
+    };
+    l.addEventListener("change", e), l.click();
+  });
+}
+const ge = { "000": { type: "NONE", label: "Empty" }, "001": { type: "ZIGBEE", label: "Zigbee (E180-ZG120B)", cmd_prefix: "CFZB" }, "002": { type: "BLE", label: "BLE (STM32WB55)", cmd_prefix: "CFBL" }, "003": { type: "LORA", label: "LoRa (RAK3172)", cmd_prefix: "CFLR" }, "004": { type: "BLE", label: "BLE (Custom)", cmd_prefix: "CFBL" }, "005": { type: "ZIGBEE", label: "Zigbee (STM32WB55)", cmd_prefix: "CFZB" }, "006": { type: "LORA", label: "LoRa (Wio-E5 mini)", cmd_prefix: "CFLR" } }, me = { 100: { type: "NONE", label: "No WAN adapter", modem: "", comm_type: "USB", pwr_pin: "WK", rst_pin: "PE" }, 101: { type: "QUECTEL", label: "Quectel (A7600)", modem: "A7600C1", comm_type: "USB", pwr_pin: "WK", rst_pin: "PE" }, 102: { type: "SIMCOM", label: "SIMCom (SIM7600)", modem: "SIM7600", comm_type: "USB", pwr_pin: "WK", rst_pin: "PE" } }, ue = ["WK", "PE", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"], Me = { BLE: [{ emoji: "🔄", title: "System", functions: ["MODULE_HW_RESET", "MODULE_SW_RESET", "MODULE_FACTORY_RESET", "MODULE_ENTER_CMD_MODE", "MODULE_ENTER_SLEEP", "MODULE_WAKEUP", "MODULE_START_BROADCAST"] }, { emoji: "ℹ️", title: "Info", functions: ["MODULE_GET_INFO", "MODULE_GET_CONNECTION_STATUS", "MODULE_GET_DIAGNOSTICS"] }, { emoji: "⚙️", title: "Config", functions: ["MODULE_SET_NAME", "MODULE_SET_COMM_CONFIG", "MODULE_SET_RF_PARAMS"] }, { emoji: "🔍", title: "Discovery", functions: ["MODULE_START_DISCOVERY", "MODULE_DISCOVER_SERVICES", "MODULE_DISCOVER_CHARACTERISTICS"] }, { emoji: "🔗", title: "Connection", functions: ["MODULE_CONNECT", "MODULE_DISCONNECT", "MODULE_ENTER_DATA_MODE"] }, { emoji: "📨", title: "Data", functions: ["MODULE_SEND_DATA"] }], LORA: [{ emoji: "🔄", title: "System", functions: ["MODULE_HW_RESET", "MODULE_SW_RESET", "MODULE_GET_INFO", "MODULE_FACTORY_RESET"] }, { emoji: "🌍", title: "Region & Class", functions: ["MODULE_SET_REGION", "MODULE_SET_CLASS"] }, { emoji: "🔑", title: "OTAA Provisioning", functions: ["MODULE_SET_JOIN_MODE", "MODULE_SET_DEVEUI", "MODULE_GET_DEVEUI", "MODULE_SET_APPEUI", "MODULE_SET_APPKEY", "MODULE_JOIN", "MODULE_GET_JOIN_STATUS"] }, { emoji: "🔒", title: "ABP Provisioning", functions: ["MODULE_SET_DEVADDR", "MODULE_SET_NWKSKEY", "MODULE_SET_APPSKEY"] }, { emoji: "📶", title: "MAC & RF Settings", functions: ["MODULE_SET_DR", "MODULE_SET_ADR", "MODULE_SET_TXP", "MODULE_SET_CHANNEL", "MODULE_SET_CONFIRM", "MODULE_SET_PUBLIC_NET"] }, { emoji: "📨", title: "Data", functions: ["MODULE_SEND_UNCONFIRMED", "MODULE_SEND_CONFIRMED", "MODULE_READ_RECV"] }], ZIGBEE: [{ emoji: "🔄", title: "Lifecycle", functions: ["MODULE_HW_RESET", "MODULE_SW_RESET", "MODULE_FACTORY_RESET", "MODULE_GET_INFO", "MODULE_ENTER_HEX_MODE"] }, { emoji: "🌐", title: "Network Management", functions: ["MODULE_START_NETWORK", "MODULE_STOP_NETWORK", "MODULE_GET_NET_STATUS", "MODULE_SET_CHANNEL", "MODULE_SET_PANID", "MODULE_SET_TX_POWER", "MODULE_SET_PERMIT_JOIN"] }, { emoji: "🔍", title: "Node Discovery", functions: ["MODULE_NODE_JOIN_NOTIFY", "MODULE_NODE_LEAVE_NOTIFY", "MODULE_NODE_ANNOUNCE_NOTIFY", "MODULE_QUERY_SHORT_ADDR", "MODULE_QUERY_NODE_PORT_INFO", "MODULE_DELETE_NODE"] }, { emoji: "⚡", title: "ZCL Control", functions: ["MODULE_ZCL_READ_ATTR", "MODULE_ZCL_WRITE_ATTR", "MODULE_ZCL_SEND_CONTROL_CMD", "MODULE_ZCL_RECV_CONTROL_CMD", "MODULE_ZCL_RECV_ATTR_REPORT", "MODULE_ZCL_SET_REPORT_RULE"] }, { emoji: "📨", title: "Data Transfer", functions: ["MODULE_SEND_UNICAST", "MODULE_SEND_BROADCAST"] }] }, De = { BLE: [{ label: "BLE (STM32WB55)", module_id: "002", module_name: "STM32WB_BLE_Gateway" }, { label: "BLE (Custom)", module_id: "004", module_name: "Custom_BLE_Module" }], LORA: [{ label: "LoRa (RAK3172)", module_id: "003", module_name: "RAK3172_LoRa" }, { label: "LoRa (Wio-E5 mini)", module_id: "006", module_name: "WioE5_LoRa" }], ZIGBEE: [{ label: "Zigbee (E180-ZG120B)", module_id: "001", module_name: "E180_Zigbee_Gateway" }, { label: "Zigbee (STM32WB55)", module_id: "005", module_name: "STM32WB_Zigbee_Gateway" }] };
+function Ze(t) {
+  return { function_name: t, command: "", is_prefix: false, gpio_start_control: [], delay_start: 0, expect_response: "", timeout: 0, gpio_end_control: [], delay_end: 0 };
+}
+function Je(t, a, l, e) {
+  return { module_id: t, module_type: a, module_name: l, module_communication: { port_type: "uart", parameters: { baudrate: 115200, parity: "none", stopbit: 1 } }, functions: e.map(Ze) };
+}
+function se(t, a = 0) {
+  const l = (De[t] || [])[a];
+  if (!l) return null;
+  const e = (Me[t] || []).flatMap((n) => n.functions);
+  return structuredClone(Je(l.module_id, t, l.module_name, e));
+}
+function Re(t, a) {
+  t.innerHTML = "";
+  const l = (a == null ? void 0 : a.wifi) || {};
+  t.innerHTML = `
+    <div class="card">
+      <div class="card-title">WiFi Network Settings</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>SSID</label>
+          <input type="text" id="wfSSID" value="${ce(l.ssid)}" placeholder="Enter WiFi SSID">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <div style="display:flex;gap:4px">
+            <input type="password" id="wfPass" value="${ce(l.password)}" style="flex:1">
+            <label class="checkbox-row" style="white-space:nowrap"><input type="checkbox" id="wfShowPw"> Show</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Authentication</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Auth Mode</label>
+          <select id="wfAuth">
+            <option value="PERSONAL" ${l.auth_mode === "ENTERPRISE" ? "" : "selected"}>PERSONAL</option>
+            <option value="ENTERPRISE" ${l.auth_mode === "ENTERPRISE" ? "selected" : ""}>ENTERPRISE</option>
+          </select>
+        </div>
+        <div class="form-group ${l.auth_mode === "ENTERPRISE" ? "" : "hidden"}" id="wfUserGroup">
+          <label>Username</label>
+          <input type="text" id="wfUser" value="${ce(l.username)}" placeholder="Enterprise username">
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-set" id="wfSetBtn">✅ Set WiFi Config</button>
+    </div>
+  `;
+  const e = t.querySelector("#wfShowPw"), n = t.querySelector("#wfPass");
+  e.addEventListener("change", () => {
+    n.type = e.checked ? "text" : "password";
+  });
+  const i = t.querySelector("#wfAuth"), m = t.querySelector("#wfUserGroup");
+  i.addEventListener("change", () => {
+    m.classList.toggle("hidden", i.value !== "ENTERPRISE");
+  }), t.querySelector("#wfSetBtn").addEventListener("click", async () => {
+    const c = t.querySelector("#wfSSID").value.trim();
+    if (!c) {
+      f("SSID is required", "err");
+      return;
+    }
+    try {
+      await K({ wifi: { ssid: c, password: n.value, auth_mode: i.value, username: t.querySelector("#wfUser").value } }), f("WiFi config set");
+    } catch (b) {
+      f("WiFi set failed: " + b.message, "err");
+    }
+  });
+}
+function ce(t) {
+  return (t || "").replace(/"/g, "&quot;");
+}
+function Ue(t, a) {
+  var l;
+  t.innerHTML = "";
+  const e = (a == null ? void 0 : a.lte) || {}, n = ((a == null ? void 0 : a.wan) || {}).stack_wan_id || "100", i = me[n] || {}, m = (l = t.id) == null ? void 0 : l.includes("adv");
+  let c = "";
+  m ? c = `
+      <div class="card">
+        <div class="card-title">Modem Identity</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>WAN Stack ID</label>
+            <span class="info-label">${C(n)} — ${C(i.label || "Unknown")}</span>
+          </div>
+          <div class="form-group">
+            <label>Modem Name</label>
+            <input type="text" id="ltModem" value="${C(e.modem || i.modem || "A7600C1")}">
+          </div>
+          <div class="form-group">
+            <label>Comm Type</label>
+            <select id="ltComm">
+              <option value="USB" ${(e.comm_type || i.comm_type) === "UART" ? "" : "selected"}>USB</option>
+              <option value="UART" ${(e.comm_type || i.comm_type) === "UART" ? "selected" : ""}>UART</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">APN Settings</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>APN</label>
+            <input type="text" id="ltAPN" value="${C(e.apn)}" placeholder="v-internet">
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="ltUser" value="${C(e.username)}">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <div style="display:flex;gap:4px">
+              <input type="password" id="ltPass" value="${C(e.password)}" style="flex:1">
+              <label class="checkbox-row" style="white-space:nowrap"><input type="checkbox" id="ltShowPw"> Show</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Connection Settings</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="ltAuto" ${e.auto_reconnect !== false ? "checked" : ""}> Auto Reconnect</label>
+          </div>
+          <div class="form-group">
+            <label>Reconnect Timeout (ms)</label>
+            <input type="number" id="ltTimeout" value="${e.timeout || 3e4}" min="5000" max="300000" step="5000">
+          </div>
+          <div class="form-group">
+            <label>Max Retry (0=unlimited)</label>
+            <input type="number" id="ltRetry" value="${e.max_retry || 0}" min="0" max="100">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Module GPIO Pins</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>PWR Pin</label>
+            <select id="ltPwr">${ue.map((y) => `<option value="${y}" ${(e.pwr_pin || i.pwr_pin || "WK") === y ? "selected" : ""}>${y}</option>`).join("")}</select>
+          </div>
+          <div class="form-group">
+            <label>RST Pin</label>
+            <select id="ltRst">${ue.map((y) => `<option value="${y}" ${(e.rst_pin || i.rst_pin || "PE") === y ? "selected" : ""}>${y}</option>`).join("")}</select>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-set" id="ltSetBtn">✅ Set LTE Config</button>
+      </div>
+    ` : c = `
+      <div class="card">
+        <div class="card-title">LTE Module: ${C(i.modem || "Unknown")}</div>
+        <p class="hint">${C(i.label || "")}</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">LTE Settings</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>APN</label>
+            <input type="text" id="ltAPN" value="${C(e.apn)}" placeholder="internet">
+          </div>
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="ltUser" value="${C(e.username)}">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <div style="display:flex;gap:4px">
+              <input type="password" id="ltPass" value="${C(e.password)}" style="flex:1">
+              <label class="checkbox-row" style="white-space:nowrap"><input type="checkbox" id="ltShowPw"> Show</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-set" id="ltSetBtn">✅ Set LTE Config</button>
+      </div>
+    `, t.innerHTML = c;
+  const b = t.querySelector("#ltShowPw"), L = t.querySelector("#ltPass");
+  b && L && b.addEventListener("change", () => {
+    L.type = b.checked ? "text" : "password";
+  }), t.querySelector("#ltSetBtn").addEventListener("click", async () => {
+    const y = t.querySelector("#ltAPN").value.trim();
+    if (!y) {
+      f("APN is required", "err");
+      return;
+    }
+    const h = { lte: { apn: y, username: t.querySelector("#ltUser").value, password: L.value } };
+    m && (h.lte.modem = t.querySelector("#ltModem").value, h.lte.comm_type = t.querySelector("#ltComm").value, h.lte.auto_reconnect = t.querySelector("#ltAuto").checked, h.lte.timeout = Number(t.querySelector("#ltTimeout").value), h.lte.max_retry = Number(t.querySelector("#ltRetry").value), h.lte.pwr_pin = t.querySelector("#ltPwr").value, h.lte.rst_pin = t.querySelector("#ltRst").value);
+    try {
+      await K(h), f("LTE config set");
+    } catch (U) {
+      f("LTE set failed: " + U.message, "err");
+    }
+  });
+}
+function C(t) {
+  return (t || "").replace(/"/g, "&quot;");
+}
+function ke(t, a) {
+  var l;
+  t.innerHTML = "";
+  const e = (a == null ? void 0 : a.server) || {}, n = (l = t.id) == null ? void 0 : l.includes("adv"), i = e.type ?? 0, m = e.mqtt || {}, c = e.http || {}, b = e.coap || {};
+  t.innerHTML = `
+    <div class="card">
+      <div class="card-title">Server Type</div>
+      <div class="form-group" style="max-width:250px">
+        <select id="svType">
+          <option value="0" ${i === 0 ? "selected" : ""}>MQTT</option>
+          <option value="1" ${i === 1 ? "selected" : ""}>CoAP</option>
+          <option value="2" ${i === 2 ? "selected" : ""}>HTTP / HTTPS</option>
+        </select>
+      </div>
+    </div>
+
+    \x3C!-- MQTT section -->
+    <div id="svMqtt" class="${i === 0 ? "" : "hidden"}">
+      <div class="card">
+        <div class="card-title">MQTT Settings</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Broker URI</label>
+            <input type="text" id="mqBroker" value="${N(m.broker)}" placeholder="mqtt://demo.thingsboard.io:1883">
+            <span class="hint">Format: mqtt[s]://host:port</span>
+          </div>
+          <div class="form-group full">
+            <label>Device Token</label>
+            <div style="display:flex;gap:4px">
+              <input type="password" id="mqToken" value="${N(m.token)}" style="flex:1">
+              <label class="checkbox-row" style="white-space:nowrap"><input type="checkbox" id="mqShowTk"> Show</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${n ? `
+      <div class="card">
+        <div class="card-title">MQTT Topics</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Subscribe Topic</label>
+            <input type="text" id="mqSub" value="${N(m.sub_topic)}" placeholder="v1/devices/me/rpc/request/+">
+          </div>
+          <div class="form-group full">
+            <label>Publish Topic</label>
+            <input type="text" id="mqPub" value="${N(m.pub_topic)}" placeholder="v1/devices/me/telemetry">
+          </div>
+          <div class="form-group full">
+            <label>Attribute Topic</label>
+            <input type="text" id="mqAttr" value="${N(m.attr_topic)}" placeholder="v1/devices/me/attributes">
+          </div>
+        </div>
+      </div>
+      ` : ""}
+    </div>
+
+    \x3C!-- HTTP section -->
+    <div id="svHttp" class="${i === 2 ? "" : "hidden"}">
+      <div class="card">
+        <div class="card-title">HTTP / HTTPS Settings</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Server URL</label>
+            <input type="text" id="hpUrl" value="${N(c.url)}" placeholder="http://demo.thingsboard.io:8080/api/v1/{token}/telemetry">
+          </div>
+          <div class="form-group full">
+            <label>Auth Token</label>
+            <input type="text" id="hpToken" value="${N(c.auth_token)}">
+          </div>
+          ${n ? `
+          <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="hpPort" value="${c.port || 8080}" min="1" max="65535">
+          </div>
+          <div class="form-group">
+            <label>Timeout (ms)</label>
+            <input type="number" id="hpTimeout" value="${c.timeout || 1e4}" min="1000" max="120000" step="1000">
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="hpTls" ${c.use_tls ? "checked" : ""}> Use TLS (HTTPS)</label>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="hpVerify" ${c.verify ? "checked" : ""}> Verify Server Cert</label>
+          </div>
+          ` : `
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="hpTls" ${c.use_tls ? "checked" : ""}> Use TLS (HTTPS)</label>
+          </div>
+          `}
+          <div class="form-group full">
+            <span class="hint">💡 Use {token} in URL to inject the auth token</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    \x3C!-- CoAP section -->
+    <div id="svCoap" class="${i === 1 ? "" : "hidden"}">
+      <div class="card">
+        <div class="card-title">CoAP Settings</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Host</label>
+            <input type="text" id="cpHost" value="${N(b.host)}" placeholder="demo.thingsboard.io">
+          </div>
+          <div class="form-group full">
+            <label>Resource Path</label>
+            <input type="text" id="cpResource" value="${N(b.resource)}" placeholder="/api/v1/{token}/telemetry">
+          </div>
+          <div class="form-group full">
+            <label>Device Token</label>
+            <input type="text" id="cpToken" value="${N(b.token)}">
+          </div>
+          ${n ? `
+          <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="cpPort" value="${b.port || 5683}" min="1" max="65535">
+          </div>
+          <div class="form-group">
+            <label>ACK Timeout (ms)</label>
+            <input type="number" id="cpAck" value="${b.ack_timeout || 2e3}" min="100" max="60000" step="100">
+          </div>
+          <div class="form-group">
+            <label>Max Retransmit</label>
+            <input type="number" id="cpRtx" value="${b.max_rtx || 4}" min="0" max="20">
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="cpDtls" ${b.use_dtls ? "checked" : ""}> Use DTLS (CoAPS — port 5684)</label>
+          </div>
+          ` : ""}
+          <div class="form-group full">
+            <span class="hint">💡 Use {token} in Resource Path to inject the device token</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-set" id="svSetBtn">✅ Set Server Config</button>
+    </div>
+
+    ${n ? `
+    <div class="card" style="margin-top:8px;padding:8px">
+      <span class="hint">
+        MQTT: CFSV:0 + CFMQ:BROKER|TOKEN|SUB|PUB|ATTR<br>
+        HTTP: CFSV:2 + CFHP:URL|TOKEN|PORT|TLS|VERIFY|TIMEOUT<br>
+        CoAP: CFSV:1 + CFCP:HOST|PATH|TOKEN|PORT|DTLS|ACK_TO|MAX_RTX
+      </span>
+    </div>
+    ` : ""}
+  `;
+  const L = t.querySelector("#svType"), y = { 0: t.querySelector("#svMqtt"), 1: t.querySelector("#svCoap"), 2: t.querySelector("#svHttp") };
+  L.addEventListener("change", () => {
+    var k;
+    Object.values(y).forEach(($) => $.classList.add("hidden")), (k = y[L.value]) == null || k.classList.remove("hidden");
+  });
+  const h = t.querySelector("#mqShowTk"), U = t.querySelector("#mqToken");
+  h && U && h.addEventListener("change", () => {
+    U.type = h.checked ? "text" : "password";
+  }), t.querySelector("#svSetBtn").addEventListener("click", async () => {
+    var k, $, x, Q, w, X, Z, ee, q, P, J;
+    const B = Number(L.value), E = { server: { type: B } };
+    B === 0 ? (E.server.mqtt = { broker: t.querySelector("#mqBroker").value, token: U.value }, n && (E.server.mqtt.sub_topic = ((k = t.querySelector("#mqSub")) == null ? void 0 : k.value) || "", E.server.mqtt.pub_topic = (($ = t.querySelector("#mqPub")) == null ? void 0 : $.value) || "", E.server.mqtt.attr_topic = ((x = t.querySelector("#mqAttr")) == null ? void 0 : x.value) || "")) : B === 2 ? (E.server.http = { url: t.querySelector("#hpUrl").value, auth_token: t.querySelector("#hpToken").value, use_tls: ((Q = t.querySelector("#hpTls")) == null ? void 0 : Q.checked) || false }, n && (E.server.http.port = Number(((w = t.querySelector("#hpPort")) == null ? void 0 : w.value) || 8080), E.server.http.timeout = Number(((X = t.querySelector("#hpTimeout")) == null ? void 0 : X.value) || 1e4), E.server.http.verify = ((Z = t.querySelector("#hpVerify")) == null ? void 0 : Z.checked) || false)) : B === 1 && (E.server.coap = { host: t.querySelector("#cpHost").value, resource: t.querySelector("#cpResource").value, token: t.querySelector("#cpToken").value }, n && (E.server.coap.port = Number(((ee = t.querySelector("#cpPort")) == null ? void 0 : ee.value) || 5683), E.server.coap.ack_timeout = Number(((q = t.querySelector("#cpAck")) == null ? void 0 : q.value) || 2e3), E.server.coap.max_rtx = Number(((P = t.querySelector("#cpRtx")) == null ? void 0 : P.value) || 4), E.server.coap.use_dtls = ((J = t.querySelector("#cpDtls")) == null ? void 0 : J.checked) || false));
+    try {
+      await K(E), f("Server config set");
+    } catch (F) {
+      f("Server set failed: " + F.message, "err");
+    }
+  });
+}
+function N(t) {
+  return (t || "").replace(/"/g, "&quot;");
+}
+function Ve(t, a) {
+  t.innerHTML = "";
+  const l = (a == null ? void 0 : a.lan) || {}, e = (a == null ? void 0 : a.wan) || {}, n = l.stack1_id || "000", i = l.stack2_id || "000", m = e.stack_wan_id || "100", c = ge[n] || { type: "NONE", label: "Unknown" }, b = ge[i] || { type: "NONE", label: "Unknown" }, L = me[m] || { label: "Unknown" };
+  t.innerHTML = `
+    <div class="card">
+      <div class="card-title">Detected WAN Adapter</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>WAN Stack ID</label>
+          <span class="info-label">${D(m)}</span>
+        </div>
+        <div class="form-group">
+          <label>Adapter</label>
+          <span class="info-label">${D(L.label)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Detected LAN Stacks</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Stack 1 (S1)</label>
+          <span class="info-label">${D(n)} — ${D(c.label)}</span>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <span class="info-label">${D(c.type)}</span>
+        </div>
+        <div class="form-group">
+          <label>Stack 2 (S2)</label>
+          <span class="info-label">${D(i)} — ${D(b.label)}</span>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <span class="info-label">${D(b.type)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="border-color:var(--accent)">
+      <span class="hint">💡 Module config tabs appear automatically when a module stack is detected. Use Advanced Mode for full JSON config editing.</span>
+    </div>
+  `;
+}
+function D(t) {
+  return (t || "").replace(/</g, "&lt;");
+}
+function o(t, a = {}, l = []) {
+  const e = document.createElement(t);
+  return Object.entries(a).forEach(([n, i]) => {
+    n === "className" ? e.className = i : n === "textContent" ? e.textContent = i : n === "innerHTML" ? e.innerHTML = i : n.startsWith("on") ? e.addEventListener(n.slice(2).toLowerCase(), i) : e.setAttribute(n, i);
+  }), l.forEach((n) => {
+    n && e.appendChild(typeof n == "string" ? document.createTextNode(n) : n);
+  }), e;
+}
+function O(t, a, l, e = {}) {
+  const n = o("select", e);
+  return t.forEach((i) => {
+    const m = o("option", { value: typeof i == "object" ? i.value : i, textContent: typeof i == "object" ? i.label : i });
+    n.appendChild(m);
+  }), n.value = a, l && n.addEventListener("change", l), n;
+}
+function ve(t, a, l) {
+  t.innerHTML = "";
+  const e = De[l] || [], n = Me[l] || [], i = l === "ZIGBEE";
+  let m = 0, c = se(l, 0) || {};
+  const b = l.toLowerCase() + "_config";
+  if (a != null && a[b]) try {
+    c = structuredClone(a[b]);
+  } catch {
+  }
+  const L = o("div", { className: "card" }), y = o("div", { className: "form-grid" }), h = o("div", { className: "form-group" }, [o("label", { textContent: "Stack Slot" }), O([{ value: "0", label: "S1" }, { value: "1", label: "S2" }], "0", null, { id: `slot-${l}` })]), U = O(e.map((r, s) => ({ value: String(s), label: r.label })), "0", (r) => {
+    m = Number(r.target.value);
+    const s = e[m];
+    x.value = s.module_id, w.value = s.module_name, c = se(l, m) || c, F(), p();
+  }), k = o("div", { className: "form-group" }, [o("label", { textContent: "Preset" }), U]), $ = o("button", { className: "btn", textContent: "🔄 Reload", onClick: () => {
+    c = se(l, m) || c, x.value = c.module_id, w.value = c.module_name, P(), F(), p(), f("Form reloaded from preset");
+  } }), x = o("input", { type: "text", value: c.module_id || "" });
+  x.addEventListener("input", () => {
+    c.module_id = x.value, p();
+  });
+  const Q = o("div", { className: "form-group" }, [o("label", { textContent: "Module ID" }), x]), w = o("input", { type: "text", value: c.module_name || "" });
+  w.addEventListener("input", () => {
+    c.module_name = w.value, p();
+  });
+  const X = o("div", { className: "form-group" }, [o("label", { textContent: "Module Name" }), w]);
+  y.append(h, k, Q, X), L.append(y, o("div", { className: "btn-row" }, [$]));
+  const Z = o("div", { className: "card" }), ee = o("div", { className: "card-title", textContent: "🔌 Communication" }), q = o("div");
+  Z.append(ee, q);
+  function P() {
+    q.innerHTML = "";
+    const r = c.module_communication || { port_type: "uart", parameters: {} }, s = r.parameters || {}, d = o("div", { className: "form-grid" }), _ = O(["uart", "usb", "spi", "i2c"], r.port_type, (v) => {
+      r.port_type = v.target.value, r.parameters = {}, c.module_communication = r, P(), p();
+    });
+    d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Port Type" }), _]));
+    const g = r.port_type;
+    if (g === "uart" || g === "usb") {
+      const v = O(["9600", "38400", "57600", "115200", "230400"], String(s.baudrate || 115200), (u) => {
+        s.baudrate = Number(u.target.value), r.parameters = s, p();
+      });
+      d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Baudrate" }), v]));
+    }
+    if (g === "uart") {
+      const v = O(["none", "odd", "even"], s.parity || "none", (S) => {
+        s.parity = S.target.value, r.parameters = s, p();
+      }), u = O(["1", "2"], String(s.stopbit || 1), (S) => {
+        s.stopbit = Number(S.target.value), r.parameters = s, p();
+      });
+      d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Parity" }), v])), d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Stop Bit" }), u]));
+    }
+    if (g === "spi") {
+      d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "SPI Mode" }), O(["0", "1", "2", "3"], String(s.spi_mode || 0), (S) => {
+        s.spi_mode = Number(S.target.value), p();
+      })]));
+      const v = o("input", { type: "number", value: String(s.clock_hz || 1e6), min: "100000", max: "40000000", step: "100000" });
+      v.addEventListener("input", () => {
+        s.clock_hz = Number(v.value), p();
+      }), d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Clock Hz" }), v]));
+      const u = o("input", { type: "text", value: s.cs_pin || "05" });
+      u.addEventListener("input", () => {
+        s.cs_pin = u.value, p();
+      }), d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "CS Pin" }), u]));
+    }
+    if (g === "i2c") {
+      const v = o("input", { type: "text", value: s.i2c_addr || "0x60" });
+      v.addEventListener("input", () => {
+        s.i2c_addr = v.value, p();
+      }), d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "I2C Address" }), v]));
+      const u = o("input", { type: "number", value: String(s.clock_hz || 4e5), min: "10000", max: "1000000", step: "10000" });
+      u.addEventListener("input", () => {
+        s.clock_hz = Number(u.value), p();
+      }), d.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Clock Hz" }), u]));
+    }
+    c.module_communication = r, q.appendChild(d);
+  }
+  const J = o("div", { className: "card" }), B = o("div", { className: "card-title", textContent: "⚙️ Functions" }), E = o("div");
+  J.append(B, E);
+  function F() {
+    E.innerHTML = "";
+    const r = c.functions || [];
+    n.forEach((s) => {
+      const d = o("div", { className: "accordion-group" }), _ = o("div", { className: "accordion-header" }, [o("span", { className: "arrow", textContent: "▼" }), document.createTextNode(` ${s.emoji} ${s.title} (${s.functions.length})`)]), g = o("div", { className: "accordion-body" });
+      _.addEventListener("click", () => {
+        _.classList.toggle("collapsed"), g.classList.toggle("collapsed");
+      }), s.functions.forEach((v) => {
+        let u = r.find((S) => S.function_name === v);
+        u || (u = { function_name: v, command: "", is_prefix: false, gpio_start_control: [], delay_start: 0, expect_response: "", timeout: 0, gpio_end_control: [], delay_end: 0 }, r.push(u)), g.appendChild(Be(u, i));
+      }), d.append(_, g), E.appendChild(d);
+    }), c.functions = r;
+  }
+  function Be(r, s) {
+    const d = o("div", { className: "fn-item" }), _ = o("span", { className: "fn-arrow", textContent: "▸" }), g = o("div", { className: "fn-header" }, [_, o("span", { className: "fn-name", textContent: r.function_name })]);
+    s && r.is_async_event && g.appendChild(o("span", { className: "fn-async-badge", textContent: "⚡ async" }));
+    const v = o("div", { className: "fn-body collapsed" });
+    g.addEventListener("click", () => {
+      const T = v.classList.toggle("collapsed");
+      _.classList.toggle("open", !T), _.textContent = T ? "▸" : "▾";
+    });
+    const u = o("div", { className: "form-grid" }), S = o("input", { type: "text", value: r.command || "" });
+    S.addEventListener("input", () => {
+      r.command = S.value, p();
+    }), u.appendChild(o("div", { className: "form-group full" }, [o("label", { textContent: "Command" }), S]));
+    const M = o("input", { type: "checkbox" });
+    M.checked = !!r.is_prefix, M.addEventListener("change", () => {
+      r.is_prefix = M.checked, p();
+    }), u.appendChild(o("div", { className: "form-group" }, [o("div", { className: "checkbox-row" }, [M, o("label", { textContent: "Is Prefix" })])]));
+    const V = o("input", { type: "number", value: String(r.delay_start || 0), min: "0", step: "50" });
+    V.addEventListener("input", () => {
+      r.delay_start = Number(V.value), p();
+    }), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Delay Start (ms)" }), V]));
+    const W = o("input", { type: "text", value: r.expect_response || "" });
+    W.addEventListener("input", () => {
+      r.expect_response = W.value, p();
+    }), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Expect Response" }), W]));
+    const j = o("input", { type: "number", value: String(r.timeout || 0), min: "0", step: "100" });
+    j.addEventListener("input", () => {
+      r.timeout = Number(j.value), p();
+    }), s && r.is_async_event && (j.disabled = true), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Timeout (ms)" }), j]));
+    const z = o("input", { type: "number", value: String(r.delay_end || 0), min: "0", step: "50" });
+    if (z.addEventListener("input", () => {
+      r.delay_end = Number(z.value), p();
+    }), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Delay End (ms)" }), z])), s) {
+      const T = o("input", { type: "text", value: r.cmd_type || "" });
+      T.addEventListener("input", () => {
+        r.cmd_type = T.value, p();
+      }), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "CMD Type (hex)" }), T]));
+      const I = o("input", { type: "text", value: r.cmd_code || "" });
+      I.addEventListener("input", () => {
+        r.cmd_code = I.value, p();
+      }), u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "CMD Code (hex)" }), I]));
+      const je = O(["ascii", "hex"], r.resp_format || "ascii", (Ge) => {
+        r.resp_format = Ge.target.value, p();
+      });
+      u.appendChild(o("div", { className: "form-group" }, [o("label", { textContent: "Resp Format" }), je]));
+    }
+    return v.appendChild(u), v.appendChild(be("GPIO Start", r.gpio_start_control, (T) => {
+      r.gpio_start_control = T, p();
+    })), v.appendChild(be("GPIO End", r.gpio_end_control, (T) => {
+      r.gpio_end_control = T, p();
+    })), d.append(g, v), d;
+  }
+  function be(r, s, d) {
+    const _ = o("div", { style: "margin: 6px 0" }), g = o("label", { textContent: r, style: "font-weight:600;display:block;margin-bottom:4px" }), v = o("div"), u = o("button", { className: "btn", textContent: "+ Add GPIO", style: "font-size:11px;padding:2px 8px;margin-top:4px" });
+    function S() {
+      v.innerHTML = "", s.forEach((M, V) => {
+        const W = o("div", { className: "gpio-row" }), j = O(ue, M.pin || "01", (I) => {
+          M.pin = I.target.value, d(s);
+        }), z = O(["LOW", "HIGH"], M.state || "LOW", (I) => {
+          M.state = I.target.value, d(s);
+        }), T = o("button", { className: "btn btn-danger", textContent: "✕", style: "font-size:10px;padding:1px 6px", onClick: () => {
+          s.splice(V, 1), d(s), S();
+        } });
+        W.append(o("span", { textContent: "Pin:" }), j, o("span", { textContent: "State:" }), z, T), v.appendChild(W);
+      });
+    }
+    return u.addEventListener("click", () => {
+      s.push({ pin: "01", state: "LOW" }), d(s), S();
+    }), S(), _.append(g, v, u), _;
+  }
+  const ie = o("div", { className: "card" });
+  ie.appendChild(o("div", { className: "card-title", textContent: "📄 Generated JSON" }));
+  const A = o("textarea", { className: "json-preview", rows: "20" });
+  ie.appendChild(A), A.addEventListener("input", () => {
+    try {
+      c = JSON.parse(A.value), A.classList.remove("error");
+    } catch {
+      A.classList.add("error");
+    }
+  });
+  function p() {
+    const r = structuredClone(c);
+    A.value = JSON.stringify(r, null, 2), A.classList.remove("error");
+  }
+  const ae = o("div", { className: "card" });
+  ae.appendChild(o("div", { className: "card-title", textContent: "🚀 Actions" }));
+  const te = o("div", { className: "btn-row", style: "margin-top:0" });
+  te.appendChild(o("button", { className: "btn", textContent: "📋 Generate", onClick: () => {
+    p(), f("JSON regenerated");
+  } })), te.appendChild(o("button", { className: "btn", textContent: "💾 Save JSON", onClick: () => {
+    const r = `${l.toLowerCase()}_config.json`;
+    xe(c, r), H(`Saved to ${r}`, false);
+  } })), te.appendChild(o("button", { className: "btn", textContent: "📂 Load JSON", onClick: async () => {
+    try {
+      const r = await we();
+      c = r, x.value = r.module_id || "", w.value = r.module_name || "", P(), F(), p(), H("JSON loaded from file", false);
+    } catch (r) {
+      f("Load failed: " + r.message, "err");
+    }
+  } }));
+  const Ee = o("div", { className: "btn-row" });
+  Ee.appendChild(o("button", { className: "btn btn-set", textContent: "📤 Send JSON Config", onClick: async () => {
+    var r;
+    try {
+      const s = ((r = t.querySelector(`#slot-${l}`)) == null ? void 0 : r.value) || "0", d = JSON.stringify(c), _ = l.toLowerCase() + "_json";
+      await K({ [_]: d, slot: s }), H(`JSON sent (${d.length} bytes)`, false), f("JSON config sent");
+    } catch (s) {
+      H("Send failed: " + s.message, true), f("Send failed: " + s.message, "err");
+    }
+  } }));
+  const ne = o("select", { style: "flex:1" });
+  ne.appendChild(o("option", { value: "", textContent: "-- Select Function --" })), n.forEach((r) => {
+    r.functions.forEach((s) => ne.appendChild(o("option", { value: s, textContent: s })));
+  });
+  const Fe = o("button", { className: "btn btn-accent", textContent: "▶ Run", onClick: async () => {
+    var r;
+    const s = ne.value;
+    if (!s) {
+      f("Select a function first", "warn");
+      return;
+    }
+    try {
+      const d = ((r = t.querySelector(`#slot-${l}`)) == null ? void 0 : r.value) || "0", _ = l.toLowerCase() + "_cmd";
+      await K({ [_]: { slot: d, function: s } }), H(`Command sent: ${s}`, false), f(`Sent: ${s}`);
+    } catch (d) {
+      H("Command failed: " + d.message, true), f("Command failed", "err");
+    }
+  } }), ye = o("div", { className: "btn-row" });
+  ye.append(o("span", { textContent: "⚡ Quick CMD:", style: "font-size:12px;font-weight:600;align-self:center" }), ne, Fe), ae.append(te, Ee, ye);
+  const re = o("div", { className: "card" });
+  re.appendChild(o("div", { className: "card-title", textContent: "📊 Status" }));
+  const oe = o("div", { className: "status-panel", textContent: "Ready" });
+  re.appendChild(oe);
+  function H(r, s) {
+    const d = (/* @__PURE__ */ new Date()).toLocaleTimeString();
+    oe.innerHTML = "", oe.appendChild(o("div", { className: s ? "last-error" : "last-action", textContent: r })), oe.appendChild(o("div", { textContent: d, style: "font-size:11px;color:var(--muted)" }));
+  }
+  const _e = o("div", { className: "two-pane" }), He = o("div", { className: "pane-left" }, [L, Z, J]), We = o("div", { className: "pane-right" }, [ie, ae, re]);
+  _e.append(He, We), t.appendChild(_e), P(), F(), p();
+}
+function ze(t, a) {
+  ve(t, a, "BLE");
+}
+function Ye(t, a) {
+  ve(t, a, "LORA");
+}
+function Qe(t, a) {
+  ve(t, a, "ZIGBEE");
+}
+function Xe(t, a) {
+  t.innerHTML = "", t.innerHTML = `
+    <div class="card">
+      <div class="card-title">Firmware OTA Update</div>
+      <p style="font-size:12px; margin-bottom:16px">Updates both WAN and LAN MCUs simultaneously. Firmware URLs are pre-configured.</p>
+      <p class="hint">⚠️ Do not power off the gateway during the update process.</p>
+      <div class="btn-row">
+        <button class="btn btn-accent" id="fwStartBtn">🔄 Start Firmware OTA Update</button>
+      </div>
+    </div>
+  `, t.querySelector("#fwStartBtn").addEventListener("click", async () => {
+    try {
+      await K({ fota: true }), f("Firmware OTA started for both MCUs", "success");
+    } catch (l) {
+      f("Firmware OTA failed: " + l.message, "err");
+    }
+  });
+}
+let de = null;
+function f(t, a = "ok") {
+  const l = document.getElementById("toast");
+  l && (l.textContent = t, l.className = `show ${a}`, de && clearTimeout(de), de = setTimeout(() => {
+    l.className = "";
+  }, 3e3));
+}
+let R = {}, Y = false;
+const fe = document.getElementById("advancedToggle"), et = document.getElementById("basicPanel"), tt = document.getElementById("advancedPanel"), Pe = document.getElementById("basicTabBar"), Ae = document.getElementById("basicContent"), Ie = document.getElementById("advancedTabBar"), $e = document.getElementById("advancedContent"), Se = document.getElementById("statusDot"), nt = document.getElementById("statusHost"), G = document.getElementById("statusText"), ot = [{ id: "wifi", icon: "📶", label: "WiFi", render: Re }, { id: "server", icon: "🌐", label: "Server", render: ke }, { id: "interfaces", icon: "🔌", label: "Interfaces", render: Ve }], he = [{ id: "wifi", icon: "📶", label: "WiFi", render: Re }, { id: "lte", icon: "📱", label: "LTE", render: Ue }, { id: "server", icon: "☁️", label: "Server", render: ke }, { id: "ble", icon: "🔷", label: "BLE", render: ze }, { id: "lora", icon: "🟩", label: "LoRa", render: Ye }, { id: "zigbee", icon: "🔶", label: "Zigbee", render: Qe }, { id: "firmware", icon: "🔄", label: "FW", render: Xe }];
+function Le(t, a) {
+  t.innerHTML = "", a.forEach((l, e) => {
+    const n = document.createElement("button");
+    n.className = "tab-btn" + (e === 0 ? " active" : ""), n.dataset.tab = l.id, n.textContent = `${l.icon} ${l.label}`, t.appendChild(n);
+  });
+}
+function Te(t, a, l) {
+  t.innerHTML = "", a.forEach((e, n) => {
+    const i = document.createElement("div");
+    i.className = "tab-pane" + (n === 0 ? "" : " hidden"), i.id = `pane-${Y ? "adv" : "bas"}-${e.id}`, t.appendChild(i), e.render(i, l);
+  });
+}
+function lt(t, a, l) {
+  t.querySelectorAll(".tab-btn").forEach((e) => e.classList.toggle("active", e.dataset.tab === l)), a.querySelectorAll(".tab-pane").forEach((e) => e.classList.toggle("hidden", !e.id.endsWith("-" + l)));
+}
+function Ce(t, a) {
+  t.addEventListener("click", (l) => {
+    const e = l.target.closest(".tab-btn");
+    e && e.dataset.tab && lt(t, a, e.dataset.tab);
+  });
+}
+function it(t) {
+  var a;
+  const l = [...ot], e = ((a = t == null ? void 0 : t.wan) == null ? void 0 : a.stack_wan_id) || "100", n = me[e];
+  return n && n.type !== "NONE" && l.splice(1, 0, { id: "lte", icon: "📱", label: "LTE", render: Ue }), l;
+}
+function qe(t = false) {
+  Y = fe.checked, localStorage.setItem("advMode", Y ? "1" : "0"), et.classList.toggle("hidden", Y), tt.classList.toggle("hidden", !Y), t && le();
+}
+fe.checked = localStorage.getItem("advMode") === "1";
+fe.addEventListener("change", () => qe(true));
+function le() {
+  const t = it(R);
+  Le(Pe, t), Te(Ae, t, R), Le(Ie, he), Te($e, he, R), qe(false);
+}
+document.getElementById("btnReadConfig").addEventListener("click", async () => {
+  G.textContent = "Reading config…";
+  try {
+    R = await Oe(), le(), f("Config loaded"), G.textContent = "Config loaded ✓";
+  } catch (t) {
+    f("Read failed: " + t.message, "err"), G.textContent = "Read failed";
+  }
+});
+document.getElementById("btnSaveFile").addEventListener("click", () => {
+  try {
+    const t = at();
+    xe(t), f("Config file saved");
+  } catch (t) {
+    f("Save failed: " + t.message, "err");
+  }
+});
+document.getElementById("btnLoadFile").addEventListener("click", async () => {
+  try {
+    R = await we(), le(), f("Config loaded from file"), G.textContent = "Loaded from file ✓";
+  } catch (t) {
+    f("Load failed: " + t.message, "err");
+  }
+});
+function at() {
+  return structuredClone(R);
+}
+async function Ne() {
+  try {
+    const t = await Ke();
+    Se.classList.remove("offline"), nt.textContent = window.location.hostname || "gateway.local";
+    const a = [];
+    if (t.wifi_connected && a.push(`WiFi: ${t.wifi_ssid}`), t.internet_ok && a.push("Internet: OK"), t.server_ok && a.push("Server: OK"), t.uptime_s != null) {
+      const l = Math.floor(t.uptime_s / 3600), e = Math.floor(t.uptime_s % 3600 / 60);
+      a.push(`Up: ${l}h${e}m`);
+    }
+    G.textContent = a.join(" | ") || "Connected";
+  } catch {
+    Se.classList.add("offline"), G.textContent = "Offline";
+  }
+}
+async function rt() {
+  Ce(Pe, Ae), Ce(Ie, $e);
+  try {
+    R = await Oe();
+  } catch {
+    R = {};
+  }
+  le(), Ne(), setInterval(Ne, 5e3);
+}
+rt();</script>
+</head>
+<body>
+
+<!-- Title Bar -->
+<header id="titleBar">
+  <span class="title-text">&#x1F50C; ESP32 Gateway Configuration Tool</span>
+  <span class="title-ver" id="titleVer">v4.0.0</span>
+</header>
+
+<!-- Top Bar (status + actions) -->
+<div id="topBar">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="statusHost">gateway.local</span>
+  <button class="top-btn" id="btnReadConfig">&#x1F4D6; Read Config</button>
+  <button class="top-btn" id="btnSaveFile">&#x1F4BE; Save File</button>
+  <button class="top-btn" id="btnLoadFile">&#x1F4C2; Load File</button>
+  <span class="status-text" id="statusText">Ready</span>
+</div>
+
+<!-- Mode Selector -->
+<div id="modeRow">
+  <label class="mode-label">
+    <input type="checkbox" id="advancedToggle">
+    <span>Advanced Mode</span>
+  </label>
+</div>
+
+<!-- Basic Mode Panel -->
+<div id="basicPanel">
+  <div class="tab-bar" id="basicTabBar"></div>
+  <div id="basicContent"></div>
+</div>
+
+<!-- Advanced Mode Panel -->
+<div id="advancedPanel" class="hidden">
+  <div class="tab-bar" id="advancedTabBar"></div>
+  <div id="advancedContent"></div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Hidden file input for Load File -->
+<input type="file" id="fileInput" accept=".json" style="display:none">
+
+</body>
+</html>

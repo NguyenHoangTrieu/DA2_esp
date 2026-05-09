@@ -5,7 +5,7 @@
  */
 
 #include "usb_handler.h"
-#include "rbg_handler.h"
+
 
 static const char *TAG = "MAIN APP";
 
@@ -72,7 +72,7 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "USB host library example");
     init_led_strip();
-    led_on();
+    
     setup_gpio45_interrupt();
     main_task_handle = xTaskGetCurrentTaskHandle();
     uint8_t change = 0;
@@ -93,7 +93,7 @@ void app_main(void)
                 class_driver_task_stop();
                 usb_host_lib_task_stop();
                 jtag_task_start();
-                led_show_yellow();
+                
             } else {
                 change = 0;
                 ESP_LOGI(TAG, "Button pressed, switch to USB Host");

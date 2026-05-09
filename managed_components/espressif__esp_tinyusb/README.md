@@ -42,13 +42,14 @@ Configure the Device Stack using `menuconfig`:
 
 This component is distributed via [IDF component manager](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-component-manager.html). Just add `idf_component.yml` file to your main component with the following content:
 
-``` yaml
+```yaml
 ## IDF Component Manager Manifest File
 dependencies:
   esp_tinyusb: "~2.0.0"
 ```
 
 Or simply run:
+
 ```
 idf.py add-dependency esp_tinyusb~2.0.0
 ```
@@ -98,6 +99,8 @@ USB Device Event callback allows to get the following events during USB Device l
 
 - `TINYUSB_EVENT_ATTACHED`: Device attached to the USB Host
 - `TINYUSB_EVENT_DETACHED`: Device detached from the USB Host
+- `TINYUSB_EVENT_SUSPENDED`: Device entered suspended state
+- `TINYUSB_EVENT_RESUMED`: Device was resumed from suspended state
 
 To configure the USB Device Event Callback, provide the callback to the `TINYUSB_DEFAULT_CONFIG()` macros:
 
@@ -109,6 +112,8 @@ To configure the USB Device Event Callback, provide the callback to the `TINYUSB
     switch (event->id) {
     case TINYUSB_EVENT_ATTACHED:
     case TINYUSB_EVENT_DETACHED:
+    case TINYUSB_EVENT_SUSPENDED:
+    case TINYUSB_EVENT_RESUMED:
     default:
         break;
     }
@@ -134,6 +139,8 @@ User Argument could be passed to the USB Device Event callback as a second argum
     switch (event->id) {
     case TINYUSB_EVENT_ATTACHED:
     case TINYUSB_EVENT_DETACHED:
+    case TINYUSB_EVENT_SUSPENDED:
+    case TINYUSB_EVENT_RESUMED:
     default:
         break;
     }
@@ -143,6 +150,49 @@ User Argument could be passed to the USB Device Event callback as a second argum
     const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG(device_event_handler, (void*) context);
     tinyusb_driver_install(&tusb_cfg);
   }
+```
+
+### Suspend / Resume Device Events
+
+Suspend and resume device events are **optional** and are disabled by default.
+Users can choose one of the following approaches:
+
+#### Option 1 — Use esp_tinyusb device events (recommended for integration)
+
+Enable the following Kconfig options:
+
+- `CONFIG_TINYUSB_SUSPEND_CALLBACK` → enables `TINYUSB_EVENT_SUSPENDED`
+- `CONFIG_TINYUSB_RESUME_CALLBACK` → enables `TINYUSB_EVENT_RESUMED`
+
+When enabled:
+
+- esp_tinyusb provides strong implementations of:
+  - `tud_suspend_cb()`
+  - `tud_resume_cb()`
+- esp_tinyusb dispatches suspend/resume events via the device event callback.
+
+⚠️ **Important:**
+When these options are enabled, user applications **MUST NOT** define
+`tud_suspend_cb()` or `tud_resume_cb()` themselves. Doing so will result
+in a linker error due to multiple definitions.
+
+#### Option 2 — Use TinyUSB callbacks directly (default behavior)
+
+If the Kconfig options are **disabled** (default):
+
+- esp_tinyusb does NOT handle suspend/resume events
+- Users may implement TinyUSB callbacks directly in their application:
+
+```c
+void tud_suspend_cb(bool remote_wakeup_en)
+{
+    // User suspend handling
+}
+
+void tud_resume_cb(void)
+{
+    // User resume handling
+}
 ```
 
 ### Peripheral port
@@ -187,8 +237,7 @@ Configure USB descriptors using the `tinyusb_config_t` structure:
 - `descriptor.high_speed_config`
 - `descriptor.qualifier`
 
-If any descriptor field is set to `NULL`, default descriptor will be assigned during installation.
-Values of default descriptors could be configured via `menuconfig`.
+If any descriptor field is set to `NULL`, default descriptor will be assigned during installation. Values of default descriptors could be configured via `menuconfig`.
 
 ```c
   #include "tinyusb_default_config.h"
@@ -226,6 +275,7 @@ For self-powered devices, monitoring the VBUS voltage is required. To do this:
     tinyusb_driver_install(&tusb_cfg);
   }
 ```
+
 If external PHY is used:
 
 ```c
@@ -369,10 +419,10 @@ void main(void)
 }
 ```
 
-
 **Storage callback**
 
 Storage event callback is called, when one of the following events occurred:
+
 - `TINYUSB_MSC_EVENT_MOUNT_START`: Start mount from APP to USB or from USB to APP
 - `TINYUSB_MSC_EVENT_MOUNT_COMPLETE`: Complete mount from USB to APP or from APP to USB
 - `TINYUSB_MSC_EVENT_FORMAT_REQUIRED`: Filesystem not found, format needed
@@ -437,14 +487,14 @@ void main(void)
 **Performance Table (ESP32-S3):**
 
 | FIFO Size | Read Speed | Write Speed |
-|-----------|------------|-------------|
+| --------- | ---------- | ----------- |
 | 512 B     | 0.566 MB/s | 0.236 MB/s  |
 | 8192 B    | 0.925 MB/s | 0.928 MB/s  |
 
 **Performance Table (ESP32-P4):**
 
 | FIFO Size | Read Speed | Write Speed |
-|-----------|------------|-------------|
+| --------- | ---------- | ----------- |
 | 512 B     | 1.174 MB/s | 0.238 MB/s  |
 | 8192 B    | 4.744 MB/s | 2.157 MB/s  |
 | 32768 B   | 5.998 MB/s | 4.485 MB/s  |
@@ -452,11 +502,12 @@ void main(void)
 **Performance Table (ESP32-S2, SPI Flash):**
 
 | FIFO Size | Write Speed |
-|-----------|-------------|
+| --------- | ----------- |
 | 512 B     | 5.59 KB/s   |
 | 8192 B    | 21.54 KB/s  |
 
 **Note:** Internal SPI flash is for demonstration only; use SD cards or external flash for higher performance.
 
 ## Examples
+
 You can find examples in [ESP-IDF on GitHub](https://github.com/espressif/esp-idf/tree/master/examples/peripherals/usb/device).

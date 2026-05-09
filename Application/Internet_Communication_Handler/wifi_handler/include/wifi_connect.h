@@ -37,4 +37,16 @@ void wifi_connect_task_start(void);
 void wifi_connect_task_stop(void);
 bool wifi_is_sntp_synced(void);
 uint8_t wifi_get_connection_status(void);
+
+/**
+ * @brief Start WiFi in AP mode for the browser-based config portal.
+ *
+ * SSID: DA2-Gateway-Config  |  Password: datn1234  |  IP: 192.168.4.1
+ *
+ * If WiFi was previously running in STA mode it is torn down first.
+ * Call web_config_handler_start(WEB_MODE_AP) and captive_dns_start()
+ * immediately after this returns.
+ */
+void wifi_ap_start(void);
+
 #endif // WIFI_CONNECT_H

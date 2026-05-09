@@ -1,173 +1,198 @@
-/**
- * @file lan_comm.h
- * @brief LAN Communication Library for WAN MCU (SPI Slave)
- */
-
 #ifndef LAN_COMM_H
 #define LAN_COMM_H
 
-#include "driver/gpio.h"
+#include <stdint.h>
+#include <stdbool.h>
 #include "driver/spi_slave.h"
 #include "esp_err.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include <stdbool.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief Protocol headers
- */
-#define LAN_COMM_HEADER_CF 0x4346 // "CF" - Command Frame
-#define LAN_COMM_HEADER_DT 0x4454 // "DT" - Data Frame
-#define LAN_COMM_HEADER_DQ 0x4451 // "DQ" - Data Query
-#define LAN_COMM_HEADER_CQ 0x4351 // "CQ" - Config Query
-#define LAN_COMM_HEADER_SIZE 2
+#define LAN_COMM_DEFAULT_RX_BUFFER    16384     // 16KB – large enough for max config JSON
+#define LAN_COMM_DEFAULT_TX_BUFFER    16384     // 16KB
+#define LAN_COMM_TRANS_QUEUE_SIZE     7
+#define LAN_COMM_ACK_TIMEOUT_MS       500
+#define LAN_COMM_DQ_RETRY_MS          50        //
+#define LAN_COMM_DQ_RETRY_COUNT       10
+#define LAN_COMM_GPIO_PULSE_US        100
+#define LAN_COMM_DMA_DESCRIPTOR_SIZE  4092
+#define LAN_COMM_MAX_DMA_DESCRIPTORS  8
 
-/**
- * @brief Default configuration values
- */
-#define LAN_COMM_DEFAULT_RX_BUFFER_SIZE 4096
-#define LAN_COMM_DEFAULT_TX_BUFFER_SIZE 4096
-#define LAN_COMM_TRANS_QUEUE_SIZE 3
+// Frame headers
+#define LAN_COMM_HEADER_CF            0x4346    // Command Frame
+#define LAN_COMM_HEADER_DT            0x4454    // Data Transfer
+#define LAN_COMM_HEADER_DQ            0x4451    // Data Query
+#define LAN_COMM_HEADER_CQ            0x4351    // Config Query
+#define LAN_COMM_HEADER_SIZE          2
 
-/**
- * @brief Status codes
- */
+// DMA alignment
+#define DMA_ALIGNMENT                 4
+#define DMA_ALIGN_SIZE(x)             (((x) + (DMA_ALIGNMENT - 1)) & ~(DMA_ALIGNMENT - 1))
+
 typedef enum {
-  LAN_COMM_OK = 0,
-  LAN_COMM_ERR_INVALID_ARG,
-  LAN_COMM_ERR_TIMEOUT,
-  LAN_COMM_ERR_INVALID_STATE,
-  LAN_COMM_ERR_NO_MEM,
-  LAN_COMM_ERR_INVALID_HEADER,
-  LAN_COMM_ERR_BUS_BUSY,
-  LAN_COMM_ERR_NOT_INITIALIZED,
-  LAN_COMM_ERR_NO_DATA
+    LAN_COMM_OK = 0,
+    LAN_COMM_ERR_INVALID_ARG,
+    LAN_COMM_ERR_NOT_INITIALIZED,
+    LAN_COMM_ERR_NOMEM,
+    LAN_COMM_ERR_TIMEOUT,
+    LAN_COMM_ERR_BUS_BUSY,
+    LAN_COMM_ERR_INVALID_STATE,
+    LAN_COMM_ERR_DMA_ALIGN,
+    LAN_COMM_ERR_NO_DATA,
+    LAN_COMM_ERR_INVALID_HEADER
 } lan_comm_status_t;
+// STRUCTURES
 
 /**
- * @brief Configuration structure
+ * @brief SPI Slave Configuration
  */
 typedef struct {
-  // GPIO pins
-  int gpio_sck; // SPI Clock
-  int gpio_cs;  // Chip Select
-  int gpio_io0; // MOSI / IO0
-  int gpio_io1; // MISO / IO1
-  int gpio_io2; // WP / IO2 (for Quad mode)
-  int gpio_io3; // HD / IO3 (for Quad mode)
-
-  // SPI configuration
-  uint8_t mode;              // SPI mode (0-3)
-  spi_host_device_t host_id; // SPI peripheral (SPI2_HOST or SPI3_HOST)
-
-  // DMA configuration
-  int dma_channel; // DMA channel (SPI_DMA_CH_AUTO recommended)
-
-  // Buffer sizes
-  uint16_t rx_buffer_size; // Size of RX buffer
-  uint16_t tx_buffer_size; // Size of TX buffer
-
-  // Options
-  bool enable_quad_mode; // Enable QSPI (4-bit) mode
+    // GPIO pins
+    int gpio_sck;
+    int gpio_cs;
+    int gpio_io0;
+    int gpio_io1;
+    int gpio_data_ready;    // GPIO8 output, -1 to disable
+    
+    // SPI settings
+    uint8_t mode;           // SPI mode 0-3
+    spi_host_device_t host_id;
+    int dma_channel;
+    
+    // Buffer sizes (16KB to accommodate large config JSON payloads)
+    size_t rx_buffer_size;
+    size_t tx_buffer_size;
+    
+    // Features
+    bool auto_signal_data_ready;  // Auto-pulse GPIO on TX load
 } lan_comm_config_t;
 
 /**
- * @brief Received packet structure
+ * @brief Default configuration macro
  */
-typedef struct {
-  uint16_t header_type;    // LAN_COMM_HEADER_CF or LAN_COMM_HEADER_DT
-  uint8_t *payload;        // Pointer to payload data
-  uint16_t payload_length; // Payload length
-} lan_comm_packet_t;
+#define LAN_COMM_CONFIG_DEFAULT() { \
+    .gpio_sck = 12, \
+    .gpio_cs = 10, \
+    .gpio_io0 = 11, \
+    .gpio_io1 = 13, \
+    .gpio_data_ready = 8, \
+    .mode = 0, \
+    .host_id = SPI2_HOST, \
+    .dma_channel = SPI_DMA_CH_AUTO, \
+    .rx_buffer_size = LAN_COMM_DEFAULT_RX_BUFFER, \
+    .tx_buffer_size = LAN_COMM_DEFAULT_TX_BUFFER, \
+    .auto_signal_data_ready = false \
+}
 
 /**
- * @brief Handle structure (opaque)
+ * @brief Opaque handle
  */
 typedef struct lan_comm_handle_s *lan_comm_handle_t;
 
 /**
- * @brief Initialize LAN communication library (Slave mode)
- *
- * @param config Configuration structure
- * @param handle Output handle pointer
- * @return lan_comm_status_t Status code
+ * @brief Parsed packet structure
  */
-lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
-                                lan_comm_handle_t *handle);
+typedef struct {
+    uint16_t header_type;        // CF, DT, DQ, CQ
+    uint8_t *payload;            // Pointer to payload (points into RX buffer)
+    uint16_t payload_length;     // Payload length (excluding header)
+} lan_comm_packet_t;
 
 /**
- * @brief Deinitialize LAN communication library
- *
- * @param handle Handle to deinitialize
- * @return lan_comm_status_t Status code
+ * @brief Frame callback for parsed frames
+ * Called for each frame found in DMA buffer
+ */
+typedef void (*lan_comm_frame_callback_t)(const lan_comm_packet_t *packet, void *user_arg);
+
+// PUBLIC API
+/**
+ * @brief Initialize SPI Slave with DMA buffering
+ * 
+ * @param config Configuration structure
+ * @param[out] handle Output handle
+ * @return LAN_COMM_OK on success
+ */
+lan_comm_status_t lan_comm_init(const lan_comm_config_t *config, lan_comm_handle_t *handle);
+
+/**
+ * @brief Deinitialize SPI Slave
  */
 lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle);
 
 /**
- * @brief Prepare to receive data from master
- * Queue a receive transaction that will be filled when master sends data
- *
- * @param handle Communication handle
- * @return lan_comm_status_t Status code
+ * @brief Queue receive transaction (pre-queue for next master TX)
+ * Must be called before master transmits
  */
 lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle);
 
 /**
- * @brief Check if received data is available (non-blocking)
- *
- * @param handle Communication handle
- * @param packet Output packet structure (filled if data available)
- * @param timeout_ms Timeout in milliseconds (0 for non-blocking)
- * @return lan_comm_status_t LAN_COMM_OK if data received, LAN_COMM_ERR_TIMEOUT
- * if no data
+ * @brief Get received packet with DMA buffer parsing
+ * 
+ * Parses DMA buffer, skips 0x00 padding, extracts first valid frame
+ * 
+ * @param handle Handle
+ * @param[out] packet Parsed packet structure
+ * @param timeout_ms Timeout in milliseconds
+ * @return LAN_COMM_OK on success
  */
-lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
-                                               lan_comm_packet_t *packet,
-                                               uint32_t timeout_ms);
+lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle, 
+                                                 lan_comm_packet_t *packet, 
+                                                 uint32_t timeout_ms);
 
 /**
- * @brief Load data into TX buffer for master to read
- * This data will be sent automatically when master initiates a read transaction
- *
- * @param handle Communication handle
- * @param data_to_send Data to load into TX buffer
+ * @brief Parse DMA buffer and call callback for each frame
+ * 
+ * Advanced API for processing multiple frames in one buffer
+ * 
+ * @param handle Handle
+ * @param buffer DMA buffer to parse
+ * @param length Buffer length
+ * @param callback Callback for each valid frame
+ * @param user_arg User argument passed to callback
+ * @return Number of frames parsed
+ */
+uint32_t lan_comm_parse_dma_buffer(lan_comm_handle_t handle,
+                                     const uint8_t *buffer,
+                                     size_t length,
+                                     lan_comm_frame_callback_t callback,
+                                     void *user_arg);
+
+/**
+ * @brief Load TX data and queue transaction
+ * 
+ * @param handle Handle
+ * @param data_to_send Data to send (complete frame with header)
  * @param length Data length
- * @return lan_comm_status_t Status code
+ * @return LAN_COMM_OK on success
  */
-lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
-                                        const uint8_t *data_to_send,
-                                        uint16_t length);
+lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle, 
+                                         const uint8_t *data_to_send, 
+                                         uint16_t length);
 
 /**
- * @brief Get last error status
- *
- * @param handle Communication handle
- * @return lan_comm_status_t Last error code
+ * @brief Signal data-ready to master (GPIO pulse)
+ * 
+ * Sends LOW → delay → HIGH pulse on data_ready GPIO
+ * Master detects rising edge with ISR (<5ms response)
+ */
+lan_comm_status_t lan_comm_signal_data_ready(lan_comm_handle_t handle);
+
+/**
+ * @brief Get last error code
  */
 lan_comm_status_t lan_comm_get_last_error(lan_comm_handle_t handle);
 
 /**
  * @brief Get statistics
- *
- * @param handle Communication handle
- * @param packets_received Output: number of packets received
- * @param errors Output: number of errors
- * @return lan_comm_status_t Status code
  */
-lan_comm_status_t lan_comm_get_statistics(lan_comm_handle_t handle,
-                                          uint32_t *packets_received,
-                                          uint32_t *errors);
+lan_comm_status_t lan_comm_get_statistics(lan_comm_handle_t handle, 
+                                           uint32_t *packets_received, 
+                                           uint32_t *errors);
 
 /**
- * @brief Clear statistics counters
- *
- * @param handle Communication handle
- * @return lan_comm_status_t Status code
+ * @brief Clear statistics
  */
 lan_comm_status_t lan_comm_clear_statistics(lan_comm_handle_t handle);
 

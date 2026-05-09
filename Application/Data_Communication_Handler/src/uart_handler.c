@@ -4,17 +4,18 @@
 
 #include "uart_handler.h"
 #include "config_handler.h"
+#include "esp_log.h"
 #include "lte_connect.h"
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
 #include "wifi_connect.h"
 #include <string.h>
 
+
 #define DEFAULT_UART_PORT_NUM UART_NUM_0
 #define DEFAULT_UART_BAUD_RATE 115200
 #define DEFAULT_UART_TX_PIN GPIO_NUM_43
 #define DEFAULT_UART_RX_PIN GPIO_NUM_44
-#define UART_BUF_SIZE 512
 
 static const char *TAG = "uart_handler";
 static bool uart_handler_running = false;
@@ -26,7 +27,11 @@ extern wifi_config_context_t g_wifi_ctx;
 extern lte_config_context_t g_lte_ctx;
 extern mqtt_config_context_t g_mqtt_ctx;
 extern config_internet_type_t g_internet_type;
+extern bool g_internet_fallback;
+extern config_internet_type_t g_internet_fallback_type;
 extern config_server_type_t g_server_type;
+extern http_config_data_t g_http_cfg;
+extern coap_config_data_t g_coap_cfg;
 
 // Gateway info
 #define GATEWAY_MODEL "ESP32S3_IoT_Gateway"
@@ -76,12 +81,37 @@ static void uart_send_kv_ulong(const char *key, unsigned long value) {
   uart_println(buffer);
 }
 
+void uart_handler_send_config_result(bool success, const char *message) {
+  char buffer[CONFIG_RESULT_MSG_MAX_LEN + 32];
+  snprintf(buffer, sizeof(buffer), "CONFIG_ACK:%s:%s",
+           success ? "SUCCESS" : "FAIL",
+           (message && message[0] != '\0') ? message : "UNKNOWN");
+  uart_println(buffer);
+}
+
+/**
+ * @brief Convert TCA stack-enum index to port-pin label: index -> "PxBit"
+ * Examples: 5 -> "05" (P05), 6 -> "06" (P06), 11 -> "11" (P11)
+ */
+static void tca_pin_to_label(uint8_t pin, char *out, size_t size) {
+  if (pin < 16) {
+    snprintf(out, size, "%d%d", pin / 8, pin % 8);
+  } else {
+    strncpy(out, "", size);
+  }
+}
+
 /**
  * @brief Handle CFSC (Config Scan) command
  * Combines local WAN config + remote LAN config (via SPI)
  */
 static void handle_cfsc_command(void) {
   ESP_LOGI(TAG, "Processing CFSC (scan) command");
+
+  // Suppress all ESP log output for the duration of the CFSC response so that
+  // debug messages from other tasks (MCU_LAN_UL, MCU_LAN_DL, etc.) do not
+  // interleave with the structured data sent to the PC app on the same UART.
+  esp_log_level_set("*", ESP_LOG_NONE);
 
   // Start marker
   uart_println("CFSC_RESP:START");
@@ -112,45 +142,105 @@ static void handle_cfsc_command(void) {
 
   // Internet type
   const char *inet_type_str = (g_internet_type == CONFIG_INTERNET_WIFI) ? "WIFI"
-                              : (g_internet_type == CONFIG_INTERNET_LTE)
-                                  ? "LTE"
+                              : (g_internet_type == CONFIG_INTERNET_LTE) ? "LTE"
+                              : (g_internet_type == CONFIG_INTERNET_ETHERNET)
+                                  ? "ETHERNET"
                                   : "UNKNOWN";
   uart_send_kv("internet_type", inet_type_str);
 
-  // WiFi settings
-  uart_send_kv("wifi_ssid", g_wifi_ctx.ssid);
-  uart_send_kv("wifi_password",
-               strlen(g_wifi_ctx.pass) > 0 ? "***HIDDEN***" : "");
-  uart_send_kv("wifi_username", g_wifi_ctx.username);
-  uart_send_kv_int("wifi_auth_mode", g_wifi_ctx.auth_mode);
+  /* Fallback settings */
+  uart_send_kv("internet_fallback", g_internet_fallback ? "1" : "0");
+  const char *fb_type_str =
+      (g_internet_fallback_type == CONFIG_INTERNET_WIFI)       ? "WIFI"
+      : (g_internet_fallback_type == CONFIG_INTERNET_LTE)      ? "LTE"
+      : (g_internet_fallback_type == CONFIG_INTERNET_ETHERNET) ? "ETHERNET"
+                                                               : "UNKNOWN";
+  uart_send_kv("internet_fallback_type", fb_type_str);
 
-  // LTE settings
-  uart_send_kv("lte_apn", g_lte_ctx.apn);
-  uart_send_kv("lte_username", g_lte_ctx.username);
-  uart_send_kv("lte_password",
-               strlen(g_lte_ctx.password) > 0 ? "***HIDDEN***" : "");
-  const char *lte_comm_str =
-      (g_lte_ctx.comm_type == LTE_HANDLER_UART) ? "UART" : "USB";
-  uart_send_kv("lte_comm_type", lte_comm_str);
-  uart_send_kv_ulong("lte_max_retries", g_lte_ctx.max_reconnect_attempts);
-  uart_send_kv_ulong("lte_timeout_ms", g_lte_ctx.reconnect_timeout_ms);
-  uart_send_kv("lte_auto_reconnect",
-               g_lte_ctx.auto_reconnect ? "true" : "false");
+  // WiFi settings - thread-safe read
+  wifi_config_context_t wifi_cfg;
+  if (config_get_wifi_safe(&wifi_cfg) == ESP_OK) {
+    uart_send_kv("wifi_ssid", wifi_cfg.ssid);
+    uart_send_kv("wifi_password",
+                 strlen(wifi_cfg.pass) > 0 ? "***HIDDEN***" : "");
+    uart_send_kv("wifi_username", wifi_cfg.username);
+    uart_send_kv_int("wifi_auth_mode", wifi_cfg.auth_mode);
+  } else {
+    uart_send_kv("wifi_ssid", "ERROR:MUTEX_TIMEOUT");
+    ESP_LOGE(TAG, "Failed to get WiFi config safely");
+  }
+
+  // LTE settings - thread-safe read
+  lte_config_context_t lte_cfg;
+  if (config_get_lte_safe(&lte_cfg) == ESP_OK) {
+    uart_send_kv("lte_apn", lte_cfg.apn);
+    uart_send_kv("lte_username", lte_cfg.username);
+    uart_send_kv("lte_password",
+                 strlen(lte_cfg.password) > 0 ? "***HIDDEN***" : "");
+    const char *lte_comm_str =
+        (lte_cfg.comm_type == LTE_HANDLER_UART) ? "UART" : "USB";
+    uart_send_kv("lte_comm_type", lte_comm_str);
+    uart_send_kv_ulong("lte_max_retries", lte_cfg.max_reconnect_attempts);
+    uart_send_kv_ulong("lte_timeout_ms", lte_cfg.reconnect_timeout_ms);
+    uart_send_kv("lte_auto_reconnect",
+                 lte_cfg.auto_reconnect ? "true" : "false");
+    uart_send_kv("lte_modem_name", lte_cfg.modem_name);
+    char pwr_pin_str[4] = {0};
+    char rst_pin_str[4] = {0};
+    tca_pin_to_label(lte_cfg.pwr_pin, pwr_pin_str, sizeof(pwr_pin_str));
+    tca_pin_to_label(lte_cfg.rst_pin, rst_pin_str, sizeof(rst_pin_str));
+    uart_send_kv("lte_pwr_pin", pwr_pin_str);
+    uart_send_kv("lte_rst_pin", rst_pin_str);
+  } else {
+    uart_send_kv("lte_apn", "ERROR:MUTEX_TIMEOUT");
+  }
 
   // Server settings
-  const char *srv_type_str = (g_server_type == CONFIG_SERVERTYPE_MQTT) ? "MQTT"
-                             : (g_server_type == CONFIG_SERVERTYPE_HTTP)
-                                 ? "HTTP"
-                                 : "UNKNOWN";
+  const char *srv_type_str =
+      (g_server_type == CONFIG_SERVERTYPE_MQTT)   ? "MQTT"
+      : (g_server_type == CONFIG_SERVERTYPE_COAP) ? "COAP"
+      : (g_server_type == CONFIG_SERVERTYPE_HTTP) ? "HTTP"
+                                                  : "UNKNOWN";
   uart_send_kv("server_type", srv_type_str);
 
-  // MQTT settings
-  uart_send_kv("mqtt_broker", g_mqtt_ctx.broker_uri);
-  uart_send_kv("mqtt_pub_topic", g_mqtt_ctx.publish_topic);
-  uart_send_kv("mqtt_sub_topic", g_mqtt_ctx.subscribe_topic);
-  uart_send_kv("mqtt_device_token",
-               strlen(g_mqtt_ctx.device_token) > 0 ? "***HIDDEN***" : "");
-  uart_send_kv("mqtt_attribute_topic", g_mqtt_ctx.attribute_topic);
+  // MQTT settings - thread-safe read
+  mqtt_config_context_t mqtt_cfg;
+  if (config_get_mqtt_safe(&mqtt_cfg) == ESP_OK) {
+    uart_send_kv("mqtt_broker", mqtt_cfg.broker_uri);
+    uart_send_kv("mqtt_pub_topic", mqtt_cfg.publish_topic);
+    uart_send_kv("mqtt_sub_topic", mqtt_cfg.subscribe_topic);
+    uart_send_kv("mqtt_device_token",
+                 strlen(mqtt_cfg.device_token) > 0 ? "***HIDDEN***" : "");
+    uart_send_kv("mqtt_attribute_topic", mqtt_cfg.attribute_topic);
+    uart_send_kv_int("mqtt_keepalive_s", mqtt_cfg.keepalive_s);
+    uart_send_kv_ulong("mqtt_timeout_ms", mqtt_cfg.timeout_ms);
+  } else {
+    uart_send_kv("mqtt_broker", "ERROR:MUTEX_TIMEOUT");
+  }
+
+  // HTTP settings (plain global — only written by config_handler task)
+  uart_send_kv("http_url", g_http_cfg.server_url);
+  uart_send_kv("http_auth_token",
+               strlen(g_http_cfg.auth_token) > 0 ? "***HIDDEN***" : "");
+  uart_send_kv_int("http_port", g_http_cfg.port);
+  uart_send_kv_int("http_use_tls", g_http_cfg.use_tls ? 1 : 0);
+  uart_send_kv_int("http_verify_server", g_http_cfg.verify_server ? 1 : 0);
+  uart_send_kv_ulong("http_timeout_ms", g_http_cfg.timeout_ms);
+
+  // CoAP settings (plain global — only written by config_handler task)
+  uart_send_kv("coap_host", g_coap_cfg.host);
+  uart_send_kv("coap_resource_path", g_coap_cfg.resource_path);
+  uart_send_kv("coap_device_token",
+               strlen(g_coap_cfg.device_token) > 0 ? "***HIDDEN***" : "");
+  uart_send_kv_int("coap_port", g_coap_cfg.port);
+  uart_send_kv_int("coap_use_dtls", g_coap_cfg.use_dtls ? 1 : 0);
+  uart_send_kv_ulong("coap_ack_timeout_ms", g_coap_cfg.ack_timeout_ms);
+  uart_send_kv_int("coap_max_retransmit", g_coap_cfg.max_retransmit);
+  uart_send_kv_ulong("coap_rpc_poll_interval_ms",
+                     g_coap_cfg.rpc_poll_interval_ms);
+
+  // WAN hardware stack ID (identifies which LTE adapter is connected)
+  uart_send_kv("stack_wan_id", config_get_wan_stack_id());
 
   // ==================== LAN CONFIG (FROM LAN MCU VIA SPI) ====================
   uart_println("");
@@ -161,7 +251,7 @@ static void handle_cfsc_command(void) {
   uint16_t lan_config_len = 0;
 
   esp_err_t ret = mcu_lan_handler_request_config_async(
-    lan_config_buffer, &lan_config_len, sizeof(lan_config_buffer), 3000);
+      lan_config_buffer, &lan_config_len, sizeof(lan_config_buffer), 3000);
 
   if (ret == ESP_OK && lan_config_len > 0) {
     // Parse LAN config: format is "key=value|key=value|key=value"
@@ -191,6 +281,8 @@ static void handle_cfsc_command(void) {
   uart_println("");
   uart_println("CFSC_RESP:END");
 
+  // Restore log level before returning
+  esp_log_level_set("*", ESP_LOG_INFO);
   ESP_LOGI(TAG, "CFSC response completed");
 }
 
@@ -240,10 +332,113 @@ static int check_mode_command(const char *data, int len) {
 }
 
 /**
+ * @brief Process one complete (newline-terminated) UART command line.
+ *        line must be null-terminated and already trimmed of \r/\n.
+ */
+static void process_uart_line(char *line, int line_len) {
+  ESP_LOGI(TAG, "Processing line: %s (len=%d)", line, line_len);
+
+  // Mode switch commands (CONFIG / NORMAL)
+  int mode_cmd = check_mode_command(line, line_len);
+  if (mode_cmd != -1) {
+    ESP_LOGI(TAG, "Mode switch: %s", line);
+    if (s_mode_switch_callback) {
+      s_mode_switch_callback(mode_cmd);
+    }
+    uart_println(mode_cmd == 0 ? "OK:CONFIG_MODE" : "OK:NORMAL_MODE");
+    return;
+  }
+
+  // CFSC — config scan
+  if (strncasecmp(line, "CFSC", 4) == 0) {
+    handle_cfsc_command();
+    return;
+  }
+
+  // All other config commands start with "CF"
+  if (line_len >= 2 && line[0] == 'C' && line[1] == 'F') {
+    if (line_len <= 2)
+      return; // bare "CF" with no payload
+
+    const char *cmd_data = line + 2;
+    int cmd_len = line_len - 2;
+
+    if (cmd_len > (UART_BUF_SIZE - 2)) {
+      ESP_LOGE(TAG, "Config too large: %d bytes", cmd_len);
+      uart_println("ERROR:CONFIG_TOO_LARGE");
+      return;
+    }
+
+    config_type_t type = config_parse_type(cmd_data, cmd_len);
+    if (type == CONFIG_TYPE_UNKNOWN) {
+      ESP_LOGW(TAG, "Unknown command type for: %s", cmd_data);
+      uart_println("ERROR:UNKNOWN_CMD");
+      return;
+    }
+
+    config_command_t *cmd =
+        (config_command_t *)malloc(sizeof(config_command_t));
+    if (cmd == NULL) {
+      ESP_LOGE(TAG, "Failed to allocate config command buffer");
+      uart_println("ERROR:OUT_OF_MEMORY");
+      return;
+    }
+
+    memset(cmd, 0, sizeof(*cmd));
+    cmd->type = type;
+    cmd->data_len = cmd_len;
+    cmd->source = CMD_SOURCE_UART;
+    memcpy(cmd->raw_data, cmd_data, cmd_len);
+    cmd->raw_data[cmd_len] = '\0';
+
+    if (g_config_handler_queue) {
+      if (xQueueSend(g_config_handler_queue, &cmd, pdMS_TO_TICKS(100)) ==
+          pdTRUE) {
+        ESP_LOGI(TAG, "Command forwarded to config handler");
+        uart_println("OK:CMD_QUEUED");
+      } else {
+        ESP_LOGW(TAG, "Config queue full");
+        uart_println("ERROR:QUEUE_FULL");
+        free(cmd);
+      }
+    } else {
+      uart_println("ERROR:NO_HANDLER");
+      free(cmd);
+    }
+  } else {
+    uart_println("ERROR:INVALID_CMD");
+    ESP_LOGD(TAG, "Invalid command: %s", line);
+  }
+}
+
+/**
  * @brief UART handler task
+ *
+ * Reads raw bytes from UART and assembles them into lines (delimited by '\n').
+ * Each complete line is dispatched to process_uart_line(), so multiple commands
+ * packed into a single UART transfer (e.g. "CFSV:0\r\nCFMQ:...\r\n") are all
+ * processed correctly instead of being treated as one command.
  */
 static void uart_handler_task(void *arg) {
-  uint8_t data[UART_BUF_SIZE];
+  // Raw receive buffer
+  uint8_t *data = (uint8_t *)heap_caps_malloc(UART_BUF_SIZE, MALLOC_CAP_SPIRAM);
+  if (data == NULL) {
+    ESP_LOGE(TAG, "Failed to allocate UART rx buffer in PSRAM (%d bytes)",
+             UART_BUF_SIZE);
+    vTaskDelete(NULL);
+    return;
+  }
+
+  // Line-assembly buffer — accumulates bytes until '\n'
+  char *line_buf = (char *)heap_caps_malloc(UART_BUF_SIZE, MALLOC_CAP_SPIRAM);
+  if (line_buf == NULL) {
+    ESP_LOGE(TAG, "Failed to allocate UART line buffer in PSRAM (%d bytes)",
+             UART_BUF_SIZE);
+    free(data);
+    vTaskDelete(NULL);
+    return;
+  }
+  int line_len = 0;
 
   uart_reinit(DEFAULT_UART_PORT_NUM, DEFAULT_UART_BAUD_RATE,
               DEFAULT_UART_TX_PIN, DEFAULT_UART_RX_PIN);
@@ -256,85 +451,50 @@ static void uart_handler_task(void *arg) {
     int len = uart_read_bytes(DEFAULT_UART_PORT_NUM, data, UART_BUF_SIZE - 1,
                               pdMS_TO_TICKS(100));
 
-    if (len > 0) {
-      data[len] = '\0';
+    if (len <= 0)
+      continue;
 
-      // Trim whitespace
-      while (len > 0 && (data[len - 1] == '\r' || data[len - 1] == '\n' ||
-                         data[len - 1] == ' ')) {
-        data[--len] = '\0';
-      }
+    // Feed each received byte into the line assembler
+    for (int i = 0; i < len; i++) {
+      char c = (char)data[i];
 
-      if (len == 0)
-        continue;
-
-      ESP_LOGI(TAG, "Received: %s (len=%d)", data, len);
-
-      // Check for mode switch commands FIRST
-      int mode_cmd = check_mode_command((char *)data, len);
-      if (mode_cmd != -1) {
-        ESP_LOGI(TAG, "Mode switch: %s", (char *)data);
-        if (s_mode_switch_callback) {
-          s_mode_switch_callback(mode_cmd);
+      if (c == '\n') {
+        // End of line — null-terminate and trim trailing '\r' / spaces
+        line_buf[line_len] = '\0';
+        while (line_len > 0 && (line_buf[line_len - 1] == '\r' ||
+                                line_buf[line_len - 1] == ' ')) {
+          line_buf[--line_len] = '\0';
         }
-        uart_println(mode_cmd == 0 ? "OK:CONFIG_MODE" : "OK:NORMAL_MODE");
-        continue;
-      }
 
-      // Check for CFSC command (scan config)
-      if (strncasecmp((char *)data, "CFSC", 4) == 0) {
-        handle_cfsc_command();
-        continue;
-      }
-
-      // Check for config commands starting with "CF"
-      if (len >= 2 && data[0] == 'C' && data[1] == 'F') {
-        ESP_LOGI(TAG, "Config command: %s", (char *)data);
-
-        if (len > 2) {
-          const char *cmd_data = (const char *)(data + 2);
-          int cmd_len = len - 2;
-
-          config_type_t type = config_parse_type(cmd_data, cmd_len);
-          if (type != CONFIG_TYPE_UNKNOWN) {
-            config_command_t cmd;
-            cmd.type = type;
-            cmd.data_len = cmd_len;
-            memcpy(cmd.raw_data, cmd_data, cmd_len);
-            cmd.raw_data[cmd_len] = '\0';
-
-            if (g_config_handler_queue) {
-              if (xQueueSend(g_config_handler_queue, &cmd,
-                             pdMS_TO_TICKS(100)) == pdTRUE) {
-                ESP_LOGI(TAG, "Command forwarded to config handler");
-                uart_println("OK:CMD_QUEUED");
-              } else {
-                ESP_LOGW(TAG, "Config queue full");
-                uart_println("ERROR:QUEUE_FULL");
-              }
-            } else {
-              uart_println("ERROR:NO_HANDLER");
-            }
-          } else {
-            ESP_LOGW(TAG, "Unknown command type");
-            uart_println("ERROR:UNKNOWN_CMD");
-          }
+        if (line_len > 0) {
+          process_uart_line(line_buf, line_len);
         }
-      } else {
-        // Unknown command
-        uart_println("ERROR:INVALID_CMD");
-        ESP_LOGD(TAG, "Invalid command: %s", data);
+
+        // Reset for next line
+        line_len = 0;
+
+      } else if (c != '\r') {
+        // Accumulate (ignore bare '\r')
+        if (line_len < UART_BUF_SIZE - 1) {
+          line_buf[line_len++] = c;
+        } else {
+          ESP_LOGE(TAG, "UART line buffer overflow, discarding %d bytes",
+                   line_len);
+          uart_println("ERROR:CMD_TOO_LARGE");
+          line_len = 0;
+        }
       }
     }
   }
 
-  if (s_uart_initialized) {
-    uart_driver_delete(DEFAULT_UART_PORT_NUM);
-  }
-
+  free(data);
+  free(line_buf);
   ESP_LOGI(TAG, "UART handler task exiting");
   vTaskDelete(NULL);
 }
+
+static StackType_t *s_uart_task_stack = NULL;
+static StaticTask_t *s_uart_task_tcb = NULL;
 
 void uart_handler_task_start(void) {
   if (uart_handler_running) {
@@ -342,9 +502,21 @@ void uart_handler_task_start(void) {
     return;
   }
 
+  if (s_uart_task_stack == NULL) {
+      s_uart_task_stack = (StackType_t *)heap_caps_malloc(1024 * 16, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  if (s_uart_task_tcb == NULL) {
+      s_uart_task_tcb = (StaticTask_t *)heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+
+  if (!s_uart_task_stack || !s_uart_task_tcb) {
+      ESP_LOGE(TAG, "Failed to allocate UART handler task stack/TCB in PSRAM");
+      return;
+  }
+
   uart_handler_running = true;
-  xTaskCreate(uart_handler_task, "uart_handler", 4096, NULL, 5, NULL);
-  ESP_LOGI(TAG, "UART handler task created");
+  xTaskCreateStatic(uart_handler_task, "uart_handler", 1024 * 16, NULL, 5, s_uart_task_stack, s_uart_task_tcb);
+  ESP_LOGI(TAG, "UART handler task created in PSRAM");
 }
 
 void uart_handler_task_stop(void) {

@@ -1,82 +1,72 @@
-/**
- * @file lan_comm.c
- * @brief LAN Communication Library Implementation (Slave - API only)
- */
-
 #include "lan_comm.h"
+#include "driver/gpio.h"
+#include "driver/spi_slave.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include <stdlib.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "rom/ets_sys.h"
 #include <string.h>
 
 static const char *TAG = "LAN_COMM_SLAVE";
 
-/**
- * @brief Internal handle structure
- */
 struct lan_comm_handle_s {
-  // Configuration
   lan_comm_config_t config;
 
-  // SPI slave transaction
   spi_slave_transaction_t spi_trans;
 
-  // Buffers
   uint8_t *rx_buffer;
   uint8_t *tx_buffer;
   size_t tx_buffer_len;
   SemaphoreHandle_t buffer_mutex;
 
-  // State
   bool is_initialized;
   bool transaction_queued;
+  bool gpio_configured;
   lan_comm_status_t last_error;
 
-  // Statistics
   uint32_t packets_received;
+  uint32_t packets_sent;
   uint32_t error_count;
 };
 
-// Forward declarations
-static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
-                                               lan_comm_packet_t *packet);
+static lan_comm_status_t lan_comm_parse_frame(const uint8_t *buffer,
+                                              size_t length,
+                                              lan_comm_packet_t *packet,
+                                              size_t *frame_size);
 static void lan_comm_report_error(lan_comm_handle_t handle,
                                   lan_comm_status_t error, const char *context);
+static esp_err_t setup_data_ready_gpio(int gpio_pin);
 
-/**
- * @brief Initialize LAN communication library
- */
 lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
                                 lan_comm_handle_t *handle) {
   if (config == NULL || handle == NULL) {
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  ESP_LOGD(TAG,
-           "Initializing LAN communication library (Slave mode for WAN MCU)");
+  ESP_LOGI(TAG, "============================================");
+  ESP_LOGI(TAG, "SPI Slave Initialization (Full-Duplex)");
+  ESP_LOGI(TAG, "============================================");
 
-  // Allocate handle
   lan_comm_handle_t h =
       (lan_comm_handle_t)calloc(1, sizeof(struct lan_comm_handle_s));
   if (h == NULL) {
     ESP_LOGE(TAG, "Failed to allocate handle");
-    return LAN_COMM_ERR_NO_MEM;
+    return LAN_COMM_ERR_NOMEM;
   }
 
-  // Copy configuration
   memcpy(&h->config, config, sizeof(lan_comm_config_t));
 
-  // Set defaults
   if (h->config.rx_buffer_size == 0) {
-    h->config.rx_buffer_size = LAN_COMM_DEFAULT_RX_BUFFER_SIZE;
+    h->config.rx_buffer_size = LAN_COMM_DEFAULT_RX_BUFFER;
   }
   if (h->config.tx_buffer_size == 0) {
-    h->config.tx_buffer_size = LAN_COMM_DEFAULT_TX_BUFFER_SIZE;
+    h->config.tx_buffer_size = LAN_COMM_DEFAULT_TX_BUFFER;
   }
   if (h->config.dma_channel == 0) {
     h->config.dma_channel = SPI_DMA_CH_AUTO;
   }
 
-  // Allocate buffers (DMA-capable memory)
   h->rx_buffer =
       (uint8_t *)heap_caps_malloc(h->config.rx_buffer_size, MALLOC_CAP_DMA);
   h->tx_buffer =
@@ -84,27 +74,28 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
   h->buffer_mutex = xSemaphoreCreateMutex();
   h->tx_buffer_len = 0;
 
-  if (h->rx_buffer == NULL || h->tx_buffer == NULL || h->buffer_mutex == NULL) {
+  if (h->rx_buffer == NULL || h->tx_buffer == NULL ||
+      h->buffer_mutex == NULL) {
     ESP_LOGE(TAG, "Failed to allocate buffers or mutex");
-    free(h->rx_buffer);
-    free(h->tx_buffer);
+    if (h->rx_buffer)
+      heap_caps_free(h->rx_buffer);
+    if (h->tx_buffer)
+      heap_caps_free(h->tx_buffer);
     if (h->buffer_mutex)
       vSemaphoreDelete(h->buffer_mutex);
     free(h);
-    return LAN_COMM_ERR_NO_MEM;
+    return LAN_COMM_ERR_NOMEM;
   }
 
-  // Clear buffers
   memset(h->rx_buffer, 0, h->config.rx_buffer_size);
   memset(h->tx_buffer, 0, h->config.tx_buffer_size);
 
-  // Configure SPI bus
   spi_bus_config_t bus_cfg = {
       .mosi_io_num = config->gpio_io0,
       .miso_io_num = config->gpio_io1,
       .sclk_io_num = config->gpio_sck,
-      .quadwp_io_num = config->enable_quad_mode ? config->gpio_io2 : -1,
-      .quadhd_io_num = config->enable_quad_mode ? config->gpio_io3 : -1,
+      .quadwp_io_num = -1,
+      .quadhd_io_num = -1,
       .max_transfer_sz = h->config.rx_buffer_size,
       .flags = 0};
 
@@ -117,89 +108,92 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
                                             .post_trans_cb = NULL};
 
   esp_err_t ret = spi_slave_initialize(config->host_id, &bus_cfg, &slave_cfg,
-                                       config->dma_channel);
+                                       h->config.dma_channel);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize SPI slave: %s", esp_err_to_name(ret));
-    free(h->rx_buffer);
-    free(h->tx_buffer);
+    heap_caps_free(h->rx_buffer);
+    heap_caps_free(h->tx_buffer);
     vSemaphoreDelete(h->buffer_mutex);
     free(h);
     return LAN_COMM_ERR_INVALID_STATE;
   }
 
-  // Configure GPIO for CS
   gpio_set_pull_mode(config->gpio_cs, GPIO_PULLUP_ONLY);
 
-  // Initialize state
+  h->gpio_configured = false;
+  if (config->gpio_data_ready >= 0) {
+    if (setup_data_ready_gpio(config->gpio_data_ready) == ESP_OK) {
+      h->gpio_configured = true;
+      ESP_LOGI(TAG, "Data-Ready GPIO: GPIO%d", config->gpio_data_ready);
+    } else {
+      ESP_LOGW(TAG, "Failed to setup GPIO%d, data-ready disabled",
+               config->gpio_data_ready);
+    }
+  }
+
   h->is_initialized = true;
   h->transaction_queued = false;
   h->last_error = LAN_COMM_OK;
   h->packets_received = 0;
+  h->packets_sent = 0;
   h->error_count = 0;
 
   *handle = h;
-  ESP_LOGD(TAG, "LAN communication initialized successfully (WAN MCU Slave)");
-  ESP_LOGD(TAG, "Mode: %d, RX Buffer: %d bytes, TX Buffer: %d bytes",
-           config->mode, h->config.rx_buffer_size, h->config.tx_buffer_size);
+
+  ESP_LOGI(TAG, "SPI slave ready (full-duplex)");
+  ESP_LOGI(TAG, "RX buffer: %u bytes, TX buffer: %u bytes",
+           (unsigned)h->config.rx_buffer_size,
+           (unsigned)h->config.tx_buffer_size);
 
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Deinitialize LAN communication library
- */
 lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
   if (handle == NULL || !handle->is_initialized) {
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  ESP_LOGD(TAG, "Deinitializing LAN communication library");
+  ESP_LOGI(TAG, "Deinitializing SPI slave");
 
-  // Free SPI slave
+  if (handle->gpio_configured && handle->config.gpio_data_ready >= 0) {
+    gpio_reset_pin(handle->config.gpio_data_ready);
+  }
+
   spi_slave_free(handle->config.host_id);
 
-  // Free resources
-  free(handle->rx_buffer);
-  free(handle->tx_buffer);
+  heap_caps_free(handle->rx_buffer);
+  heap_caps_free(handle->tx_buffer);
   vSemaphoreDelete(handle->buffer_mutex);
 
   handle->is_initialized = false;
   free(handle);
 
-  ESP_LOGD(TAG, "LAN communication deinitialized");
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Queue a receive transaction
- */
 lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle) {
   if (handle == NULL || !handle->is_initialized) {
     return LAN_COMM_ERR_NOT_INITIALIZED;
   }
 
   if (handle->transaction_queued) {
-    ESP_LOGD(TAG, "Transaction already queued");
-    return LAN_COMM_ERR_INVALID_STATE;
+    ESP_LOGD(TAG, "RX transaction already queued");
+    return LAN_COMM_OK;
   }
 
-  // Lock buffer
   if (xSemaphoreTake(handle->buffer_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
     lan_comm_report_error(handle, LAN_COMM_ERR_TIMEOUT,
                           "queue_receive mutex timeout");
     return LAN_COMM_ERR_TIMEOUT;
   }
 
-  // Clear RX buffer
   memset(handle->rx_buffer, 0, handle->config.rx_buffer_size);
 
-  // Setup transaction
   memset(&handle->spi_trans, 0, sizeof(spi_slave_transaction_t));
-  handle->spi_trans.length = handle->config.rx_buffer_size * 8; // in bits
+  handle->spi_trans.length = handle->config.rx_buffer_size * 8;
   handle->spi_trans.rx_buffer = handle->rx_buffer;
   handle->spi_trans.tx_buffer = handle->tx_buffer;
 
-  // Queue transaction
   esp_err_t ret =
       spi_slave_queue_trans(handle->config.host_id, &handle->spi_trans, 0);
 
@@ -213,14 +207,9 @@ lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle) {
   }
 
   handle->transaction_queued = true;
-  ESP_LOGD(TAG, "Receive transaction queued");
-
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Get received packet (non-blocking check)
- */
 lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
                                                lan_comm_packet_t *packet,
                                                uint32_t timeout_ms) {
@@ -237,10 +226,8 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
     return LAN_COMM_ERR_INVALID_STATE;
   }
 
-  // Wait for transaction completion
   spi_slave_transaction_t *trans;
   TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
-
   esp_err_t ret =
       spi_slave_get_trans_result(handle->config.host_id, &trans, ticks);
 
@@ -258,35 +245,57 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
 
   handle->transaction_queued = false;
 
-  // Check if data was received
   if (trans->trans_len == 0) {
-    ESP_LOGD(TAG, "Empty transaction");
     return LAN_COMM_ERR_NO_DATA;
   }
 
-  // Convert trans_len from bits to bytes
   size_t received_bytes = trans->trans_len / 8;
-  ESP_LOGD(TAG, "Transaction complete: %d bytes received", received_bytes);
 
-  // Parse packet
+  size_t frame_size = 0;
   lan_comm_status_t status =
-      lan_comm_parse_packet(handle->rx_buffer, received_bytes, packet);
+      lan_comm_parse_frame(handle->rx_buffer, received_bytes, packet,
+                           &frame_size);
 
   if (status != LAN_COMM_OK) {
-    lan_comm_report_error(handle, status, "packet parse error");
+    if (status != LAN_COMM_ERR_NO_DATA) {
+      lan_comm_report_error(handle, status, "packet parse error");
+    }
     return status;
   }
 
   handle->packets_received++;
-  ESP_LOGD(TAG, "Packet parsed: Header=0x%04X, Payload=%d bytes",
-           packet->header_type, packet->payload_length);
-
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Load TX data
- */
+uint32_t lan_comm_parse_dma_buffer(lan_comm_handle_t handle,
+                                   const uint8_t *buffer, size_t length,
+                                   lan_comm_frame_callback_t callback,
+                                   void *user_arg) {
+  if (!handle || !buffer || length == 0 || !callback) {
+    return 0;
+  }
+
+  uint32_t frame_count = 0;
+  size_t offset = 0;
+
+  while (offset < length) {
+    lan_comm_packet_t packet;
+    size_t frame_size = 0;
+    lan_comm_status_t status =
+        lan_comm_parse_frame(&buffer[offset], length - offset, &packet,
+                             &frame_size);
+    if (status == LAN_COMM_OK && frame_size > 0) {
+      callback(&packet, user_arg);
+      frame_count++;
+      offset += frame_size;
+    } else {
+      offset++;
+    }
+  }
+
+  return frame_count;
+}
+
 lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
                                         const uint8_t *data_to_send,
                                         uint16_t length) {
@@ -299,32 +308,52 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
   }
 
   if (length > handle->config.tx_buffer_size) {
-    ESP_LOGE(TAG, "TX data length %d exceeds buffer size %d", length,
-             handle->config.tx_buffer_size);
+    ESP_LOGE(TAG, "TX data length %u exceeds buffer size %u", length,
+             (unsigned)handle->config.tx_buffer_size);
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  // Lock TX buffer
   if (xSemaphoreTake(handle->buffer_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
     lan_comm_report_error(handle, LAN_COMM_ERR_TIMEOUT,
                           "load_tx_data mutex timeout");
     return LAN_COMM_ERR_TIMEOUT;
   }
 
-  // Copy data to TX buffer
+  spi_slave_disable(handle->config.host_id);
+
   memset(handle->tx_buffer, 0, handle->config.tx_buffer_size);
   memcpy(handle->tx_buffer, data_to_send, length);
   handle->tx_buffer_len = length;
 
+  spi_slave_enable(handle->config.host_id);
+
   xSemaphoreGive(handle->buffer_mutex);
 
-  ESP_LOGD(TAG, "TX data loaded: %d bytes", length);
+  handle->packets_sent++;
+
+  if (handle->gpio_configured && handle->config.auto_signal_data_ready) {
+    lan_comm_signal_data_ready(handle);
+  }
+
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Get last error
- */
+lan_comm_status_t lan_comm_signal_data_ready(lan_comm_handle_t handle) {
+  if (handle == NULL || !handle->is_initialized) {
+    return LAN_COMM_ERR_NOT_INITIALIZED;
+  }
+
+  if (!handle->gpio_configured || handle->config.gpio_data_ready < 0) {
+    return LAN_COMM_ERR_INVALID_STATE;
+  }
+
+  gpio_set_level(handle->config.gpio_data_ready, 0);
+  ets_delay_us(LAN_COMM_GPIO_PULSE_US);
+  gpio_set_level(handle->config.gpio_data_ready, 1);
+
+  return LAN_COMM_OK;
+}
+
 lan_comm_status_t lan_comm_get_last_error(lan_comm_handle_t handle) {
   if (handle == NULL) {
     return LAN_COMM_ERR_INVALID_ARG;
@@ -332,9 +361,6 @@ lan_comm_status_t lan_comm_get_last_error(lan_comm_handle_t handle) {
   return handle->last_error;
 }
 
-/**
- * @brief Get statistics
- */
 lan_comm_status_t lan_comm_get_statistics(lan_comm_handle_t handle,
                                           uint32_t *packets_received,
                                           uint32_t *errors) {
@@ -350,62 +376,95 @@ lan_comm_status_t lan_comm_get_statistics(lan_comm_handle_t handle,
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Clear statistics
- */
 lan_comm_status_t lan_comm_clear_statistics(lan_comm_handle_t handle) {
   if (handle == NULL || !handle->is_initialized) {
     return LAN_COMM_ERR_NOT_INITIALIZED;
   }
 
   handle->packets_received = 0;
+  handle->packets_sent = 0;
   handle->error_count = 0;
 
   return LAN_COMM_OK;
 }
 
-// ===== Internal Functions =====
-
-/**
- * @brief Parse packet
- */
-static lan_comm_status_t lan_comm_parse_packet(uint8_t *buffer, size_t length,
-                                               lan_comm_packet_t *packet) {
-  if (buffer == NULL || length < LAN_COMM_HEADER_SIZE || packet == NULL) {
+static lan_comm_status_t lan_comm_parse_frame(const uint8_t *buffer,
+                                              size_t length,
+                                              lan_comm_packet_t *packet,
+                                              size_t *frame_size) {
+  if (buffer == NULL || length < LAN_COMM_HEADER_SIZE || packet == NULL ||
+      frame_size == NULL) {
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  // Extract header (first 2 bytes)
-  packet->header_type = (buffer[0] << 8) | buffer[1];
-  if (packet->header_type == 0x0000) {
-    // Silent ignore - empty transaction
+  size_t offset = 0;
+  while (offset < length && buffer[offset] == 0x00) {
+    offset++;
+  }
+
+  if (offset >= length || (length - offset) < LAN_COMM_HEADER_SIZE) {
     return LAN_COMM_ERR_NO_DATA;
   }
-  // Validate header
-  if (packet->header_type != LAN_COMM_HEADER_CF &&
-      packet->header_type != LAN_COMM_HEADER_DT && packet->header_type != LAN_COMM_HEADER_DQ) {
-    ESP_LOGE(TAG, "Invalid header: 0x%04X", packet->header_type);
+
+  uint16_t header = (buffer[offset] << 8) | buffer[offset + 1];
+  if (header == 0x0000) {
+    return LAN_COMM_ERR_NO_DATA;
+  }
+
+  if (header == LAN_COMM_HEADER_CF) {
+    bool is_polling = true;
+    for (size_t i = offset + LAN_COMM_HEADER_SIZE;
+         i < offset + LAN_COMM_HEADER_SIZE + 10 && i < length; i++) {
+      if (buffer[i] != 0x00) {
+        is_polling = false;
+        break;
+      }
+    }
+    if (is_polling) {
+      return LAN_COMM_ERR_NO_DATA;
+    }
+  }
+
+  if (header != LAN_COMM_HEADER_CF && header != LAN_COMM_HEADER_DT &&
+      header != LAN_COMM_HEADER_DQ && header != LAN_COMM_HEADER_CQ) {
     return LAN_COMM_ERR_INVALID_HEADER;
   }
 
-  // Extract payload
-  packet->payload = &buffer[LAN_COMM_HEADER_SIZE];
-  packet->payload_length = length - LAN_COMM_HEADER_SIZE;
+  packet->header_type = header;
+  // Keep header bytes in payload for current uplink/downlink parsing logic.
+  packet->payload = (uint8_t *)&buffer[offset];
+  packet->payload_length = length - offset;
+  *frame_size = length - offset;
 
   return LAN_COMM_OK;
 }
 
-/**
- * @brief Report error
- */
 static void lan_comm_report_error(lan_comm_handle_t handle,
                                   lan_comm_status_t error,
                                   const char *context) {
   if (handle == NULL) {
     return;
   }
-
   handle->last_error = error;
   handle->error_count++;
-  ESP_LOGE(TAG, "Error: %d, Context: %s", error, context);
+  ESP_LOGE(TAG, "Error #%lu (code=%d): %s", handle->error_count, error,
+           context);
+}
+
+static esp_err_t setup_data_ready_gpio(int gpio_pin) {
+  gpio_config_t io_conf = {.pin_bit_mask = (1ULL << gpio_pin),
+                           .mode = GPIO_MODE_OUTPUT,
+                           .pull_up_en = GPIO_PULLUP_DISABLE,
+                           .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                           .intr_type = GPIO_INTR_DISABLE};
+
+  esp_err_t ret = gpio_config(&io_conf);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to configure GPIO%d: %s", gpio_pin,
+             esp_err_to_name(ret));
+    return ret;
+  }
+
+  gpio_set_level(gpio_pin, 0);
+  return ESP_OK;
 }

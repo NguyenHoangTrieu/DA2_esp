@@ -8,6 +8,8 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
+#include "esp_netif_defaults.h"
+#include "lwip/dns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
@@ -72,6 +74,19 @@ typedef struct {
 } lte_handler_ctx_t;
 
 static lte_handler_ctx_t *ctx = NULL;
+
+static void stop_bg_task_if_running(void) {
+  if (!ctx || !ctx->bg_task) {
+    return;
+  }
+
+  TaskHandle_t bg_task = ctx->bg_task;
+  ctx->bg_task = NULL;
+
+  if (bg_task != xTaskGetCurrentTaskHandle()) {
+    vTaskDelete(bg_task);
+  }
+}
 
 /**
  * @brief Set state with logging
@@ -174,6 +189,30 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "Netmask : " IPSTR, IP2STR(&event->ip_info.netmask));
     ESP_LOGI(TAG, "Gateway : " IPSTR, IP2STR(&event->ip_info.gw));
 
+    /* CRITICAL: Override DNS using dns_setserver() directly — not via
+     * esp_netif_set_dns_info(), which only updates the global lwIP DNS table
+     * when esp_netif_is_netif_up() is true. During IP_EVENT_PPP_GOT_IP the
+     * netif may not yet be marked "up", so esp_netif_set_dns_info() silently
+     * stores the value in the netif struct but never calls dns_setserver().
+     * Direct dns_setserver() always updates the table used by getaddrinfo(). */
+    ip_addr_t dns_addr;
+    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
+    dns_addr.type = IPADDR_TYPE_V4;
+    dns_setserver(0, &dns_addr);
+    ESP_LOGI(TAG, "Main DNS set to 8.8.8.8");
+
+    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
+    dns_setserver(1, &dns_addr);
+    ESP_LOGI(TAG, "Backup DNS set to 1.1.1.1");
+
+    /* Also update esp_netif DNS cache so info is consistent */
+    esp_netif_dns_info_t pub_dns;
+    pub_dns.ip.type = ESP_IPADDR_TYPE_V4;
+    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
+    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &pub_dns);
+    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("1.1.1.1");
+    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &pub_dns);
+
     if (ctx) {
       snprintf(ctx->network_info.ip, sizeof(ctx->network_info.ip), IPSTR,
                IP2STR(&event->ip_info.ip));
@@ -212,6 +251,33 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
 static void on_ppp_changed(void *arg, esp_event_base_t event_base,
                            int32_t event_id, void *event_data) {
   ESP_LOGI(TAG, "PPP state changed: %d", event_id);
+
+  if (ctx && ctx->event_group &&
+      (event_id == NETIF_PPP_ERRORUSER ||
+       event_id == NETIF_PPP_CONNECT_FAILED ||
+       event_id == NETIF_PPP_PHASE_TERMINATE ||
+       event_id == NETIF_PPP_PHASE_DISCONNECT ||
+       event_id == NETIF_PPP_PHASE_DEAD)) {
+    ctx->network_info_valid = false;
+    xEventGroupSetBits(ctx->event_group, DISCONNECT_BIT);
+    if (ctx->state != LTE_STATE_DISCONNECTED) {
+      set_state(LTE_STATE_DISCONNECTED);
+    }
+  }
+
+  /* NETIF_PPP_ERRORNONE (event_id == 0) fires AFTER the PPP stack finishes
+   * IPCP negotiation and may re-apply the carrier's DNS servers (overwriting
+   * our dns_setserver() from on_ip_event). Re-apply 8.8.8.8 here to ensure
+   * public DNS is always the final value written to the lwIP DNS table.  */
+  if (event_id == 0) {
+    ip_addr_t dns_addr;
+    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
+    dns_addr.type = IPADDR_TYPE_V4;
+    dns_setserver(0, &dns_addr);
+    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
+    dns_setserver(1, &dns_addr);
+    ESP_LOGI(TAG, "DNS re-confirmed after PPP ready: 8.8.8.8 / 1.1.1.1");
+  }
 }
 
 /**
@@ -455,8 +521,25 @@ esp_err_t lte_handler_deinit(void) {
     return ESP_ERR_INVALID_STATE;
   }
 
+  ctx->config.auto_reconnect = false;
+
+  if (ctx->state == LTE_STATE_CONNECTED || ctx->state == LTE_STATE_CONNECTING ||
+      ctx->state == LTE_STATE_RECONNECTING) {
+    esp_err_t disconnect_ret = lte_handler_disconnect();
+    if (disconnect_ret != ESP_OK) {
+      ESP_LOGW(TAG, "PPP stop during deinit returned: %s",
+               esp_err_to_name(disconnect_ret));
+    }
+  }
+
   ctx->initialized = false;
   vTaskDelay(pdMS_TO_TICKS(100));
+  stop_bg_task_if_running();
+
+  /* Stop receiving PPP/IP callbacks before tearing down netif resources. */
+  esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event);
+  esp_event_handler_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID,
+                               &on_ppp_changed);
 
   /* Cleanup based on communication type */
   if (ctx->config.comm_type == LTE_HANDLER_UART) {
@@ -486,11 +569,6 @@ esp_err_t lte_handler_deinit(void) {
     esp_netif_destroy(ctx->esp_netif);
     ctx->esp_netif = NULL;
   }
-
-  /* Unregister event handlers */
-  esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &on_ip_event);
-  esp_event_handler_unregister(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID,
-                               &on_ppp_changed);
 
   if (ctx->event_group) {
     vEventGroupDelete(ctx->event_group);
@@ -585,7 +663,8 @@ esp_err_t lte_handler_disconnect(void) {
     return ESP_ERR_INVALID_STATE;
   }
 
-  if (ctx->state != LTE_STATE_CONNECTED) {
+  if (ctx->state != LTE_STATE_CONNECTED && ctx->state != LTE_STATE_CONNECTING &&
+      ctx->state != LTE_STATE_RECONNECTING) {
     ESP_LOGW(TAG, "Not connected");
     return ESP_OK;
   }

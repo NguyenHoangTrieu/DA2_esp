@@ -5,6 +5,15 @@
 * and optional OTA resumption using NVS.
 */
 #include "fota_handler.h"
+#include "config_handler.h"
+#include "esp_heap_caps.h"
+#include "esp_crt_bundle.h"
+#include "web_config_handler.h"
+#include "lwip/sockets.h"
+#include "lwip/netdb.h"
+#include <errno.h>
+#include <string.h>
+#include <strings.h>
 
 #if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
 /* The interface name value can refer to if_desc in esp_netif_defaults.h */
@@ -21,6 +30,23 @@ extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
 
 static bool ota_task_close = false;
+
+/* ------------------------------------------------------------------ */
+/*  Runtime firmware URL (overridable at runtime via set_url)          */
+/* ------------------------------------------------------------------ */
+static char s_fota_url[FOTA_CONFIG_FIRMWARE_URL_MAX_LEN] = FOTA_CONFIG_FIRMWARE_URL;
+
+void fota_handler_set_url(const char *url) {
+    if (!url || !url[0]) return;
+    strncpy(s_fota_url, url, sizeof(s_fota_url) - 1);
+    s_fota_url[sizeof(s_fota_url) - 1] = '\0';
+    ESP_LOGI(TAG, "[OTA] Firmware URL updated: %s", s_fota_url);
+    save_fota_wan_url_to_nvs();
+}
+
+const char *fota_handler_get_url(void) {
+    return s_fota_url;
+}
 
 #if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
 #define NVS_NAMESPACE_OTA_RESUMPTION  "ota_resumption"
@@ -225,191 +251,313 @@ static void get_sha256_of_partitions(void)
     print_sha256(sha_256, "SHA-256 for current firmware:");
 }
 
-void advanced_ota_task(void *pvParameter) 
+/* ------------------------------------------------------------------ */
+/*  Connectivity pre-check: TCP connect to host:port parsed from URL   */
+/* ------------------------------------------------------------------ */
+static bool server_reachable(void) {
+    /* Parse host and port from FOTA_CONFIG_FIRMWARE_URL at runtime so
+     * any URL format works (ThingsBoard, GitHub, custom HTTP, etc.). */
+    const char *url = fota_handler_get_url();
+    const char *after_scheme = strstr(url, "://");
+    if (!after_scheme) {
+        ESP_LOGW(TAG, "[OTA-CHECK] Malformed URL: %s", url);
+        return false;
+    }
+    after_scheme += 3; /* skip "://" */
+
+    /* Extract host (up to ':' or '/' or end) */
+    char host[128] = {0};
+    const char *port_ptr = NULL;
+    const char *slash    = strchr(after_scheme, '/');
+    const char *colon    = strchr(after_scheme, ':');
+    /* colon must be before the first slash to be a port separator */
+    if (colon && (!slash || colon < slash)) {
+        int hlen = (int)(colon - after_scheme);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, after_scheme, hlen);
+        port_ptr = colon + 1;
+    } else {
+        int hlen = slash ? (int)(slash - after_scheme) : (int)strlen(after_scheme);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, after_scheme, hlen);
+    }
+
+    char port_str[8] = "80";
+    if (port_ptr) {
+        int plen = slash ? (int)(slash - port_ptr) : (int)strlen(port_ptr);
+        if (plen > 0 && plen < (int)sizeof(port_str))
+            memcpy(port_str, port_ptr, plen);
+    } else if (strncmp(url, "https", 5) == 0) {
+        strcpy(port_str, "443");
+    }
+
+    struct addrinfo hints = {.ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM};
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, port_str, &hints, &res) != 0 || !res) {
+        ESP_LOGW(TAG, "[OTA-CHECK] DNS failed for %s", host);
+        return false;
+    }
+
+    int sock = socket(res->ai_family, SOCK_STREAM, 0);
+    if (sock < 0) { freeaddrinfo(res); return false; }
+
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+    int timeout_ms = FOTA_CONFIG_CONNECTIVITY_CHECK_TIMEOUT_MS;
+    uint32_t t0 = esp_log_timestamp();
+    int r = connect(sock, res->ai_addr, res->ai_addrlen);
+    if (r < 0 && errno == EINPROGRESS) {
+        struct timeval tv = {.tv_sec  = timeout_ms / 1000,
+                             .tv_usec = (timeout_ms % 1000) * 1000};
+        fd_set wfds; FD_ZERO(&wfds); FD_SET(sock, &wfds);
+        int sel = select(sock + 1, NULL, &wfds, NULL, &tv);
+        if (sel > 0) {
+            int so_err = 0; socklen_t sl = sizeof(so_err);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_err, &sl);
+            r = (so_err == 0) ? 0 : -1;
+        } else { r = -1; }
+    }
+    uint32_t ms = esp_log_timestamp() - t0;
+    close(sock);
+    freeaddrinfo(res);
+
+    if (r == 0) {
+        ESP_LOGI(TAG, "[OTA-CHECK] %s:%s reachable (%lums)", host, port_str, (unsigned long)ms);
+        return true;
+    }
+    ESP_LOGW(TAG, "[OTA-CHECK] %s:%s unreachable (%lums) errno=%d",
+             host, port_str, (unsigned long)ms, errno);
+    return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event handler to capture redirect Location response header          */
+/* ------------------------------------------------------------------ */
+static char s_wan_location_header[2048];
+static esp_err_t wan_ota_http_event_handler(esp_http_client_event_t *evt)
 {
-    ESP_LOGI(TAG, "Starting Advanced OTA - V1.0.0");
+    if (evt->event_id == HTTP_EVENT_ON_HEADER) {
+        if (strcasecmp(evt->header_key, "Location") == 0) {
+            strlcpy(s_wan_location_header, evt->header_value,
+                    sizeof(s_wan_location_header));
+        }
+    }
+    return ESP_OK;
+}
 
-    esp_err_t err;
-    esp_err_t ota_finish_err = ESP_OK;
+/* ------------------------------------------------------------------ */
+/*  OTA download via esp_http_client                                    */
+/* ------------------------------------------------------------------ */
+static esp_err_t ota_download(void) {
+    const char *fw_url = fota_handler_get_url();
+    ESP_LOGI(TAG, "[OTA] Downloading from: %s", fw_url);
 
-#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
-    esp_netif_t *netif = get_netif_from_desc(bind_interface_name);
-    if (netif == NULL) {
-        ESP_LOGE(TAG, "Can't find netif from interface description");
-        fota_handler_task_stop();
-        vTaskDelete(NULL);
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
+    if (!update) {
+        ESP_LOGE(TAG, "[OTA] No next OTA partition");
+        return ESP_FAIL;
     }
 
-    struct ifreq ifr;
-    esp_netif_get_netif_impl_name(netif, ifr.ifr_name);
-    ESP_LOGI(TAG, "Bind interface name is %s", ifr.ifr_name);
-#endif
+    char *buf = (char *)heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = (char *)malloc(4096);
+    if (!buf) return ESP_ERR_NO_MEM;
 
-    esp_http_client_config_t config = {
-        .url = FOTA_CONFIG_FIRMWARE_UPGRADE_URL,
-#if FOTA_CONFIG_USE_CERT_BUNDLE
-        .crt_bundle_attach = esp_crt_bundle_attach,
-#else
-        .cert_pem = (char *)server_cert_pem_start,
-#endif
-        .timeout_ms = FOTA_CONFIG_OTA_RECV_TIMEOUT,
-        .keep_alive_enable = true,
-        .buffer_size = 8 * 1024,
-        .buffer_size_tx = 8 * 1024,
-#if FOTA_CONFIG_FIRMWARE_UPGRADE_BIND_IF
-        .if_name = &ifr,
-#endif
-#if FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
-        .save_client_session = true,
-#endif
-#if FOTA_CONFIG_TLS_DYN_BUF_RX_STATIC
-        .tls_dyn_buf_strategy = HTTP_TLS_DYN_BUF_RX_STATIC,
-#endif
-    };
+    /* Resolve redirects first via lightweight probe requests. The
+     * HTTP_EVENT_ON_HEADER callback captures the Location response header
+     * (esp_http_client_get_header() only reads request headers — wrong API). */
+    static char s_final_url[2048];
+    strlcpy(s_final_url, fw_url, sizeof(s_final_url));
 
-#if FOTA_CONFIG_FIRMWARE_UPGRADE_URL_FROM_STDIN
-    char url_buf[OTA_URL_SIZE];
-    if (strcmp(config.url, "FROM_STDIN") == 0) {
-        configure_stdin_stdout();
-        fgets(url_buf, OTA_URL_SIZE, stdin);
-        int len = strlen(url_buf);
-        url_buf[len - 1] = '\0';
-        config.url = url_buf;
-    } else {
-        ESP_LOGE(TAG, "Configuration mismatch: wrong firmware upgrade image url");
-        fota_handler_task_stop();
-        vTaskDelete(NULL);
-    }
-#endif
-
-#if FOTA_CONFIG_SKIP_COMMON_NAME_CHECK
-    config.skip_cert_common_name_check = true;
-#endif
-
-#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
-    nvs_handle_t nvs_ota_resumption_handle;
-    err = nvs_open(NVS_NAMESPACE_OTA_RESUMPTION, NVS_READWRITE, &nvs_ota_resumption_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
-        fota_handler_task_stop();
-        vTaskDelete(NULL);
-    }
-
-    uint32_t ota_wr_len = 0;
-    err = ota_res_get_written_len_from_nvs(nvs_ota_resumption_handle, config.url, &ota_wr_len);
-    if (err != ESP_OK) {
-        ESP_LOGD(TAG, "Starting OTA from beginning");
-    } else {
-        ESP_LOGD(TAG, "OTA write length fetched successfully: %d bytes", ota_wr_len);
-    }
-#endif
-
-    esp_https_ota_config_t ota_config = {
-        .http_config = &config,
-        .http_client_init_cb = _http_client_init_cb,
-#if FOTA_CONFIG_ENABLE_PARTIAL_HTTP_DOWNLOAD
-        .partial_http_download = true,
-        .max_http_request_size = FOTA_CONFIG_HTTP_REQUEST_SIZE,
-#endif
-#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
-        .ota_resumption = true,
-        .ota_image_bytes_written = ota_wr_len,
-#endif
-    };
-
-    ESP_LOGI(TAG, "Attempting to download update from %s", config.url);
-
-    esp_https_ota_handle_t https_ota_handle = NULL;
-    err = esp_https_ota_begin(&ota_config, &https_ota_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ESP HTTPS OTA Begin failed");
-        fota_handler_task_stop();
-        vTaskDelete(NULL);
-    }
-
-    esp_app_desc_t app_desc = {};
-    err = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed");
-        goto ota_end;
-    }
-    
-    err = validate_image_header(&app_desc);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "image header verification failed");
-        goto ota_end;
-    }
-
-    while (1) {
-        err = esp_https_ota_perform(https_ota_handle);
-        if (err != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+    for (int redir = 0; redir < 5; redir++) {
+        s_wan_location_header[0] = '\0';
+        bool cur_https = (strncmp(s_final_url, "https://", 8) == 0);
+        esp_http_client_config_t probe_cfg = {
+            .url               = s_final_url,
+            .timeout_ms        = 10000,
+            .buffer_size       = 2048,
+            .buffer_size_tx    = 512,
+            .keep_alive_enable = false,
+            .event_handler     = wan_ota_http_event_handler,
+            .crt_bundle_attach = cur_https ? esp_crt_bundle_attach : NULL,
+        };
+        esp_http_client_handle_t probe = esp_http_client_init(&probe_cfg);
+        if (!probe) { ESP_LOGE(TAG, "[OTA] probe init failed"); free(buf); return ESP_FAIL; }
+        esp_http_client_open(probe, 0);
+        esp_http_client_fetch_headers(probe);
+        int pstatus = esp_http_client_get_status_code(probe);
+        esp_http_client_cleanup(probe);
+        if (pstatus == 301 || pstatus == 302 || pstatus == 307 || pstatus == 308) {
+            if (s_wan_location_header[0] == '\0') {
+                ESP_LOGE(TAG, "[OTA] Redirect %d: no Location header", redir + 1);
+                free(buf); return ESP_FAIL;
+            }
+            ESP_LOGI(TAG, "[OTA] Redirect %d (%d) → %s", redir + 1, pstatus, s_wan_location_header);
+            strlcpy(s_final_url, s_wan_location_header, sizeof(s_final_url));
+        } else {
             break;
         }
-        
-        // Monitor OTA progress
-        const size_t len = esp_https_ota_get_image_len_read(https_ota_handle);
-        ESP_LOGD(TAG, "Image bytes read: %d", len);
-        
-#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
-        err = ota_res_save_cfg_to_nvs(nvs_ota_resumption_handle, len, config.url);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save OTA config to NVS (%s)", esp_err_to_name(err));
-        }
-#endif
     }
 
-    if (esp_https_ota_is_complete_data_received(https_ota_handle) != true) {
-        ESP_LOGE(TAG, "Complete data was not received.");
-    } else {
-#if FOTA_CONFIG_ENABLE_OTA_RESUMPTION
-        err = ota_res_cleanup_cfg_from_nvs(nvs_ota_resumption_handle);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to clean up OTA config from NVS (%s)", esp_err_to_name(err));
+    ESP_LOGI(TAG, "[OTA] Final URL: %s", s_final_url);
+    bool use_https = (strncmp(s_final_url, "https://", 8) == 0);
+    esp_http_client_config_t http_cfg = {
+        .url               = s_final_url,
+        .timeout_ms        = FOTA_CONFIG_OTA_RECV_TIMEOUT,
+        .buffer_size       = 4096,
+        .buffer_size_tx    = 2048,
+        .keep_alive_enable = false,
+        .crt_bundle_attach = use_https ? esp_crt_bundle_attach : NULL,
+    };
+
+    esp_err_t ret = ESP_FAIL;
+    esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
+    if (!client) {
+        ESP_LOGE(TAG, "[OTA] esp_http_client_init failed");
+        free(buf);
+        return ESP_FAIL;
+    }
+
+    if (esp_http_client_open(client, 0) != ESP_OK) {
+        ESP_LOGE(TAG, "[OTA] HTTP open failed");
+        goto cleanup_client;
+    }
+
+    int64_t content_len = esp_http_client_fetch_headers(client);
+    int http_status = esp_http_client_get_status_code(client);
+    ESP_LOGI(TAG, "[OTA] HTTP %d, Content-Length: %lld", http_status, content_len);
+
+    if (http_status != 200) {
+        ESP_LOGE(TAG, "[OTA] HTTP error %d (expected 200)", http_status);
+        goto cleanup_client;
+    }
+
+    esp_ota_handle_t ota_handle = 0;
+    bool ota_started = false;
+    if (esp_ota_begin(update, OTA_SIZE_UNKNOWN, &ota_handle) != ESP_OK) {
+        ESP_LOGE(TAG, "[OTA] esp_ota_begin failed");
+        goto cleanup_client;
+    }
+    ota_started = true;
+
+    int total = 0;
+    uint32_t t0 = esp_log_timestamp();
+    while (true) {
+        int len = esp_http_client_read(client, buf, 4096);
+        if (len == 0) break;
+        if (len < 0) {
+            ESP_LOGE(TAG, "[OTA] Read error %d at %d bytes", len, total);
+            goto cleanup_ota;
         }
-#endif
-        ota_finish_err = esp_https_ota_finish(https_ota_handle);
-        if ((err == ESP_OK) && (ota_finish_err == ESP_OK)) {
-            ESP_LOGI(TAG, "ESP_HTTPS_OTA upgrade successful. Rebooting ...");
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        if (esp_ota_write(ota_handle, buf, len) != ESP_OK) {
+            ESP_LOGE(TAG, "[OTA] esp_ota_write failed");
+            goto cleanup_ota;
+        }
+        total += len;
+        if (total % (64 * 1024) < 4096)
+            ESP_LOGI(TAG, "[OTA] Progress: %d bytes", total);
+    }
+
+    {
+        uint32_t ms = esp_log_timestamp() - t0;
+        ESP_LOGI(TAG, "[OTA] %d bytes in %lums (%ld B/s)", total,
+                 (unsigned long)ms, ms > 0 ? (long)(total * 1000L / ms) : 0);
+    }
+
+    if (total == 0) {
+        ESP_LOGE(TAG, "[OTA] Zero bytes received");
+        goto cleanup_ota;
+    }
+
+    ret = esp_ota_end(ota_handle);
+    ota_started = false;
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "[OTA] esp_ota_end: %s", esp_err_to_name(ret));
+        goto cleanup_client;
+    }
+    ret = esp_ota_set_boot_partition(update);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "[OTA] set_boot_partition: %s", esp_err_to_name(ret));
+    }
+    goto cleanup_client;
+
+cleanup_ota:
+    if (ota_started) esp_ota_abort(ota_handle);
+cleanup_client:
+    free(buf);
+    if (client) {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+    }
+    return ret;
+}
+
+void advanced_ota_task(void *pvParameter) 
+{
+    ESP_LOGI(TAG, "Starting Advanced OTA - V2.0.0");
+    ESP_LOGI(TAG, "[OTA] Target: %s", fota_handler_get_url());
+
+    get_sha256_of_partitions();
+
+    const int max_retries = 5;
+    esp_err_t err = ESP_FAIL;
+
+    for (int attempt = 1; attempt <= max_retries; attempt++) {
+        uint32_t t0 = esp_log_timestamp();
+        ESP_LOGI(TAG, "OTA attempt %d/%d", attempt, max_retries);
+
+        if (!server_reachable()) {
+            ESP_LOGW(TAG, "[OTA] ThingsBoard not reachable, waiting 15s...");
+            vTaskDelay(pdMS_TO_TICKS(15000));
+            continue;
+        }
+
+        err = ota_download();
+
+        uint32_t elapsed = esp_log_timestamp() - t0;
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "OTA succeeded after %lums, rebooting...", (unsigned long)elapsed);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             esp_restart();
-        } else {
-            if (ota_finish_err == ESP_ERR_OTA_VALIDATE_FAILED) {
-                ESP_LOGE(TAG, "Image validation failed, image is corrupted");
-            }
-            ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed 0x%x", ota_finish_err);
-            fota_handler_task_stop();
-            vTaskDelete(NULL);
         }
+        ESP_LOGE(TAG, "OTA attempt %d failed after %lums: %s",
+                 attempt, (unsigned long)elapsed, esp_err_to_name(err));
+
+        if (attempt < max_retries)
+            vTaskDelay(pdMS_TO_TICKS(15000));
     }
 
-ota_end:
-    esp_https_ota_abort(https_ota_handle);
-    ESP_LOGE(TAG, "ESP_HTTPS_OTA upgrade failed");
-    fota_handler_task_stop();
+    ESP_LOGE(TAG, "OTA failed after %d attempts, rebooting", max_retries);
+    esp_restart();
     vTaskDelete(NULL);
 }
 
-void fota_handler_task_start(void) 
+void fota_handler_task_start(void)
 {
     ota_task_close = false;
-    get_sha256_of_partitions();
 
-    // Register event handler for OTA events
-    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, 
-                                                &event_handler, NULL));
+    /* Stop web config portal to free heap for OTA download buffer */
+    ESP_LOGI(TAG, "Stopping web config portal to free heap for OTA");
+    web_config_handler_stop();
 
-// #if FOTA_CONFIG_CONNECT_WIFI
-//     esp_wifi_set_ps(WIFI_PS_NONE);
-// #endif
-    ESP_LOGI(TAG, "Creating Advanced OTA task");
-    ESP_LOGI(TAG, "Free heap before OTA task: %d bytes", esp_get_free_heap_size());
-    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task", 16 * 1024, NULL, 5, NULL);
+    size_t internal_free    = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG, "Heap before OTA task: total=%d, internal=%d, internal_largest=%d",
+             esp_get_free_heap_size(), internal_free, internal_largest);
+
+    /* The OTA task calls flash/cache-sensitive APIs such as
+     * esp_partition_get_sha256(), esp_ota_begin() and esp_ota_write().
+     * Its stack must stay in internal RAM or esp_task_stack_is_sane_cache_disabled()
+     * will assert when flash cache is disabled. */
+    BaseType_t ret = xTaskCreate(&advanced_ota_task, "advanced_ota_task",
+                                 16 * 1024, NULL, 5, NULL);
     if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create Advanced OTA task");
-    } else {
-        ESP_LOGI(TAG, "Advanced OTA task created successfully");
+        ESP_LOGE(TAG, "Failed to create Advanced OTA task in internal RAM (largest=%d)",
+                 internal_largest);
+        return;
     }
-    
+
+    ESP_LOGI(TAG, "Advanced OTA task created successfully in internal RAM");
 }
 
 void fota_handler_task_stop(void) 

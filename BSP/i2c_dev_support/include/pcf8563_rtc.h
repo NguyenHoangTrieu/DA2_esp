@@ -16,7 +16,7 @@ extern "C" {
 
 // PCF8563 Configuration
 #define PCF8563_I2C_ADDR    0x51
-#define PCF8563_I2C_FREQ_HZ 400000  // 400kHz (PCF8563 supports up to 400kHz)
+#define PCF8563_I2C_FREQ_HZ  100000  // 100kHz (PCF8563 supports up to 400kHz)
 
 /**
  * @brief Initialize PCF8563 RTC (requires i2c_dev_support to be initialized first)

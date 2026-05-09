@@ -12,13 +12,16 @@ typedef struct {
   bool initialized;
   bool task_running;
   TaskHandle_t task_handle;
-  char apn[64];
+  char modem_name[32];          /**< Modem model name, e.g. "A7600C1"              */
+  char apn[64];                 /**< APN; empty string = LTE task will not start   */
   char username[32];
   char password[32];
   uint32_t max_reconnect_attempts;
   uint32_t reconnect_timeout_ms;
   bool auto_reconnect;
   lte_handler_comm_type_t comm_type;
+  uint8_t pwr_pin;  /**< TCA GPIO pin for modem POWER (numeric ID 00-17, default=5 for P05) */
+  uint8_t rst_pin;  /**< TCA GPIO pin for modem RESET (numeric ID 00-17, default=6 for P06) */
 } lte_config_context_t;
 
 extern lte_config_context_t g_lte_ctx;
@@ -37,5 +40,10 @@ void lte_connect_task_start(void);
  * @brief Stop LTE connection task
  */
 void lte_connect_task_stop(void);
+
+/**
+ * @brief Returns true after the first successful SNTP synchronisation over LTE.
+ */
+bool lte_is_sntp_synced(void);
 
 #endif /* LTE_CONNECT_H */

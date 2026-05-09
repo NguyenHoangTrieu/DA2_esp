@@ -3,7 +3,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 #include "esp_wifi_types.h"
 #include "esp_err.h"
 #include "esp_system.h"
@@ -11,11 +10,13 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_netif_ppp.h"
+#include "esp_netif_defaults.h"
 #include "esp_modem_usb.h"
 #include "esp_modem_usb_recov_helper.h"
 #include "esp_modem_usb_dce.h"
 #include "esp_modem_usb_dce_common_commands.h"
 #include "usbh_modem_board.h"
+#include "stack_handler.h"
 
 static const char *TAG = "modem_board";
 ESP_EVENT_DEFINE_BASE(MODEM_BOARD_EVENT);
@@ -34,10 +35,7 @@ ESP_EVENT_DEFINE_BASE(MODEM_BOARD_EVENT);
         return return_tag;                                                            \
     }                                                                             \
 
-#define MODEM_POWER_GPIO                    CONFIG_MODEM_POWER_GPIO
-#define MODEM_RESET_GPIO                    CONFIG_MODEM_RESET_GPIO
-#define MODEM_POWER_GPIO_INACTIVE_LEVEL     CONFIG_MODEM_POWER_GPIO_INACTIVE_LEVEL
-#define MODEM_RESET_GPIO_INACTIVE_LEVEL     CONFIG_MODEM_RESET_GPIO_INACTIVE_LEVEL
+/* Timing constants for power/reset pulse sequences (milliseconds) */
 #define MODEM_POWER_GPIO_ACTIVE_MS          500
 #define MODEM_POWER_GPIO_INACTIVE_MS        8000
 #define MODEM_RESET_GPIO_ACTIVE_MS          200
@@ -64,6 +62,31 @@ static esp_modem_usb_dce_t *s_dce = NULL;
 static EventGroupHandle_t s_modem_evt_hdl = NULL;
 static esp_ip_addr_t s_dns_ip_main = ESP_IP4ADDR_INIT(8, 8, 8, 8);
 static esp_ip_addr_t s_dns_ip_backup = ESP_IP4ADDR_INIT(114, 114, 114, 114);
+
+/* ===== TCA GPIO configuration for modem POWER / RESET ===== */
+/* Defaults: P05 for modem power, P06 for modem reset (flat GPIO mapping).
+ * Call modem_board_set_tca_pins() before modem_board_init() to override. */
+static uint8_t  s_modem_pwr_pin           = 5;   /* P05 (numeric GPIO ID in flat map) */
+static uint8_t  s_modem_rst_pin           = 6;   /* P06 (numeric GPIO ID in flat map) */
+static const int s_modem_pwr_inactive_lvl = 1;  /* active-low power key */
+static const int s_modem_rst_inactive_lvl = 1;  /* active-low reset     */
+
+static char s_modem_name[32] = "";  /* set by modem_board_set_modem_name() */
+
+void modem_board_set_tca_pins(uint8_t pwr_pin, uint8_t rst_pin) {
+    s_modem_pwr_pin = pwr_pin;
+    s_modem_rst_pin = rst_pin;
+    ESP_LOGI(TAG, "TCA GPIO pins set: pwr=%u, rst=%u", pwr_pin, rst_pin);
+}
+
+void modem_board_set_modem_name(const char *name) {
+    if (name) {
+        strncpy(s_modem_name, name, sizeof(s_modem_name) - 1);
+        s_modem_name[sizeof(s_modem_name) - 1] = '\0';
+    }
+}
+
+const char *modem_board_get_name(void) { return s_modem_name; }
 
 typedef struct {
     esp_modem_usb_dce_t parent;
@@ -143,20 +166,19 @@ static esp_err_t modem_board_reset(esp_modem_usb_dce_t *dce)
 
 esp_err_t modem_board_force_reset(void)
 {
-    ESP_LOGI(TAG, "Force reset modem board....");
-    gpio_config_t io_config = {
-    .pin_bit_mask = BIT64(MODEM_RESET_GPIO),
-    .mode = GPIO_MODE_OUTPUT
-    };
-    gpio_config(&io_config);
-    // gpio default to inactive state
-    gpio_set_level(MODEM_RESET_GPIO, MODEM_RESET_GPIO_INACTIVE_LEVEL);
-    // gpio active to reset modem
-    gpio_set_level(MODEM_RESET_GPIO, !MODEM_RESET_GPIO_INACTIVE_LEVEL);
-    ESP_LOGI(TAG, "Resetting modem using io=%d, level=%d", MODEM_RESET_GPIO, !MODEM_RESET_GPIO_INACTIVE_LEVEL);
+    ESP_LOGI(TAG, "Force reset modem board via TCA GPIO (pin %u)", s_modem_rst_pin);
+    if (s_modem_rst_pin == STACK_GPIO_PIN_NONE) {
+        ESP_LOGW(TAG, "No reset pin configured, skipping force reset");
+        return ESP_OK;
+    }
+    stack_handler_gpio_set_direction(1, (stack_gpio_pin_num_t)s_modem_rst_pin, true);
+    /* Assert inactive level first, then active pulse */
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, !s_modem_rst_inactive_lvl);
+    ESP_LOGI(TAG, "Resetting modem using TCA pin %u, active level %d",
+             s_modem_rst_pin, !s_modem_rst_inactive_lvl);
     vTaskDelay(pdMS_TO_TICKS(MODEM_RESET_GPIO_ACTIVE_MS));
-    gpio_set_level(MODEM_RESET_GPIO, MODEM_RESET_GPIO_INACTIVE_LEVEL);
-    // waiting for modem re-init ready
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)s_modem_rst_pin, s_modem_rst_inactive_lvl);
     ESP_LOGI(TAG, "Waiting for modem initialize ready");
     vTaskDelay(pdMS_TO_TICKS(MODEM_RESET_GPIO_INACTIVE_MS));
     return ESP_OK;
@@ -226,6 +248,54 @@ err:
 
 }
 
+/* ===== TCA GPIO pulse helpers (replaces esp_modem_usb_recov_gpio_new) ===== */
+
+/** Pulse: assert active level, wait, then deassert via TCA GPIO */
+static void tca_gpio_pulse(esp_modem_usb_recov_gpio_t *pin) {
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
+    vTaskDelay(pdMS_TO_TICKS(pin->active_width_ms));
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
+    vTaskDelay(pdMS_TO_TICKS(pin->inactive_width_ms));
+}
+
+static void tca_gpio_pulse_special(esp_modem_usb_recov_gpio_t *pin, int active_ms, int inactive_ms) {
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, !pin->inactive_level);
+    vTaskDelay(pdMS_TO_TICKS(active_ms));
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)pin->gpio_num, pin->inactive_level);
+    vTaskDelay(pdMS_TO_TICKS(inactive_ms));
+}
+
+static void tca_gpio_destroy(esp_modem_usb_recov_gpio_t *pin) { free(pin); }
+
+/**
+ * @brief Create an esp_modem_usb_recov_gpio_t object backed by a TCA GPIO pin.
+ *
+ * The gpio_num field reuses the stack_gpio_pin_num_t enum value so that the
+ * standard pulse/pulse_special/destroy callbacks can call stack_handler_gpio_write().
+ */
+static esp_modem_usb_recov_gpio_t *tca_gpio_new(uint8_t tca_pin_num,
+                                                 int inactive_level,
+                                                 int active_ms,
+                                                 int inactive_ms) {
+    if (tca_pin_num == STACK_GPIO_PIN_NONE) return NULL;
+
+    /* Configure pin as output and set to inactive level */
+    stack_handler_gpio_set_direction(1, (stack_gpio_pin_num_t)tca_pin_num, true);
+    stack_handler_gpio_write(1, (stack_gpio_pin_num_t)tca_pin_num, inactive_level);
+
+    esp_modem_usb_recov_gpio_t *pin = calloc(1, sizeof(esp_modem_usb_recov_gpio_t));
+    if (!pin) return NULL;
+
+    pin->gpio_num         = (int)tca_pin_num;
+    pin->inactive_level   = inactive_level;
+    pin->active_width_ms  = active_ms;
+    pin->inactive_width_ms = inactive_ms;
+    pin->pulse            = tca_gpio_pulse;
+    pin->pulse_special    = tca_gpio_pulse_special;
+    pin->destroy          = tca_gpio_destroy;
+    return pin;
+}
+
 static esp_err_t modem_board_dce_deinit(esp_modem_usb_dce_t *dce)
 {
     modem_board_t *board = __containerof(dce, modem_board_t, parent);
@@ -248,12 +318,12 @@ static esp_modem_usb_dce_t *modem_board_create(esp_modem_usb_dce_config_t *confi
     modem_board_t *board = calloc(1, sizeof(modem_board_t));
     MODEM_CHECK_GOTO(board, "failed to allocate modem_board object", err);
     MODEM_CHECK_GOTO(esp_modem_usb_dce_init(&board->parent, config) == ESP_OK, "Failed to init modem_dce", err);
-    // /* power on sequence (typical values for modem Ton=500ms, Ton-status=8s) */
-    if (MODEM_POWER_GPIO) board->power_pin = esp_modem_usb_recov_gpio_new(MODEM_POWER_GPIO, MODEM_POWER_GPIO_INACTIVE_LEVEL,
-                                      MODEM_POWER_GPIO_ACTIVE_MS, MODEM_POWER_GPIO_INACTIVE_MS);
-    // /* reset sequence (typical values for modem reser, Treset=200ms, wait 5s after reset */
-    if (MODEM_RESET_GPIO) board->reset_pin = esp_modem_usb_recov_gpio_new(MODEM_RESET_GPIO, MODEM_RESET_GPIO_INACTIVE_LEVEL,
-                                      MODEM_RESET_GPIO_ACTIVE_MS, MODEM_RESET_GPIO_INACTIVE_MS);
+    /* power on sequence — TCA GPIO, pin configured by modem_board_set_tca_pins() */
+    board->power_pin = tca_gpio_new(s_modem_pwr_pin, s_modem_pwr_inactive_lvl,
+                                    MODEM_POWER_GPIO_ACTIVE_MS, MODEM_POWER_GPIO_INACTIVE_MS);
+    /* reset sequence — TCA GPIO */
+    board->reset_pin = tca_gpio_new(s_modem_rst_pin, s_modem_rst_inactive_lvl,
+                                    MODEM_RESET_GPIO_ACTIVE_MS, MODEM_RESET_GPIO_INACTIVE_MS);
     board->reset = modem_board_reset;
     board->power_up = modem_board_power_up;
     board->power_down = modem_board_power_down;

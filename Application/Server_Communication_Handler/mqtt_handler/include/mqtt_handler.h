@@ -13,10 +13,13 @@
 #include <stdint.h>
 #include <string.h>
 
-// Simplified publish data structure (no type differentiation)
+#define MQTT_PUBLISH_DATA_MAX_LEN 2048
+
+// Queue item owns its payload so data stays valid while buffered offline.
 typedef struct {
-  uint8_t *data;
+  uint8_t data[MQTT_PUBLISH_DATA_MAX_LEN];
   size_t length;
+  int64_t enqueued_at_us;
 } mqtt_publish_data_t;
 
 // Start the MQTT handler
@@ -24,6 +27,9 @@ void mqtt_handler_task_start(void);
 
 // Stop the MQTT handler
 void mqtt_handler_task_stop(void);
+
+// Return true when the MQTT client currently has a live broker connection.
+bool mqtt_handler_is_connected(void);
 
 // Unified function to enqueue any data for publishing
 bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
@@ -40,6 +46,8 @@ typedef struct {
   char subscribe_topic[128];
   char attribute_topic[128];
   char publish_topic[128];
+  uint16_t keepalive_s;      // MQTT keepalive interval in seconds (0 = use default 120)
+  uint32_t timeout_ms;       // MQTT network timeout in ms (0 = use default 10000)
 } mqtt_config_context_t;
 
 extern char g_broker_uri[128];

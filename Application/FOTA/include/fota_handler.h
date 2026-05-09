@@ -35,4 +35,15 @@
 void fota_handler_task_start(void);
 void fota_handler_task_stop(void);
 
+/**
+ * @brief Override the OTA firmware URL at runtime.
+ *        Persists until next reboot. Thread-safe if called before task start.
+ */
+void fota_handler_set_url(const char *url);
+
+/**
+ * @brief Get the active OTA firmware URL (default = FOTA_CONFIG_FIRMWARE_URL).
+ */
+const char *fota_handler_get_url(void);
+
 #endif /* FOTA_HANDLER_H */

@@ -193,6 +193,8 @@ esp_err_t esp_modem_usb_netif_clear_default_handlers(esp_modem_usb_netif_driver_
     if (ret != ESP_OK) {
         goto clear_event_failed;
     }
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_PPP_GOT_IP, esp_netif_action_connected);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_PPP_LOST_IP, esp_netif_action_disconnected);
     return ESP_OK;
 
 clear_event_failed:
