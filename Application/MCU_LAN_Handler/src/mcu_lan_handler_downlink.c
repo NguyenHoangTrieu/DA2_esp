@@ -19,7 +19,7 @@ static const char *TAG = "MCU_LAN_DL";
 
 // ===== Configuration =====
 #define DOWNLINK_QUEUE_SIZE 20
-#define MAX_DOWNLINK_PAYLOAD_SIZE 1024
+#define MAX_DOWNLINK_PAYLOAD_SIZE INTER_MCU_PAYLOAD_MAX_LEN
 #define GPIO_DATA_READY_PIN 8
 #define GPIO_PULSE_WIDTH_US 10
 

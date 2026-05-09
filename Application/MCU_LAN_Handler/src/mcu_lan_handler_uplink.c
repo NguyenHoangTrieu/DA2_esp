@@ -94,7 +94,7 @@ static TickType_t g_lan_fota_wait_start_tick =
 // Pending downlink (set by downlink module)
 typedef struct {
   handler_id_t target_id;
-  uint8_t data[1024];
+  uint8_t data[INTER_MCU_PAYLOAD_MAX_LEN];
   uint16_t length;
 } downlink_item_t;
 
