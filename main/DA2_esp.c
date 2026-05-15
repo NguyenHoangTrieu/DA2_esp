@@ -478,6 +478,20 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
 
   ESP_LOGI(TAG, "==> Entering CONFIG mode");
 
+  /* Disable automatic light sleep FIRST. With light sleep enabled, stopping
+   * tasks that have PSRAM-allocated stacks causes a race: the PM system
+   * enters sleep (gating PSRAM) while the FreeRTOS idle task is still
+   * freeing the deleted task's PSRAM stack, triggering a spinlock assert
+   * inside spinlock_acquire (lock->count == 0 fires when count != 0).   */
+#if CONFIG_PM_ENABLE
+  {
+    esp_pm_config_t pm_no_sleep = {
+        .max_freq_mhz = 240, .min_freq_mhz = 80, .light_sleep_enable = false};
+    esp_pm_configure(&pm_no_sleep);
+    ESP_LOGI(TAG, "CONFIG mode: light sleep disabled");
+  }
+#endif
+
   /* IMPORTANT: Stop all running server handlers and the active internet
    * connection BEFORE starting WiFi AP. The WiFi driver needs ~80 KB of
    * internal RAM for its init. After LTE PPP + MQTT are running this RAM
@@ -486,18 +500,24 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   server_connect_stop(g_server_type);
   ESP_LOGI(TAG, "CONFIG mode: server stopped");
 
-  switch (*internet_type) {
-  case CONFIG_INTERNET_LTE:
-    lte_connect_task_stop();
-    ESP_LOGI(TAG, "CONFIG mode: LTE stopped");
-    break;
-  case CONFIG_INTERNET_ETHERNET:
-    eth_connect_task_stop();
-    ESP_LOGI(TAG, "CONFIG mode: Ethernet stopped");
-    break;
-  default:
-    break;
-  }
+  /* Stop the STA web config server — it must be torn down before we can
+   * start the AP portal (web_config_handler_start guards against double
+   * start and would silently return ESP_ERR_INVALID_STATE otherwise).   */
+  web_config_handler_stop();
+  ESP_LOGI(TAG, "CONFIG mode: web server stopped");
+
+  // switch (*internet_type) {
+  // case CONFIG_INTERNET_LTE:
+  //   lte_connect_task_stop();
+  //   ESP_LOGI(TAG, "CONFIG mode: LTE stopped");
+  //   break;
+  // case CONFIG_INTERNET_ETHERNET:
+  //   eth_connect_task_stop();
+  //   ESP_LOGI(TAG, "CONFIG mode: Ethernet stopped");
+  //   break;
+  // default:
+  //   break;
+  // }
 
   /* Give TCP/IP stack time to release PPP buffers and close sockets */
   vTaskDelay(pdMS_TO_TICKS(500));
@@ -643,7 +663,8 @@ void app_main(void) {
 
   /* Wait until the internet link is UP and time is synced before starting */
   {
-    const int timeout_s = 30;
+    int timeout_s = 10;
+    if (current_internet_type == CONFIG_INTERNET_LTE) timeout_s = 30;
     ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...",
              timeout_s);
     for (int waited = 0; waited < timeout_s; waited++) {
@@ -738,3 +759,5 @@ void app_main(void) {
     }
   }
 }
+
+// WiFi lab : TickLab_2.4G2 PASS: T1ckL@b5917

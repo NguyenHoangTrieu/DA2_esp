@@ -185,7 +185,7 @@ static const char *get_soc_color_name(uint8_t soc_pct) {
  * @brief Log battery status (debug output).
  */
 static void log_battery_status(const pwr_monitor_status_t *s) {
-  ESP_LOGI(TAG,
+  ESP_LOGD(TAG,
            "Battery: SoC=%u%% Vbat=%u mV I=%d mA | "
            "VSYS=%u mV Isys=%d mA | Chrg=%s",
            s->bat_soc_pct, s->bat_voltage_mv, s->bat_current_ma,

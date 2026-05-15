@@ -517,6 +517,18 @@ void wifi_ap_start(void) {
     ESP_LOGI(TAG, "wifi_ap_start: stopping STA...");
     wifi_connect_task_stop();
     vTaskDelay(pdMS_TO_TICKS(300));
+
+    /* Unregister event handlers and deinit the WiFi driver so we can call
+     * esp_wifi_init() again for the AP role. Skipping esp_wifi_deinit()
+     * leaves the driver initialized, causing the next esp_wifi_init() to
+     * return ESP_ERR_INVALID_STATE.                                      */
+    esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler);
+    esp_wifi_deinit();
+
+    /* Destroy the STA netif — must happen after deinit */
+    esp_netif_destroy_default_wifi(g_wifi_netif);
+    g_wifi_netif = NULL;
   }
 
   /* Create AP netif once */
