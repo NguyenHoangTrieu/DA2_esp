@@ -651,7 +651,10 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len,
     return ESP_FAIL;
   }
 
+  /* Start from the current MQTT config so omitted optional fields keep their
+   * existing/default values when the web UI only submits broker URI + token. */
   memset(cfg, 0, sizeof(mqtt_config_data_t));
+  memcpy(cfg, &g_mqtt_ctx, sizeof(mqtt_config_data_t));
 
   // Parse format:
   // "MQ:BROKER_URI|DEVICE_TOKEN|SUBSCRIBE_TOPIC|PUBLISH_TOPIC|ATTRIBUTE_TOPIC"
@@ -691,64 +694,67 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len,
   memcpy(cfg->device_token, ptr, token_len);
   cfg->device_token[token_len] = '\0';
 
-  // Parse subscribe topic
+  // Parse subscribe topic (optional)
   ptr = second_pipe + 1;
   const char *third_pipe = strchr(ptr, '|');
-  if (!third_pipe || third_pipe >= end) {
+  if (!third_pipe) {
     ESP_LOGE(TAG, "MQTT config: missing subscribe topic separator");
     return ESP_FAIL;
   }
 
   int sub_topic_len = third_pipe - ptr;
-  if (sub_topic_len <= 0 || sub_topic_len >= sizeof(cfg->subscribe_topic)) {
+  if (sub_topic_len < 0 || sub_topic_len >= sizeof(cfg->subscribe_topic)) {
     ESP_LOGE(TAG, "MQTT subscribe topic length invalid: %d", sub_topic_len);
     return ESP_FAIL;
   }
+  if (sub_topic_len > 0) {
+    memcpy(cfg->subscribe_topic, ptr, sub_topic_len);
+    cfg->subscribe_topic[sub_topic_len] = '\0';
+  }
 
-  memcpy(cfg->subscribe_topic, ptr, sub_topic_len);
-  cfg->subscribe_topic[sub_topic_len] = '\0';
-
-  // Parse publish topic
+  // Parse publish topic (optional)
   ptr = third_pipe + 1;
   const char *fourth_pipe = strchr(ptr, '|');
-  if (!fourth_pipe || fourth_pipe >= end) {
+  if (!fourth_pipe) {
     ESP_LOGE(TAG, "MQTT config: missing publish topic separator");
     return ESP_FAIL;
   }
 
   int pub_topic_len = fourth_pipe - ptr;
-  if (pub_topic_len <= 0 || pub_topic_len >= sizeof(cfg->publish_topic)) {
+  if (pub_topic_len < 0 || pub_topic_len >= sizeof(cfg->publish_topic)) {
     ESP_LOGE(TAG, "MQTT publish topic length invalid: %d", pub_topic_len);
     return ESP_FAIL;
   }
+  if (pub_topic_len > 0) {
+    memcpy(cfg->publish_topic, ptr, pub_topic_len);
+    cfg->publish_topic[pub_topic_len] = '\0';
+  }
 
-  memcpy(cfg->publish_topic, ptr, pub_topic_len);
-  cfg->publish_topic[pub_topic_len] = '\0';
-
-  // Parse attribute topic
+  // Parse attribute topic (optional)
   ptr = fourth_pipe + 1;
   const char *fifth_pipe = strchr(ptr, '|');
   int attr_topic_len;
-  if (!fifth_pipe || fifth_pipe >= end) {
+  if (!fifth_pipe) {
     // No more fields — attribute topic runs to end
     attr_topic_len = end - ptr;
   } else {
     attr_topic_len = fifth_pipe - ptr;
   }
-  if (attr_topic_len <= 0 ||
+  if (attr_topic_len < 0 ||
       attr_topic_len >= (int)sizeof(cfg->attribute_topic)) {
     ESP_LOGE(TAG, "MQTT attribute topic length invalid: %d", attr_topic_len);
     return ESP_FAIL;
   }
-  memcpy(cfg->attribute_topic, ptr, attr_topic_len);
-  cfg->attribute_topic[attr_topic_len] = '\0';
+  if (attr_topic_len > 0) {
+    memcpy(cfg->attribute_topic, ptr, attr_topic_len);
+    cfg->attribute_topic[attr_topic_len] = '\0';
+  }
 
   // Optional field 5: keepalive_s
-  if (fifth_pipe && fifth_pipe < end) {
+  if (fifth_pipe) {
     ptr = fifth_pipe + 1;
     const char *sixth_pipe = strchr(ptr, '|');
-    int ka_len = sixth_pipe && sixth_pipe < end ? (int)(sixth_pipe - ptr)
-                                                : (int)(end - ptr);
+    int ka_len = sixth_pipe ? (int)(sixth_pipe - ptr) : (int)(end - ptr);
     if (ka_len > 0 && ka_len < 8) {
       char buf[8] = {0};
       memcpy(buf, ptr, ka_len);
@@ -757,7 +763,7 @@ static esp_err_t config_parse_mqtt(const char *data, uint16_t len,
         cfg->keepalive_s = (uint16_t)ka;
     }
     // Optional field 6: timeout_ms
-    if (sixth_pipe && sixth_pipe < end) {
+    if (sixth_pipe) {
       ptr = sixth_pipe + 1;
       int tmo_len = end - ptr;
       if (tmo_len > 0 && tmo_len < 12) {

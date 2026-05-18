@@ -497,6 +497,9 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
    * internal RAM for its init. After LTE PPP + MQTT are running this RAM
    * is exhausted, causing esp_wifi_init() to return ESP_ERR_NO_MEM and
    * the ESP_ERROR_CHECK to abort/crash.                                  */
+  internet_monitor_task_stop();
+  ESP_LOGI(TAG, "CONFIG mode: internet monitor stopped");
+
   server_connect_stop(g_server_type);
   ESP_LOGI(TAG, "CONFIG mode: server stopped");
 
@@ -660,52 +663,7 @@ void app_main(void) {
   config_internet_type_t current_internet_type = g_internet_type;
 
   internet_connect_start(current_internet_type);
-
-  /* Wait until the internet link is UP and time is synced before starting */
-  {
-    int timeout_s = 10;
-    if (current_internet_type == CONFIG_INTERNET_LTE) timeout_s = 30;
-    ESP_LOGI(TAG, "Waiting for internet connection and time sync (max %d s)...",
-             timeout_s);
-    for (int waited = 0; waited < timeout_s; waited++) {
-      bool synced = false;
-      switch (current_internet_type) {
-      case CONFIG_INTERNET_LTE:
-        synced = lte_is_sntp_synced();
-        break;
-      case CONFIG_INTERNET_WIFI:
-        synced = wifi_is_sntp_synced();
-        break;
-      case CONFIG_INTERNET_ETHERNET:
-        synced = eth_is_sntp_synced();
-        break;
-      default:
-        synced = true;
-        break;
-      }
-      if (is_internet_connected && synced) {
-        ESP_LOGI(
-            TAG,
-            "Internet connected and time synced after %d s — starting servers",
-            waited);
-        break;
-      }
-      if (waited == timeout_s - 1) {
-        ESP_LOGW(TAG, "Timed out waiting for connection/time sync — starting "
-                      "servers anyway");
-      }
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-  }
-
   internet_monitor_task_start(); /* start fallback monitor if enabled */
-
-  /* Start web config portal BEFORE protocol handlers — httpd needs to
-   * allocate its task stack from internal RAM, which is more constrained
-   * once a connected LTE PPP stack + MQTT tasks are running.            */
-  web_config_handler_start(WEB_MODE_STA);
-
-  server_connect_start(g_server_type);
 
   ESP_LOGI(TAG, "System ready — NORMAL mode");
   ESP_LOGI(TAG, "  GPIO0 = toggle CONFIG/NORMAL");
