@@ -18,6 +18,9 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
+#include "lwip/dns.h"
+#include "lwip/ip_addr.h"
+#include "lwip/inet.h"
 #include "driver/spi_master.h"
 #include "mcu_lan_handler.h"
 #include "pcf8563_rtc.h"
@@ -233,6 +236,15 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         switch (event_id) {
         case ETHERNET_EVENT_CONNECTED:
             ESP_LOGI(TAG, "Ethernet link up");
+#if ETH_USE_STATIC_IP
+            /* With static IP there is no DHCP exchange, so IP_EVENT_ETH_GOT_IP
+             * may not fire.  Mark connected here and start SNTP directly. */
+            s_eth_connected   = true;
+            is_internet_connected = true;
+            mcu_lan_handler_set_internet_status(INTERNET_STATUS_ONLINE);
+            ESP_LOGI(TAG, "Static IP active: " ETH_STATIC_IP_ADDR);
+            eth_init_sntp();
+#endif
             break;
 
         case ETHERNET_EVENT_DISCONNECTED:
@@ -299,6 +311,27 @@ static esp_err_t eth_spi_hw_init(void)
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Ethernet netif created");
+
+#if ETH_USE_STATIC_IP
+    /* Stop DHCP client and apply static IP so the gateway works without a
+     * DHCP server (e.g. direct PC connection via Windows ICS or a switch). */
+    esp_netif_dhcpc_stop(g_eth_netif);
+
+    esp_netif_ip_info_t ip_info = {};
+    ip_info.ip.addr      = ipaddr_addr(ETH_STATIC_IP_ADDR);
+    ip_info.netmask.addr = ipaddr_addr(ETH_STATIC_NETMASK);
+    ip_info.gw.addr      = ipaddr_addr(ETH_STATIC_GW);
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(g_eth_netif, &ip_info));
+
+    ip_addr_t dns1, dns2;
+    ipaddr_aton(ETH_STATIC_DNS1, &dns1);
+    ipaddr_aton(ETH_STATIC_DNS2, &dns2);
+    dns_setserver(0, &dns1);
+    dns_setserver(1, &dns2);
+
+    ESP_LOGI(TAG, "Static IP configured: " ETH_STATIC_IP_ADDR
+             " gw=" ETH_STATIC_GW " dns=" ETH_STATIC_DNS1);
+#endif /* ETH_USE_STATIC_IP */
 
     /* 3 ── Register event handlers BEFORE driver install */
     ret = esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID,

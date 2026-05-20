@@ -18,6 +18,22 @@
 #define ETH_RST_GPIO        (-1)
 #define ETH_SPI_CLOCK_MHZ   25   /* W5500 max is 80 MHz; 25 MHz is safe    */
 
+/* ── Static IP configuration (PC direct-connect / no DHCP) ─────────────────
+ * Set ETH_USE_STATIC_IP to 1 to bypass DHCP and use a fixed IP.
+ * Useful when the PC does not have a working DHCP server (Windows ICS issues)
+ * or when a predictable IP is needed for development.
+ *
+ * Topology:
+ *   [PC Ethernet: 192.168.137.1] ── cable ── [W5500: ETH_STATIC_IP_ADDR]
+ *   PC must have ICS or IP routing enabled for the gateway to reach internet.
+ */
+#define ETH_USE_STATIC_IP     1               /* 0 = DHCP (default), 1 = static */
+#define ETH_STATIC_IP_ADDR    "192.168.137.2"
+#define ETH_STATIC_NETMASK    "255.255.255.0"
+#define ETH_STATIC_GW         "192.168.137.1" /* PC Ethernet IP */
+#define ETH_STATIC_DNS1       "8.8.8.8"
+#define ETH_STATIC_DNS2       "1.1.1.1"
+
 /* Global netif handle — used by other modules (e.g. PPP server) */
 extern esp_netif_t *g_eth_netif;
 
