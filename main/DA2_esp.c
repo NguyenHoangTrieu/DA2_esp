@@ -3,6 +3,7 @@
  */
 
 #include "DA2_esp.h"
+#include "bench_throughput_wan.h"
 #include <esp_pm.h>
 #include <esp_timer.h>
 
@@ -634,6 +635,9 @@ void app_main(void) {
   uart_handler_register_mode_callback(uart_mode_switch_callback);
   config_handler_task_start();
   mcu_lan_handler_start();
+  if (bench_throughput_wan_start() != ESP_OK) {
+    ESP_LOGW(TAG, "MCU throughput benchmark (WAN) start failed (non-fatal)");
+  }
   uart_handler_task_start();
 
   /* --- Operational tasks (NORMAL boot) -------------------------------- */

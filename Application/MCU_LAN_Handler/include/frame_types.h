@@ -32,6 +32,7 @@
 #define HANDLER_TYPE_LOR "LOR" // LoRa
 #define HANDLER_TYPE_ZIG "ZIG" // ZigBee
 #define HANDLER_TYPE_RS4 "RS4" // RS485
+#define HANDLER_TYPE_BENCH "BNC" // Throughput benchmark (sink only, never routed)
 
 // ===== Frame Types (Single Byte) =====
 typedef enum {
@@ -62,6 +63,7 @@ typedef enum {
   HANDLER_LORA = 0x02,
   HANDLER_ZIGBEE = 0x03,
   HANDLER_RS485 = 0x04,
+  HANDLER_BENCH = 0xFE, // Throughput benchmark traffic — never routed
   HANDLER_UNKNOWN = 0xFF
 } handler_id_t;
 
@@ -190,6 +192,8 @@ static inline const char *handler_id_to_string(handler_id_t id) {
     return HANDLER_TYPE_ZIG;
   case HANDLER_RS485:
     return HANDLER_TYPE_RS4;
+  case HANDLER_BENCH:
+    return HANDLER_TYPE_BENCH;
   default:
     return "UNK";
   }
@@ -211,6 +215,8 @@ static inline handler_id_t handler_string_to_id(const uint8_t *str) {
     return HANDLER_ZIGBEE;
   if (str[0] == 'R' && str[1] == 'S' && str[2] == '4')
     return HANDLER_RS485;
+  if (str[0] == 'B' && str[1] == 'N' && str[2] == 'C')
+    return HANDLER_BENCH;
   return HANDLER_UNKNOWN;
 }
 
