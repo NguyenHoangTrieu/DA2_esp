@@ -121,7 +121,7 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
   }
   
   // CRITICAL DEBUG: Show RAW register values
-  ESP_LOGI(TAG,
+  ESP_LOGD(TAG,
            "Raw PCF8563 registers: [0]=0x%02X [1]=0x%02X [2]=0x%02X [3]=0x%02X "
            "[4]=0x%02X [5]=0x%02X [6]=0x%02X",
            data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
@@ -146,7 +146,7 @@ esp_err_t pcf8563_read_time(struct tm *timeinfo) {
     timeinfo->tm_year = year; // 1900-1999
   }
 
-  ESP_LOGI(TAG, "Read time: %04d-%02d-%02d %02d:%02d:%02d (VL=%d, Century=%d)",
+  ESP_LOGD(TAG, "Read time: %04d-%02d-%02d %02d:%02d:%02d (VL=%d, Century=%d)",
            timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
            timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
            (data[0] & PCF8563_SECONDS_VL) ? 1 : 0, century);
