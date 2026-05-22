@@ -13,7 +13,7 @@
 // WiFi credentials should be configured via UART/USB config handler
 // Use empty defaults to force proper configuration
 #define DEFAULT_ESP_WIFI_SSID "Devil"      // Configure via config handler
-#define DEFAULT_ESP_WIFI_PASS "hamhap7604" // Configure via config handler
+#define DEFAULT_ESP_WIFI_PASS "hamhap604" // Configure via config handler
 #define DEFAULT_ESP_WIFI_USERNAME                                              \
   "" // Enterprise username (empty for Personal mode)
 #define WIFI_ESP_MAXIMUM_RETRY 3
@@ -468,6 +468,50 @@ void wifi_connect_task_start(void) {
   }
 }
 
+static void wifi_sta_stack_teardown(void) {
+  esp_err_t ret = esp_wifi_stop();
+  if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED &&
+      ret != ESP_ERR_WIFI_NOT_INIT) {
+    ESP_LOGW(TAG, "esp_wifi_stop during STA teardown failed: %s",
+             esp_err_to_name(ret));
+  }
+
+  ret = esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                     &event_handler);
+  if (ret != ESP_OK && ret != ESP_ERR_NOT_FOUND) {
+    ESP_LOGW(TAG, "Failed to unregister WIFI_EVENT handler: %s",
+             esp_err_to_name(ret));
+  }
+
+  ret = esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                     &event_handler);
+  if (ret != ESP_OK && ret != ESP_ERR_NOT_FOUND) {
+    ESP_LOGW(TAG, "Failed to unregister IP_EVENT handler: %s",
+             esp_err_to_name(ret));
+  }
+
+  ret = esp_wifi_deinit();
+  if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) {
+    ESP_LOGW(TAG, "esp_wifi_deinit during STA teardown failed: %s",
+             esp_err_to_name(ret));
+  }
+
+  if (g_wifi_netif != NULL) {
+    esp_netif_destroy_default_wifi(g_wifi_netif);
+    g_wifi_netif = NULL;
+  }
+
+  if (g_wifi_reconfig_mutex != NULL) {
+    vSemaphoreDelete(g_wifi_reconfig_mutex);
+    g_wifi_reconfig_mutex = NULL;
+  }
+
+  s_wifi_connected = 0;
+  s_retry_num = 0;
+  s_reconnect_request = 0;
+  is_internet_connected = false;
+}
+
 void wifi_connect_task_stop(void) {
   if (wifi_connect_task_close) {
     return;
@@ -484,7 +528,7 @@ void wifi_connect_task_stop(void) {
   // Disable enterprise mode if enabled
   esp_wifi_sta_enterprise_disable();
 
-  ESP_ERROR_CHECK(esp_wifi_stop());
+  wifi_sta_stack_teardown();
 
   if (s_wifi_event_group) {
     vEventGroupDelete(s_wifi_event_group);

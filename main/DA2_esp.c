@@ -503,6 +503,8 @@ static void switch_to_config_mode(config_internet_type_t *internet_type) {
   /* Give TCP/IP stack time to release PPP buffers and close sockets */
   vTaskDelay(pdMS_TO_TICKS(500));
 
+  web_config_handler_stop();
+
   /* Start WiFi AP + web portal + captive DNS for browser-based config
    * Connect to SSID "DA2-Gateway-Config" (pass: datn1234) then open
    * any URL or go directly to http://192.168.4.1/               */
