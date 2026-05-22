@@ -319,13 +319,22 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
     return LAN_COMM_ERR_TIMEOUT;
   }
 
-  spi_slave_disable(handle->config.host_id);
+  /* spi_slave_disable / spi_slave_enable removed: this function is only ever
+   * called after spi_slave_get_trans_result() has returned, meaning the slave
+   * peripheral is completely idle and no DMA read is in flight.  The heavy
+   * reinitialisation cycle (disable + enable) was adding ~100–200 µs per ACK
+   * load and creating a brief window where an incoming CS assertion from the
+   * LAN master could be mishandled, causing occasional "Data payload
+   * incomplete" errors.  buffer_mutex already serialises concurrent callers. */
 
-  memset(handle->tx_buffer, 0, handle->config.tx_buffer_size);
+  /* Zero only the bytes that were previously loaded (stale tail) plus the new
+   * payload — avoids clearing the full 16 KB buffer every ACK load.        */
+  size_t clear_len = (handle->tx_buffer_len > length)
+                         ? handle->tx_buffer_len
+                         : length;
+  memset(handle->tx_buffer, 0, clear_len);
   memcpy(handle->tx_buffer, data_to_send, length);
   handle->tx_buffer_len = length;
-
-  spi_slave_enable(handle->config.host_id);
 
   xSemaphoreGive(handle->buffer_mutex);
 

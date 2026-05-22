@@ -355,7 +355,10 @@ static void uplink_processor_task(void *pvParameters) {
       break;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1));
+    /* Replaced vTaskDelay(1ms) with taskYIELD() so the slave re-queues its
+     * next ACK transaction within ~100 µs instead of ~1 ms.  Other tasks
+     * (WiFi, MQTT) still get CPU time whenever they are ready.            */
+    taskYIELD();
   }
 
   ESP_LOGI(TAG, "Uplink processor task exiting");
@@ -585,7 +588,9 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   // never route to server or UART.
   handler_id_t hid = handler_string_to_id(&payload[2]);
   if (hid == HANDLER_BENCH) {
-    bench_throughput_wan_count_rx(data_length);
+    /* data_length encodes [RTC(19) + payload]; subtract the 19-byte RTC header
+     * so the WAN reporter counts the same bytes as the LAN sender (2048).   */
+    bench_throughput_wan_count_rx(data_length > 19u ? data_length - 19u : data_length);
     downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
                              g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
     ESP_LOGD(TAG, "BNC frame: %u bytes counted (bench RX)", data_length);
