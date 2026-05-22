@@ -18,6 +18,10 @@
 #include "lte_connect.h"
 #include "wifi_connect.h"
 #include "eth_connect.h"
+#include "mqtt_handler.h"
+#include "http_handler.h"
+#include "coap_handler.h"
+#include "web_config_handler.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,6 +41,9 @@ extern lte_config_context_t    g_lte_ctx;
 static TaskHandle_t s_monitor_task_handle = NULL;
 static volatile bool s_monitor_running    = false;
 static volatile bool s_on_fallback        = false;
+
+/* Startup gate: start services once internet + SNTP are ready (or timeout). */
+static volatile bool s_services_started   = false;
 
 /* =========================================================================
  *  Private helpers
@@ -124,6 +131,37 @@ static void stop_connection(config_internet_type_t type) {
     }
 }
 
+static void start_server_by_type(config_server_type_t type) {
+    switch (type) {
+    case CONFIG_SERVERTYPE_MQTT:
+        mqtt_handler_task_start();
+        break;
+    case CONFIG_SERVERTYPE_HTTP:
+        http_handler_task_start();
+        break;
+    case CONFIG_SERVERTYPE_COAP:
+        coap_handler_task_start();
+        break;
+    default:
+        ESP_LOGW(TAG, "Unknown server type %d, defaulting to MQTT", type);
+        mqtt_handler_task_start();
+        break;
+    }
+}
+
+static bool internet_time_synced(config_internet_type_t type) {
+    switch (type) {
+    case CONFIG_INTERNET_LTE:
+        return lte_is_sntp_synced();
+    case CONFIG_INTERNET_WIFI:
+        return wifi_is_sntp_synced();
+    case CONFIG_INTERNET_ETHERNET:
+        return eth_is_sntp_synced();
+    default:
+        return true;
+    }
+}
+
 /* =========================================================================
  *  Monitor Task
  * ====================================================================== */
@@ -134,6 +172,55 @@ static void internet_monitor_task(void *arg) {
 
     int fail_count     = 0;
     int recover_count  = 0;
+
+    /* Startup gate moved from app_main: wait internet + SNTP before
+     * starting web config (STA) and selected server handler. */
+    {
+        int timeout_s = 10;
+        if (g_internet_type == CONFIG_INTERNET_LTE) {
+            timeout_s = 30;
+        }
+
+        ESP_LOGI(TAG,
+                 "Waiting for internet connection and time sync (max %d s)...",
+                 timeout_s);
+        for (int waited = 0; waited < timeout_s && s_monitor_running; waited++) {
+            bool synced = internet_time_synced(g_internet_type);
+            if (is_internet_connected && synced) {
+                ESP_LOGI(TAG,
+                         "Internet connected and time synced after %d s - starting services",
+                         waited);
+                break;
+            }
+
+            if (waited == timeout_s - 1) {
+                ESP_LOGW(TAG,
+                         "Timed out waiting for connection/time sync - starting services anyway");
+            }
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+
+    if (!s_monitor_running) {
+        ESP_LOGI(TAG, "Monitor stopped before startup services");
+        s_monitor_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (!s_services_started) {
+        web_config_handler_start(WEB_MODE_STA);
+        start_server_by_type(g_server_type);
+        s_services_started = true;
+        ESP_LOGI(TAG, "Startup services launched (web STA + server type %d)", g_server_type);
+    }
+
+    if (!g_internet_fallback) {
+        ESP_LOGI(TAG, "Fallback disabled - startup gate completed, monitor exits");
+        s_monitor_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
 
     /* ── Initial delay: let the primary connection fully establish ────────
      * LTE PPP negotiation can take up to 60–90 s.  Probing too early would
@@ -276,10 +363,6 @@ static void internet_monitor_task(void *arg) {
  * ====================================================================== */
 
 void internet_monitor_task_start(void) {
-    if (!g_internet_fallback) {
-        ESP_LOGI(TAG, "Fallback disabled — monitor not started");
-        return;
-    }
     if (s_monitor_running) {
         ESP_LOGW(TAG, "Monitor task already running");
         return;
@@ -287,6 +370,7 @@ void internet_monitor_task_start(void) {
 
     s_monitor_running = true;
     s_on_fallback     = false;
+    s_services_started = false;
 
     BaseType_t ret = xTaskCreate(internet_monitor_task,
                                  "inet_monitor",

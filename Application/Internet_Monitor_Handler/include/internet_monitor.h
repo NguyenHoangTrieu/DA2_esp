@@ -45,8 +45,13 @@
 
 /**
  * @brief Start the internet monitor task.
- *        Must be called AFTER the primary internet connection task is started
- *        and only when g_internet_fallback == true.
+ *        Must be called AFTER the primary internet connection task is started.
+ *
+ * This task now also handles boot-time service gating:
+ *  - wait for internet + SNTP ready (or timeout)
+ *  - then start web config STA + selected server handler
+ *
+ * If g_internet_fallback == false, the task exits after startup gating.
  */
 void internet_monitor_task_start(void);
 
