@@ -56,7 +56,7 @@ extern bool g_fota_request_pending;
 
 // Forward declarations from downlink module
 extern void downlink_send_rtc_response(void);
-extern void downlink_handle_config_request(void);
+extern bool downlink_handle_config_request(void);
 extern void downlink_send_ack_to_lan(ack_type_t ack_type,
                                      uint8_t internet_flag);
 
@@ -340,8 +340,11 @@ static void uplink_processor_task(void *pvParameters) {
         } else if (packet.payload[2] == 'C' && packet.payload[3] == 'F') {
           // Config request
           ESP_LOGI(TAG, "Config request received");
-          clear_data_ready();
-          downlink_handle_config_request();
+          if (downlink_handle_config_request()) {
+            clear_data_ready();
+          } else {
+            ESP_LOGW(TAG, "Config request could not be loaded to SPI TX");
+          }
         } else if (packet.payload[2] == 'C' && packet.payload[3] == 'Q') {
           // Config query from LAN
           ESP_LOGI(TAG, "Config query received from LAN");
@@ -773,6 +776,7 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
 // ===== Process Data Query (DQ) - Send Pending Downlink =====
 static void process_data_query(void) {
   bool served = false;
+  bool blocked = false;
 
   // 0) FOTA trigger to LAN (highest priority)
   if (g_fota_trigger_pending) {
@@ -788,15 +792,20 @@ static void process_data_query(void) {
         'F',
         'W' // FOTA marker
     };
-    lan_comm_load_tx_data(g_lan_handle, fota_trigger_frame,
-                          sizeof(fota_trigger_frame));
-    g_fota_trigger_pending = false;
-    served = true;
-    ESP_LOGI(TAG, "FOTA trigger (CFFW) sent to LAN MCU via DQ");
+    lan_comm_status_t status = lan_comm_load_tx_data(
+        g_lan_handle, fota_trigger_frame, sizeof(fota_trigger_frame));
+    if (status == LAN_COMM_OK) {
+      g_fota_trigger_pending = false;
+      served = true;
+      ESP_LOGI(TAG, "FOTA trigger (CFFW) sent to LAN MCU via DQ");
+    } else {
+      blocked = true;
+      ESP_LOGE(TAG, "Failed to load FOTA trigger to SPI TX: %d", status);
+    }
   }
 
   // 1) PC-side config scan: send CFCQ only after DQ
-  if (!served && g_active_config_request_valid &&
+  if (!served && !blocked && g_active_config_request_valid &&
       g_config_req_state == CONFIG_REQ_STATE_WAIT_DQ_FOR_CFCQ) {
     uint8_t config_request[4];
     config_request[0] = (WAN_COMM_HEADER_CF >> 8) & 0xFF;
@@ -805,21 +814,27 @@ static void process_data_query(void) {
     config_request[3] = 'Q';
 
     // Load CFCQ into TX
-    lan_comm_load_tx_data(g_lan_handle, config_request, sizeof(config_request));
-    g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
-    served = true;
-    ESP_LOGI(TAG, "CFCQ command loaded to TX after DQ");
+    lan_comm_status_t status =
+        lan_comm_load_tx_data(g_lan_handle, config_request, sizeof(config_request));
+    if (status == LAN_COMM_OK) {
+      g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
+      served = true;
+      ESP_LOGI(TAG, "CFCQ command loaded to TX after DQ");
+    } else {
+      blocked = true;
+      ESP_LOGE(TAG, "Failed to load CFCQ command to SPI TX: %d", status);
+    }
   }
 
   // 2) Config/FOTA downlink to LAN (from WAN config cache)
-  if (!served && g_config_cache_has_config) {
+  if (!served && !blocked && g_config_cache_has_config) {
     ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
     bool cache_was_fota =
         g_fota_request_pending;       /* g_fota_request_pending is only
 set alongside is_fota=true in the config cache, so it's a safe proxy */
-    downlink_handle_config_request(); /* clears g_config_cache_has_config */
-    served = true;
-    if (cache_was_fota && !g_waiting_for_lan_update) {
+    served = downlink_handle_config_request();
+    blocked = !served;
+    if (served && cache_was_fota && !g_waiting_for_lan_update) {
       /* The FOTA trigger was delivered to LAN via the config-cache path
        * (server CFFW command, NOT via trigger_lan_fota_if_needed).  That
        * path never sets g_waiting_for_lan_update, so when LAN reconnects
@@ -830,11 +845,13 @@ set alongside is_fota=true in the config cache, so it's a safe proxy */
       ESP_LOGI(
           TAG,
           "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
+    } else if (!served) {
+      ESP_LOGW(TAG, "Cached config/FOTA is still pending after TX load failure");
     }
   }
 
   // 3) Normal downlink data (DT) to LAN
-  if (!served && g_pending_downlink_valid) {
+  if (!served && !blocked && g_pending_downlink_valid) {
     send_downlink_to_lan(&g_pending_downlink);
     g_pending_downlink_valid = false;
     served = true;
@@ -843,6 +860,8 @@ set alongside is_fota=true in the config cache, so it's a safe proxy */
   if (served) {
     // Clear GPIO handshake once something has been served
     clear_data_ready();
+  } else if (blocked) {
+    ESP_LOGW(TAG, "DQ received but a pending WAN→LAN payload could not be loaded yet");
   } else {
     ESP_LOGD(TAG, "DQ received but nothing pending to send");
   }
@@ -868,7 +887,14 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
   memcpy(&packet[DATA_PACKET_HEADER_SIZE], item->data, item->length);
 
   // Load TX buffer
-  lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+  lan_comm_status_t load_status =
+      lan_comm_load_tx_data(g_lan_handle, packet, packet_size);
+  if (load_status != LAN_COMM_OK) {
+    ESP_LOGE(TAG, "Failed to load downlink packet to SPI TX: %d", load_status);
+    free(packet);
+    return;
+  }
+
   ESP_LOGI(TAG, "Downlink loaded: handler=%s, %u bytes", type_str, packet_size);
 
   // Wait for ACK from LAN MCU (with retry)

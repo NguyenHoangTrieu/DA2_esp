@@ -11,6 +11,7 @@
 #include "mcu_lan_handler.h"
 #include "pcf8563_rtc.h"
 #include "rom/ets_sys.h"
+#include "spi_framing.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -20,6 +21,7 @@ static const char *TAG = "MCU_LAN_DL";
 // ===== Configuration =====
 #define DOWNLINK_QUEUE_SIZE 20
 #define MAX_DOWNLINK_PAYLOAD_SIZE INTER_MCU_PAYLOAD_MAX_LEN
+#define MAX_CONFIG_CACHE_DATA_LEN (SPI_FRAME_MAX_PAYLOAD - CONFIG_HEADER_SIZE)
 #define GPIO_DATA_READY_PIN 8
 #define GPIO_PULSE_WIDTH_US 10
 
@@ -41,7 +43,7 @@ typedef struct {
 // command_source_t is now defined in mcu_lan_handler.h (public API)
 
 typedef struct {
-  uint8_t config_data[16384];
+  uint8_t config_data[MAX_CONFIG_CACHE_DATA_LEN];
   uint32_t config_length;
   bool has_config;
   bool is_fota;
@@ -166,25 +168,32 @@ void downlink_send_ack_to_lan(ack_type_t ack_type, uint8_t internet_flag) {
 }
 
 // ===== Config Request Handler =====
-void downlink_handle_config_request(void) {
+bool downlink_handle_config_request(void) {
   if (xSemaphoreTake(g_config_mutex, pdMS_TO_TICKS(10)) != pdTRUE) {
     ESP_LOGW(TAG, "Config mutex timeout");
-    return;
+    return false;
   }
 
   if (!g_config_cache.has_config) {
     xSemaphoreGive(g_config_mutex);
     ESP_LOGW(TAG, "Config request but cache empty");
-    return;
+    return false;
   }
 
   // Build config packet: [CF][length(2)][config_data]
-  uint16_t packet_size = 4 + g_config_cache.config_length;
+  size_t packet_size = CONFIG_HEADER_SIZE + g_config_cache.config_length;
+  if (packet_size > SPI_FRAME_MAX_PAYLOAD) {
+    ESP_LOGE(TAG, "Config packet too large for SPI frame: %u > %u",
+             (unsigned)packet_size, (unsigned)SPI_FRAME_MAX_PAYLOAD);
+    xSemaphoreGive(g_config_mutex);
+    return false;
+  }
+
   uint8_t *config_packet = (uint8_t *)malloc(packet_size);
   if (config_packet == NULL) {
     xSemaphoreGive(g_config_mutex);
     ESP_LOGE(TAG, "Failed to allocate config packet");
-    return;
+    return false;
   }
 
   config_packet[0] = (WAN_COMM_HEADER_CF >> 8) & 0xFF;
@@ -194,15 +203,24 @@ void downlink_handle_config_request(void) {
   memcpy(&config_packet[4], g_config_cache.config_data,
          g_config_cache.config_length);
 
-  lan_comm_load_tx_data(g_lan_handle, config_packet, packet_size);
+  lan_comm_status_t status =
+      lan_comm_load_tx_data(g_lan_handle, config_packet, (uint16_t)packet_size);
+
+  if (status != LAN_COMM_OK) {
+    ESP_LOGE(TAG, "Failed to load config/FOTA to SPI TX: %d", status);
+    free(config_packet);
+    xSemaphoreGive(g_config_mutex);
+    return false;
+  }
 
   ESP_LOGI(TAG, "Config %s loaded (%u bytes)",
-           g_config_cache.is_fota ? "FOTA" : "DATA", packet_size);
+           g_config_cache.is_fota ? "FOTA" : "DATA", (unsigned)packet_size);
 
   g_config_cache.has_config = false;
   g_config_cache_has_config = false;
   free(config_packet);
   xSemaphoreGive(g_config_mutex);
+  return true;
 }
 
 // ===== Public API: Start Handler =====
@@ -407,8 +425,9 @@ bool mcu_lan_handler_update_config(const uint8_t *config_data, uint16_t length,
     } else if (length == 0) {
       ESP_LOGE(TAG, "Config length is 0");
     } else if (length > sizeof(g_config_cache.config_data)) {
-      ESP_LOGE(TAG, "Config too large: %u bytes (max %u)", length,
-               sizeof(g_config_cache.config_data));
+      ESP_LOGE(TAG,
+               "Config too large: %u bytes (max %u payload bytes after CF header)",
+               length, (unsigned)sizeof(g_config_cache.config_data));
     }
   }
 
