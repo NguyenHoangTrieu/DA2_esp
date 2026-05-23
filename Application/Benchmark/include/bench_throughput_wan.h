@@ -24,6 +24,7 @@
 #define BENCH_THROUGHPUT_WAN_H
 
 #include "esp_err.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -36,7 +37,7 @@ extern "C" {
  *        1 = compile real sender + reporter tasks.
  *        0 = all functions compiled as no-ops (zero production overhead).
  */
-#define BENCH_THROUGHPUT_WAN_ENABLE 1
+#define BENCH_THROUGHPUT_WAN_ENABLE 0
 
 /** Reporting interval in milliseconds. */
 #define BENCH_TP_WAN_REPORT_INTERVAL_MS 2000
@@ -59,6 +60,16 @@ void bench_throughput_wan_stop(void);
  * @param bytes Number of payload bytes in the received BNC frame.
  */
 void bench_throughput_wan_count_rx(uint32_t bytes);
+
+/**
+ * @brief True when the WAN-side bench is running and the slave's tx_buffer
+ *        holds the static WAN-to-LAN bench template. Other slave-side paths
+ *        (RTC response, FOTA trigger, etc.) MUST NOT call lan_comm_load_tx_data
+ *        while this returns true - overwriting the template both creates a
+ *        DMA-vs-CPU race (master full-duplex reads tx_buffer in real time)
+ *        and stops the WAN-to-LAN bench RX counter.
+ */
+bool bench_throughput_wan_is_active(void);
 
 #ifdef __cplusplus
 }

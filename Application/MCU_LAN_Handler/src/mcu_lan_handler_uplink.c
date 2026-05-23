@@ -327,6 +327,13 @@ static void uplink_processor_task(void *pvParameters) {
           if (g_config_cache_has_config || g_active_config_request_valid ||
               g_pending_downlink_valid) {
             ESP_LOGD(TAG, "RTC response deferred (pending TX payload)");
+          } else if (bench_throughput_wan_is_active()) {
+            /* P3.d: bench owns the slave's tx_buffer; loading an RTC frame
+             * would replace the static WAN-to-LAN bench template AND race
+             * with the master's full-duplex DMA reading tx_buffer. Master
+             * RTC poll will time out gracefully — bench mode trades RTC
+             * freshness for clean WAN-to-LAN bench frames. */
+            ESP_LOGD(TAG, "RTC response skipped (bench active)");
           } else {
             downlink_send_rtc_response();
           }
