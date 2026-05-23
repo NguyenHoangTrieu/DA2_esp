@@ -1,4 +1,5 @@
 #include "lan_comm.h"
+#include "spi_framing.h"
 #include "driver/gpio.h"
 #include "driver/spi_slave.h"
 #include "esp_heap_caps.h"
@@ -13,27 +14,51 @@ static const char *TAG = "LAN_COMM_SLAVE";
 struct lan_comm_handle_s {
   lan_comm_config_t config;
 
-  spi_slave_transaction_t spi_trans;
+  /* P3.a: ping-pong RX slots. While master clocks slot N, slot N+1 is already
+   * queued in the SPI driver — eliminates the inter-frame gap that previously
+   * dropped ~5% of master frames to slave-FIFO overflow. */
+  spi_slave_transaction_t spi_trans[LAN_COMM_RX_QUEUE_DEPTH];
+  uint8_t                *rx_buffer[LAN_COMM_RX_QUEUE_DEPTH];
+  bool                    slot_queued[LAN_COMM_RX_QUEUE_DEPTH];
 
-  uint8_t *rx_buffer;
-  uint8_t *tx_buffer;
-  size_t tx_buffer_len;
+  uint8_t *tx_buffer;            /* shared across all slots */
+  size_t   tx_buffer_len;
   SemaphoreHandle_t buffer_mutex;
 
   bool is_initialized;
-  bool transaction_queued;
   bool gpio_configured;
   lan_comm_status_t last_error;
 
   uint32_t packets_received;
   uint32_t packets_sent;
   uint32_t error_count;
+
+  /* P1 framing */
+  uint8_t  tx_seq;
+  uint16_t rx_prev_seq;
+  spi_frame_stats_t frame_stats;
+
+  /* P3.b cumulative ACK: highest master seq we've successfully parsed.
+   * SPI_FRAME_ACK_NONE means "haven't received anything yet — don't ack".
+   * Every outgoing frame piggybacks this. */
+  uint16_t last_rx_seq_for_ack;
+
+  /* P3.c: stateful multi-frame drain. When master batches N frames into a
+   * single SPI transaction, the slave's get_received_packet() iterates
+   * through them by remembering position within the just-completed slot.
+   * draining_slot = -1 means "no in-progress slot, pull the next done one";
+   * else it's the slot index whose rx_buffer is still being walked.        */
+  int    draining_slot;
+  size_t drain_offset;
+  size_t drain_remaining;
 };
 
 static lan_comm_status_t lan_comm_parse_frame(const uint8_t *buffer,
                                               size_t length,
                                               lan_comm_packet_t *packet,
-                                              size_t *frame_size);
+                                              size_t *frame_size,
+                                              spi_frame_stats_t *stats,
+                                              uint16_t *prev_seq);
 static void lan_comm_report_error(lan_comm_handle_t handle,
                                   lan_comm_status_t error, const char *context);
 static esp_err_t setup_data_ready_gpio(int gpio_pin);
@@ -67,18 +92,25 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
     h->config.dma_channel = SPI_DMA_CH_AUTO;
   }
 
-  h->rx_buffer =
-      (uint8_t *)heap_caps_malloc(h->config.rx_buffer_size, MALLOC_CAP_DMA);
+  bool alloc_ok = true;
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    h->rx_buffer[i] =
+        (uint8_t *)heap_caps_malloc(h->config.rx_buffer_size, MALLOC_CAP_DMA);
+    if (h->rx_buffer[i] == NULL) {
+      alloc_ok = false;
+    }
+  }
   h->tx_buffer =
       (uint8_t *)heap_caps_malloc(h->config.tx_buffer_size, MALLOC_CAP_DMA);
   h->buffer_mutex = xSemaphoreCreateMutex();
   h->tx_buffer_len = 0;
 
-  if (h->rx_buffer == NULL || h->tx_buffer == NULL ||
-      h->buffer_mutex == NULL) {
+  if (!alloc_ok || h->tx_buffer == NULL || h->buffer_mutex == NULL) {
     ESP_LOGE(TAG, "Failed to allocate buffers or mutex");
-    if (h->rx_buffer)
-      heap_caps_free(h->rx_buffer);
+    for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+      if (h->rx_buffer[i])
+        heap_caps_free(h->rx_buffer[i]);
+    }
     if (h->tx_buffer)
       heap_caps_free(h->tx_buffer);
     if (h->buffer_mutex)
@@ -87,7 +119,9 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
     return LAN_COMM_ERR_NOMEM;
   }
 
-  memset(h->rx_buffer, 0, h->config.rx_buffer_size);
+  /* P3.a: only zero TX (handed to master as MISO when slave has no payload).
+   * RX buffers are not zeroed per-cycle — parser is CRC + SOF-hunt based and
+   * only inspects trans_len/8 bytes, so stale tail beyond that is invisible. */
   memset(h->tx_buffer, 0, h->config.tx_buffer_size);
 
   spi_bus_config_t bus_cfg = {
@@ -111,7 +145,10 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
                                        h->config.dma_channel);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize SPI slave: %s", esp_err_to_name(ret));
-    heap_caps_free(h->rx_buffer);
+    for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+      if (h->rx_buffer[i])
+        heap_caps_free(h->rx_buffer[i]);
+    }
     heap_caps_free(h->tx_buffer);
     vSemaphoreDelete(h->buffer_mutex);
     free(h);
@@ -132,17 +169,27 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
   }
 
   h->is_initialized = true;
-  h->transaction_queued = false;
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    h->slot_queued[i] = false;
+  }
   h->last_error = LAN_COMM_OK;
   h->packets_received = 0;
   h->packets_sent = 0;
   h->error_count = 0;
+  h->tx_seq = 0;
+  h->rx_prev_seq = 0xFFFFu;
+  h->last_rx_seq_for_ack = SPI_FRAME_ACK_NONE;
+  h->draining_slot = -1;
+  h->drain_offset = 0;
+  h->drain_remaining = 0;
+  memset(&h->frame_stats, 0, sizeof(h->frame_stats));
 
   *handle = h;
 
-  ESP_LOGI(TAG, "SPI slave ready (full-duplex)");
-  ESP_LOGI(TAG, "RX buffer: %u bytes, TX buffer: %u bytes",
-           (unsigned)h->config.rx_buffer_size,
+  ESP_LOGI(TAG, "SPI slave ready (full-duplex, RX depth=%d)",
+           LAN_COMM_RX_QUEUE_DEPTH);
+  ESP_LOGI(TAG, "RX buffer: %u bytes × %d slots, TX buffer: %u bytes",
+           (unsigned)h->config.rx_buffer_size, LAN_COMM_RX_QUEUE_DEPTH,
            (unsigned)h->config.tx_buffer_size);
 
   return LAN_COMM_OK;
@@ -161,7 +208,10 @@ lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
 
   spi_slave_free(handle->config.host_id);
 
-  heap_caps_free(handle->rx_buffer);
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    if (handle->rx_buffer[i])
+      heap_caps_free(handle->rx_buffer[i]);
+  }
   heap_caps_free(handle->tx_buffer);
   vSemaphoreDelete(handle->buffer_mutex);
 
@@ -171,14 +221,29 @@ lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
   return LAN_COMM_OK;
 }
 
+/* P3.a: queue a single free slot. Caller already holds buffer_mutex. */
+static lan_comm_status_t queue_slot_locked(lan_comm_handle_t h, int idx) {
+  if (h->slot_queued[idx]) {
+    return LAN_COMM_OK;
+  }
+  spi_slave_transaction_t *t = &h->spi_trans[idx];
+  memset(t, 0, sizeof(*t));
+  t->length    = h->config.rx_buffer_size * 8;
+  t->rx_buffer = h->rx_buffer[idx];
+  t->tx_buffer = h->tx_buffer;        /* shared TX content across all slots */
+
+  esp_err_t ret = spi_slave_queue_trans(h->config.host_id, t, 0);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to queue slot %d: %s", idx, esp_err_to_name(ret));
+    return LAN_COMM_ERR_BUS_BUSY;
+  }
+  h->slot_queued[idx] = true;
+  return LAN_COMM_OK;
+}
+
 lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle) {
   if (handle == NULL || !handle->is_initialized) {
     return LAN_COMM_ERR_NOT_INITIALIZED;
-  }
-
-  if (handle->transaction_queued) {
-    ESP_LOGD(TAG, "RX transaction already queued");
-    return LAN_COMM_OK;
   }
 
   if (xSemaphoreTake(handle->buffer_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
@@ -187,27 +252,64 @@ lan_comm_status_t lan_comm_queue_receive(lan_comm_handle_t handle) {
     return LAN_COMM_ERR_TIMEOUT;
   }
 
-  memset(handle->rx_buffer, 0, handle->config.rx_buffer_size);
-
-  memset(&handle->spi_trans, 0, sizeof(spi_slave_transaction_t));
-  handle->spi_trans.length = handle->config.rx_buffer_size * 8;
-  handle->spi_trans.rx_buffer = handle->rx_buffer;
-  handle->spi_trans.tx_buffer = handle->tx_buffer;
-
-  esp_err_t ret =
-      spi_slave_queue_trans(handle->config.host_id, &handle->spi_trans, 0);
+  /* Fill every free slot. First call after init queues all
+   * LAN_COMM_RX_QUEUE_DEPTH slots; subsequent calls top up the slot the
+   * caller just freed in get_received_packet.
+   *
+   * P3.c: skip the slot currently being drained — its rx_buffer still holds
+   * unparsed frames from the master's batch, and re-queueing it would have
+   * the SPI driver overwrite them with new master bytes.                    */
+  lan_comm_status_t status = LAN_COMM_OK;
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    if (i == handle->draining_slot) {
+      continue;
+    }
+    lan_comm_status_t s = queue_slot_locked(handle, i);
+    if (s != LAN_COMM_OK) {
+      status = s;
+    }
+  }
 
   xSemaphoreGive(handle->buffer_mutex);
 
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to queue SPI transaction: %s", esp_err_to_name(ret));
-    lan_comm_report_error(handle, LAN_COMM_ERR_BUS_BUSY,
-                          "queue_receive failed");
-    return LAN_COMM_ERR_BUS_BUSY;
+  if (status != LAN_COMM_OK) {
+    lan_comm_report_error(handle, status, "queue_receive failed");
+  }
+  return status;
+}
+
+/* P3.c: try to parse one more frame out of the slot currently being drained.
+ * Returns LAN_COMM_OK with packet filled, LAN_COMM_ERR_NO_DATA if exhausted,
+ * or another status on parse error. On exhaustion the draining_slot is
+ * cleared so the caller falls through to pull the next transaction.        */
+static lan_comm_status_t drain_next_frame(lan_comm_handle_t handle,
+                                          lan_comm_packet_t *packet) {
+  if (handle->draining_slot < 0 || handle->drain_remaining < SPI_FRAME_OVERHEAD) {
+    handle->draining_slot = -1;
+    return LAN_COMM_ERR_NO_DATA;
   }
 
-  handle->transaction_queued = true;
-  return LAN_COMM_OK;
+  size_t frame_size = 0;
+  const uint8_t *buf =
+      handle->rx_buffer[handle->draining_slot] + handle->drain_offset;
+  lan_comm_status_t status =
+      lan_comm_parse_frame(buf, handle->drain_remaining, packet, &frame_size,
+                           &handle->frame_stats, &handle->rx_prev_seq);
+
+  if (status == LAN_COMM_OK && frame_size > 0) {
+    handle->drain_offset    += frame_size;
+    handle->drain_remaining -= frame_size;
+    handle->last_rx_seq_for_ack = (uint16_t)(handle->rx_prev_seq & 0xFFu);
+    handle->packets_received++;
+    return LAN_COMM_OK;
+  }
+
+  /* No more (or unrecoverable) frames in this slot — drop it and signal
+   * "pull next transaction".                                                 */
+  handle->draining_slot   = -1;
+  handle->drain_offset    = 0;
+  handle->drain_remaining = 0;
+  return LAN_COMM_ERR_NO_DATA;
 }
 
 lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
@@ -221,7 +323,24 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  if (!handle->transaction_queued) {
+  /* P3.c: first try to drain the slot that has unparsed frames left over
+   * from the previous call. Master batches up to WAN_COMM_BATCH_MAX_FRAMES
+   * into one SPI transaction, so a single slot may yield several packets. */
+  if (handle->draining_slot >= 0) {
+    lan_comm_status_t s = drain_next_frame(handle, packet);
+    if (s == LAN_COMM_OK) {
+      return LAN_COMM_OK;
+    }
+    /* drained — fall through to pull next transaction */
+  }
+
+  /* At least one slot must be queued. queue_receive() should have ensured
+   * that — soft-fail loudly if not. */
+  bool any_queued = false;
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    if (handle->slot_queued[i]) { any_queued = true; break; }
+  }
+  if (!any_queued) {
     ESP_LOGW(TAG, "No transaction queued, call lan_comm_queue_receive() first");
     return LAN_COMM_ERR_INVALID_STATE;
   }
@@ -237,34 +356,39 @@ lan_comm_status_t lan_comm_get_received_packet(lan_comm_handle_t handle,
 
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to get transaction result: %s", esp_err_to_name(ret));
-    handle->transaction_queued = false;
+    /* Mark all slots free so the next queue_receive can recover. */
+    for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+      handle->slot_queued[i] = false;
+    }
     lan_comm_report_error(handle, LAN_COMM_ERR_BUS_BUSY,
                           "get_received_packet failed");
     return LAN_COMM_ERR_BUS_BUSY;
   }
 
-  handle->transaction_queued = false;
+  /* Identify which slot completed by pointer match. */
+  int idx = -1;
+  for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
+    if (trans == &handle->spi_trans[i]) { idx = i; break; }
+  }
+  if (idx < 0) {
+    ESP_LOGE(TAG, "Got unknown transaction pointer from driver");
+    lan_comm_report_error(handle, LAN_COMM_ERR_INVALID_STATE,
+                          "unknown trans pointer");
+    return LAN_COMM_ERR_INVALID_STATE;
+  }
+  handle->slot_queued[idx] = false;
 
   if (trans->trans_len == 0) {
     return LAN_COMM_ERR_NO_DATA;
   }
 
-  size_t received_bytes = trans->trans_len / 8;
+  /* P3.c: stash drain state and let drain_next_frame() handle the first
+   * (and any subsequent) frame from this slot. */
+  handle->draining_slot   = idx;
+  handle->drain_offset    = 0;
+  handle->drain_remaining = trans->trans_len / 8;
 
-  size_t frame_size = 0;
-  lan_comm_status_t status =
-      lan_comm_parse_frame(handle->rx_buffer, received_bytes, packet,
-                           &frame_size);
-
-  if (status != LAN_COMM_OK) {
-    if (status != LAN_COMM_ERR_NO_DATA) {
-      lan_comm_report_error(handle, status, "packet parse error");
-    }
-    return status;
-  }
-
-  handle->packets_received++;
-  return LAN_COMM_OK;
+  return drain_next_frame(handle, packet);
 }
 
 uint32_t lan_comm_parse_dma_buffer(lan_comm_handle_t handle,
@@ -283,13 +407,18 @@ uint32_t lan_comm_parse_dma_buffer(lan_comm_handle_t handle,
     size_t frame_size = 0;
     lan_comm_status_t status =
         lan_comm_parse_frame(&buffer[offset], length - offset, &packet,
-                             &frame_size);
+                             &frame_size, &handle->frame_stats,
+                             &handle->rx_prev_seq);
     if (status == LAN_COMM_OK && frame_size > 0) {
+      handle->last_rx_seq_for_ack = (uint16_t)(handle->rx_prev_seq & 0xFFu);
       callback(&packet, user_arg);
       frame_count++;
       offset += frame_size;
+    } else if (frame_size > 0) {
+      offset += frame_size;
     } else {
-      offset++;
+      /* TRUNCATED / NO_SYNC at tail — nothing more usable */
+      break;
     }
   }
 
@@ -307,9 +436,17 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  if (length > handle->config.tx_buffer_size) {
-    ESP_LOGE(TAG, "TX data length %u exceeds buffer size %u", length,
-             (unsigned)handle->config.tx_buffer_size);
+  /* The framed length is SPI_FRAME_OVERHEAD + length; reject if it does not
+   * fit. Also clamp the *inner* payload to the framing maximum. */
+  if ((size_t)length > SPI_FRAME_MAX_PAYLOAD) {
+    ESP_LOGE(TAG, "TX inner length %u exceeds frame max %u", length,
+             (unsigned)SPI_FRAME_MAX_PAYLOAD);
+    return LAN_COMM_ERR_INVALID_ARG;
+  }
+  size_t framed_len = SPI_FRAME_OVERHEAD + (size_t)length;
+  if (framed_len > handle->config.tx_buffer_size) {
+    ESP_LOGE(TAG, "TX framed length %u exceeds buffer size %u",
+             (unsigned)framed_len, (unsigned)handle->config.tx_buffer_size);
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
@@ -319,22 +456,26 @@ lan_comm_status_t lan_comm_load_tx_data(lan_comm_handle_t handle,
     return LAN_COMM_ERR_TIMEOUT;
   }
 
-  /* spi_slave_disable / spi_slave_enable removed: this function is only ever
-   * called after spi_slave_get_trans_result() has returned, meaning the slave
-   * peripheral is completely idle and no DMA read is in flight.  The heavy
-   * reinitialisation cycle (disable + enable) was adding ~100–200 µs per ACK
-   * load and creating a brief window where an incoming CS assertion from the
-   * LAN master could be mishandled, causing occasional "Data payload
-   * incomplete" errors.  buffer_mutex already serialises concurrent callers. */
-
   /* Zero only the bytes that were previously loaded (stale tail) plus the new
-   * payload — avoids clearing the full 16 KB buffer every ACK load.        */
-  size_t clear_len = (handle->tx_buffer_len > length)
+   * framed payload — avoids clearing the full 16 KB buffer every ACK load.   */
+  size_t clear_len = (handle->tx_buffer_len > framed_len)
                          ? handle->tx_buffer_len
-                         : length;
+                         : framed_len;
   memset(handle->tx_buffer, 0, clear_len);
-  memcpy(handle->tx_buffer, data_to_send, length);
-  handle->tx_buffer_len = length;
+
+  /* P3.b: piggyback cumulative ACK = highest master seq we've parsed OK. */
+  size_t built = spi_frame_build(handle->tx_buffer,
+                                  handle->config.tx_buffer_size,
+                                  SPI_FT_USER_BLOB, handle->tx_seq++,
+                                  handle->last_rx_seq_for_ack,
+                                  data_to_send, length);
+  if (built == 0) {
+    xSemaphoreGive(handle->buffer_mutex);
+    lan_comm_report_error(handle, LAN_COMM_ERR_INVALID_ARG,
+                          "load_tx_data frame build failed");
+    return LAN_COMM_ERR_INVALID_ARG;
+  }
+  handle->tx_buffer_len = built;
 
   xSemaphoreGive(handle->buffer_mutex);
 
@@ -397,54 +538,67 @@ lan_comm_status_t lan_comm_clear_statistics(lan_comm_handle_t handle) {
   return LAN_COMM_OK;
 }
 
+lan_comm_status_t lan_comm_get_framing_stats(lan_comm_handle_t handle,
+                                              uint32_t *rx_frames_ok,
+                                              uint32_t *rx_hdr_crc_fail,
+                                              uint32_t *rx_payload_crc_fail,
+                                              uint32_t *rx_resync_bytes,
+                                              uint32_t *rx_seq_gap) {
+  if (handle == NULL || !handle->is_initialized) {
+    return LAN_COMM_ERR_NOT_INITIALIZED;
+  }
+  if (rx_frames_ok)        *rx_frames_ok        = handle->frame_stats.frames_ok;
+  if (rx_hdr_crc_fail)     *rx_hdr_crc_fail     = handle->frame_stats.hdr_crc_fail;
+  if (rx_payload_crc_fail) *rx_payload_crc_fail = handle->frame_stats.payload_crc_fail;
+  if (rx_resync_bytes)     *rx_resync_bytes     = handle->frame_stats.resync_bytes;
+  if (rx_seq_gap)          *rx_seq_gap          = handle->frame_stats.seq_gap;
+  return LAN_COMM_OK;
+}
+
+/* P1: parse one SPI frame out of the raw RX buffer. The frame's inner
+ * payload still begins with the legacy 2-byte CF/DT/DQ/CQ magic so existing
+ * dispatch logic in the uplink/downlink handlers works unchanged. */
 static lan_comm_status_t lan_comm_parse_frame(const uint8_t *buffer,
                                               size_t length,
                                               lan_comm_packet_t *packet,
-                                              size_t *frame_size) {
-  if (buffer == NULL || length < LAN_COMM_HEADER_SIZE || packet == NULL ||
-      frame_size == NULL) {
+                                              size_t *frame_size,
+                                              spi_frame_stats_t *stats,
+                                              uint16_t *prev_seq) {
+  if (buffer == NULL || length == 0 || packet == NULL || frame_size == NULL) {
     return LAN_COMM_ERR_INVALID_ARG;
   }
 
-  size_t offset = 0;
-  while (offset < length && buffer[offset] == 0x00) {
-    offset++;
-  }
+  spi_frame_view_t view;
+  spi_frame_status_t st = SPI_FRAME_NO_SYNC;
+  size_t consumed = 0;
+  bool ok = spi_frame_find(buffer, length, &view, &st, stats, &consumed);
 
-  if (offset >= length || (length - offset) < LAN_COMM_HEADER_SIZE) {
-    return LAN_COMM_ERR_NO_DATA;
-  }
-
-  uint16_t header = (buffer[offset] << 8) | buffer[offset + 1];
-  if (header == 0x0000) {
-    return LAN_COMM_ERR_NO_DATA;
-  }
-
-  if (header == LAN_COMM_HEADER_CF) {
-    bool is_polling = true;
-    for (size_t i = offset + LAN_COMM_HEADER_SIZE;
-         i < offset + LAN_COMM_HEADER_SIZE + 10 && i < length; i++) {
-      if (buffer[i] != 0x00) {
-        is_polling = false;
-        break;
-      }
-    }
-    if (is_polling) {
+  if (!ok) {
+    if (st == SPI_FRAME_TRUNCATED || st == SPI_FRAME_NO_SYNC) {
       return LAN_COMM_ERR_NO_DATA;
     }
-  }
-
-  if (header != LAN_COMM_HEADER_CF && header != LAN_COMM_HEADER_DT &&
-      header != LAN_COMM_HEADER_DQ && header != LAN_COMM_HEADER_CQ) {
+    /* BAD_HDR_CRC, BAD_PAYLOAD_CRC, BAD_LEN — counters already bumped */
     return LAN_COMM_ERR_INVALID_HEADER;
   }
 
-  packet->header_type = header;
-  // Keep header bytes in payload for current uplink/downlink parsing logic.
-  packet->payload = (uint8_t *)&buffer[offset];
-  packet->payload_length = length - offset;
-  *frame_size = length - offset;
+  if (view.len < LAN_COMM_HEADER_SIZE) {
+    return LAN_COMM_ERR_NO_DATA;
+  }
 
+  uint16_t inner_hdr = ((uint16_t)view.payload[0] << 8) | (uint16_t)view.payload[1];
+  if (inner_hdr != LAN_COMM_HEADER_CF && inner_hdr != LAN_COMM_HEADER_DT &&
+      inner_hdr != LAN_COMM_HEADER_DQ && inner_hdr != LAN_COMM_HEADER_CQ) {
+    return LAN_COMM_ERR_INVALID_HEADER;
+  }
+
+  if (prev_seq) {
+    spi_frame_track_seq(prev_seq, view.seq, stats);
+  }
+
+  packet->header_type = inner_hdr;
+  packet->payload = (uint8_t *)view.payload;   /* still inside rx_buffer */
+  packet->payload_length = view.len;
+  *frame_size = consumed;
   return LAN_COMM_OK;
 }
 

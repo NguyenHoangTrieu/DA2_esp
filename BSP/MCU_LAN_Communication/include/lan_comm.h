@@ -13,6 +13,11 @@ extern "C" {
 #define LAN_COMM_DEFAULT_RX_BUFFER    16384     // 16KB – large enough for max config JSON
 #define LAN_COMM_DEFAULT_TX_BUFFER    16384     // 16KB
 #define LAN_COMM_TRANS_QUEUE_SIZE     7
+/* P3.a: number of RX transactions kept in flight at the SPI slave driver. >=2
+ * means while one DMA buffer is being clocked by the master, the next one is
+ * already queued — no inter-frame gap in which the slave silently drops bytes
+ * to FIFO overflow.  Each slot consumes one rx_buffer_size DMA allocation. */
+#define LAN_COMM_RX_QUEUE_DEPTH       2
 #define LAN_COMM_ACK_TIMEOUT_MS       500
 #define LAN_COMM_DQ_RETRY_MS          50        //
 #define LAN_COMM_DQ_RETRY_COUNT       10
@@ -195,6 +200,16 @@ lan_comm_status_t lan_comm_get_statistics(lan_comm_handle_t handle,
  * @brief Clear statistics
  */
 lan_comm_status_t lan_comm_clear_statistics(lan_comm_handle_t handle);
+
+/**
+ * @brief P1-framing stats snapshot. Any out pointer may be NULL.
+ */
+lan_comm_status_t lan_comm_get_framing_stats(lan_comm_handle_t handle,
+                                              uint32_t *rx_frames_ok,
+                                              uint32_t *rx_hdr_crc_fail,
+                                              uint32_t *rx_payload_crc_fail,
+                                              uint32_t *rx_resync_bytes,
+                                              uint32_t *rx_seq_gap);
 
 #ifdef __cplusplus
 }

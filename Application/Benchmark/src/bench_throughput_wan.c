@@ -21,6 +21,10 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lan_comm.h"
+
+/* For framing-stats reporting */
+extern lan_comm_handle_t g_lan_handle;
 
 static const char *TAG = "BENCH_TP_WAN";
 
@@ -76,6 +80,19 @@ static void bench_tp_wan_reporter_task(void *arg) {
                  BENCH_TP_WAN_REPORT_INTERVAL_MS,
                  (unsigned long)rx_pkt, (unsigned long)rx_b,
                  rx_pps, rx_kbps);
+
+        /* P1 framing diagnostics — cumulative since boot. */
+        if (g_lan_handle) {
+            uint32_t fok = 0, hcrc = 0, pcrc = 0, resync = 0, gap = 0;
+            lan_comm_get_framing_stats(g_lan_handle, &fok, &hcrc, &pcrc,
+                                       &resync, &gap);
+            ESP_LOGI(TAG,
+                     "[BENCH_TP_WAN frame] rx_ok=%lu hdr_crc_fail=%lu "
+                     "pay_crc_fail=%lu resync_bytes=%lu seq_gap=%lu",
+                     (unsigned long)fok, (unsigned long)hcrc,
+                     (unsigned long)pcrc, (unsigned long)resync,
+                     (unsigned long)gap);
+        }
     }
 
     ESP_LOGI(TAG, "Reporter task stopped");

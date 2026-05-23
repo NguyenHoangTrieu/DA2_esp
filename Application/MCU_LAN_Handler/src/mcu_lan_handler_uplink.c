@@ -142,17 +142,22 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
     return ESP_FAIL;
   }
 
-  // Create uplink processor task (Priority 6)
+  /* P3.a: pin uplink to APP_CPU (core 1) — Wi-Fi/MQTT system tasks run on
+   * PRO_CPU (core 0), so this removes preemption-induced gaps that let the
+   * master clock new frames between our get_received_packet → queue_receive
+   * cycle. Priority lifted 6 → 7 (no other handler-side task above 6 on the
+   * SPI slave, so no starvation risk). */
   {
     StackType_t *uplink_stack = (StackType_t *)heap_caps_malloc(
         6144, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     StaticTask_t *uplink_tcb = (StaticTask_t *)heap_caps_malloc(
         sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (uplink_stack && uplink_tcb) {
-      g_uplink_task_handle =
-          xTaskCreateStatic(uplink_processor_task, "lan_uplink", 6144, NULL, 6,
-                            uplink_stack, uplink_tcb);
-      ESP_LOGI(TAG, "Uplink processor task created in PSRAM");
+      /* xCoreID = 1 → APP_CPU on ESP32-S3 (PRO_CPU=0 runs Wi-Fi/lwIP/MQTT). */
+      g_uplink_task_handle = xTaskCreateStaticPinnedToCore(
+          uplink_processor_task, "lan_uplink", 6144, NULL, 7, uplink_stack,
+          uplink_tcb, 1);
+      ESP_LOGI(TAG, "Uplink processor task created (PSRAM stack, APP_CPU, prio 7)");
     } else {
       ESP_LOGE(TAG, "Failed to allocate uplink task in PSRAM");
       vSemaphoreDelete(g_rtc_cache.mutex);
@@ -189,7 +194,7 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
     }
   }
 
-  ESP_LOGI(TAG, "Uplink processor task started (Priority 6, stack 6KB)");
+  ESP_LOGI(TAG, "Uplink processor task started (Priority 7, APP_CPU, stack 6KB)");
   return ESP_OK;
 }
 
@@ -214,7 +219,7 @@ void mcu_lan_handler_stop_uplink_task(void) {
 
 // ===== Main Uplink Task =====
 static void uplink_processor_task(void *pvParameters) {
-  ESP_LOGI(TAG, " Uplink Processor (SPI Slave, Priority 6) started ");
+  ESP_LOGI(TAG, " Uplink Processor (SPI Slave, Priority 7, APP_CPU) started ");
 
   // ===== Phase 1: Handshake =====
   ESP_LOGI(TAG, "Phase 1: Waiting for handshake from LAN MCU");
@@ -588,11 +593,11 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   // never route to server or UART.
   handler_id_t hid = handler_string_to_id(&payload[2]);
   if (hid == HANDLER_BENCH) {
-    /* data_length encodes [RTC(19) + payload]; subtract the 19-byte RTC header
-     * so the WAN reporter counts the same bytes as the LAN sender (2048).   */
+    /* P2 fast path: BNC measures SPI-layer throughput. Master fires DT
+     * without polling for ACK, so loading one here would waste the slave's
+     * tx_buffer slot and serialise the loop on a useless mutex. Just count
+     * bytes and return. */
     bench_throughput_wan_count_rx(data_length > 19u ? data_length - 19u : data_length);
-    downlink_send_ack_to_lan(ACK_TYPE_RECEIVED_OK,
-                             g_internet_status == INTERNET_STATUS_ONLINE ? 1 : 0);
     ESP_LOGD(TAG, "BNC frame: %u bytes counted (bench RX)", data_length);
     return;
   }
