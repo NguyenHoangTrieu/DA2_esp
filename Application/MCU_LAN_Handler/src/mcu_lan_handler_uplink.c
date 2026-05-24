@@ -897,6 +897,34 @@ static void send_downlink_to_lan(const downlink_item_t *item) {
 
   ESP_LOGI(TAG, "Downlink loaded: handler=%s, %u bytes", type_str, packet_size);
 
+  /* Bench Mode 2: fire-and-forget for HANDLER_BENCH.
+   *
+   * Real production downlinks (config push, RPC response, FOTA trigger) are
+   * ACK-gated below because the slave needs to know the master processed
+   * the payload before advancing its state machine. Bench traffic has no
+   * application state — its only purpose is to occupy SPI airtime so
+   * throughput can be measured. Waiting up to MAX_RETRY_COUNT ×
+   * ACK_WAIT_TIMEOUT_MS (=3 × 500 = 1500 ms worst case) per bench frame on
+   * the UPLINK TASK starves the master's LAN→WAN traffic, because the
+   * uplink task is also responsible for processing incoming master frames.
+   * The cycle is:
+   *   slave uplink task busy waiting bench ACK
+   *     → can't drain master DT frames
+   *       → master sees no cumulative ACK update
+   *         → master's send_data_to_wan ACK-timeouts
+   *           → master uplink drops, master ACKs late
+   *             → slave waits even longer, etc.
+   *
+   * Delivery correctness for bench is verified independently via the
+   * LAN-side bench_throughput_count_rx counter, CRC checks (must = 0),
+   * and the framing-layer cumulative ACK (P3.b) which still advances on
+   * each slave→master frame. Skipping the explicit application ACK here
+   * removes the cycle without weakening any of those checks. */
+  if (item->target_id == HANDLER_BENCH) {
+    free(packet);
+    return;
+  }
+
   // Wait for ACK from LAN MCU (with retry)
   for (int retry = 0; retry < MAX_RETRY_COUNT; retry++) {
     lan_comm_queue_receive(g_lan_handle);

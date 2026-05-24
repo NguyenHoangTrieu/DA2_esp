@@ -34,10 +34,55 @@ extern "C" {
 /**
  * @brief Master on/off switch for the WAN-side inter-MCU throughput benchmark.
  *        Must be kept in sync with BENCH_THROUGHPUT_ENABLE on the LAN side.
- *        1 = compile real sender + reporter tasks.
- *        0 = all functions compiled as no-ops (zero production overhead).
+ *
+ *   0 = OFF. All public functions are no-ops.
+ *
+ *   1 = DRIVER mode. Slave loads ONE static [DT][BNC]...[0xAA*2048] template
+ *       into tx_buffer on the first BNC RX (one-shot). Never refreshes.
+ *       Master full-duplex pulls the same buffer every transaction. Measures
+ *       transport ceiling, not real downlink generation cost.
+ *
+ *   2 = PRODUCTION-REAL mode. A refresh task periodically (every
+ *       BENCH_TP_WAN_REFRESH_INTERVAL_MS) calls
+ *       mcu_lan_enqueue_downlink(HANDLER_BENCH, ...) — the same path real
+ *       downlink producers use (config push, RPC responses). Each refresh
+ *       walks queue → memcpy → downlink_handler_task → lan_comm_load_tx_data,
+ *       so the wire-time throughput reflects the cost of producing fresh
+ *       payload, not echoing a static buffer.
  */
-#define BENCH_THROUGHPUT_WAN_ENABLE 0
+#define BENCH_THROUGHPUT_WAN_ENABLE 2
+
+/* Derived flags — do NOT edit. */
+#define BENCH_TP_WAN_MODE_OFF        (BENCH_THROUGHPUT_WAN_ENABLE == 0)
+#define BENCH_TP_WAN_MODE_DRIVER     (BENCH_THROUGHPUT_WAN_ENABLE == 1)
+#define BENCH_TP_WAN_MODE_PROD_REAL  (BENCH_THROUGHPUT_WAN_ENABLE == 2)
+
+/** Refresh interval for Mode 2 downlink generator (ms).
+ *
+ *  Architectural note: real production downlinks (config push, RPC response,
+ *  FOTA trigger) go through `send_downlink_to_lan` which is ACK-gated
+ *  (3 retries × 500 ms ACK_WAIT_TIMEOUT_MS). Bench traffic, however, is
+ *  short-circuited inside send_downlink_to_lan for HANDLER_BENCH:
+ *  load_tx_data and return, no ACK wait. See the comment in
+ *  mcu_lan_handler_uplink.c::send_downlink_to_lan for the rationale —
+ *  short version: waiting on the application ACK on the uplink task
+ *  starves master LAN→WAN traffic and produces a deadlock-ish cycle.
+ *
+ *  Consequence: Mode 2 WAN→LAN throughput is bounded by master full-duplex
+ *  transaction rate, not by the ACK round-trip — so it tracks the SPI
+ *  wire ceiling minus framing overhead.
+ *
+ *  Pacing rule of thumb at 2 KB payload:
+ *      kbps ≈ 2048 × 8 / interval_ms  (capped by master pull rate)
+ *      20 ms → ~820 kbps
+ *      10 ms → ~1.6 Mbps
+ *       5 ms → ~3.2 Mbps (master full-duplex ceiling on a 7-frame batch)
+ *
+ *  Don't push below 5 ms: lan_comm_load_tx_data writes tx_buffer mid-DMA
+ *  when master is actively reading it, causing CRC corruption that the
+ *  framing layer cannot recover (visible as resync_bytes spike). 20 ms is
+ *  a safe default that exercises the full pipeline without racing. */
+#define BENCH_TP_WAN_REFRESH_INTERVAL_MS 20
 
 /** Reporting interval in milliseconds. */
 #define BENCH_TP_WAN_REPORT_INTERVAL_MS 2000
