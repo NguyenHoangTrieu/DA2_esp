@@ -22,12 +22,13 @@ static const char *TAG = "BENCH_TP_WAN";
 
 #if BENCH_THROUGHPUT_WAN_ENABLE
 
-/* WAN→LAN template. Inner: [DT][BNC][len BE][rtc 19B][payload 2048].
+/* WAN→LAN template. Inner: [DT][BNC][len BE][lan_rx_us(8 LE)][rtc 19B][payload 2048].
  * Loaded once on first BNC RX. Refresh during a run races with master
  * full-duplex DMA → CRC corruption; other slave paths must check
- * bench_throughput_wan_is_active() before overwriting tx_buffer. */
+ * bench_throughput_wan_is_active() before overwriting tx_buffer.
+ * lan_rx_us is hard-zero for bench traffic (no module RX). */
 #define BENCH_WAN_TX_PAYLOAD_LEN  2048u
-#define BENCH_WAN_TX_INNER_LEN    (2u + 3u + 2u + 19u + BENCH_WAN_TX_PAYLOAD_LEN) /* 2074 */
+#define BENCH_WAN_TX_INNER_LEN    (2u + 3u + 2u + 8u + 19u + BENCH_WAN_TX_PAYLOAD_LEN) /* 2082 */
 
 static uint8_t s_wan_tx_template[BENCH_WAN_TX_INNER_LEN];
 static bool    s_wan_tx_template_built = false;
@@ -37,11 +38,13 @@ static void bench_wan_build_template_once(void) {
     if (s_wan_tx_template_built) return;
     s_wan_tx_template[0] = 'D';  s_wan_tx_template[1] = 'T';
     s_wan_tx_template[2] = 'B';  s_wan_tx_template[3] = 'N';  s_wan_tx_template[4] = 'C';
-    uint16_t data_len = 19u + BENCH_WAN_TX_PAYLOAD_LEN;  /* 2067 */
+    uint16_t data_len = 19u + BENCH_WAN_TX_PAYLOAD_LEN;  /* 2067 (lan_rx_us is OUTSIDE data_length) */
     s_wan_tx_template[5] = (uint8_t)((data_len >> 8) & 0xFFu);
     s_wan_tx_template[6] = (uint8_t)(data_len & 0xFFu);
-    memcpy(&s_wan_tx_template[7], "00/00/0000-00:00:00", 19);
-    memset(&s_wan_tx_template[26], 0xAA, BENCH_WAN_TX_PAYLOAD_LEN);
+    /* lan_rx_us = 0 (bench template, no real module RX) */
+    memset(&s_wan_tx_template[7], 0, 8);
+    memcpy(&s_wan_tx_template[15], "00/00/0000-00:00:00", 19);
+    memset(&s_wan_tx_template[34], 0xAA, BENCH_WAN_TX_PAYLOAD_LEN);
     s_wan_tx_template_built = true;
 }
 

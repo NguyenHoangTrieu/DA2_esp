@@ -26,6 +26,10 @@
 typedef struct {
     uint8_t data[HTTP_PUBLISH_DATA_MAX_LEN];
     size_t  length;
+    /* [E2E_TOTAL] fields. Zero when bench is off / handler didn't measure. */
+    int64_t lan_rx_us;         // absolute LAN esp_timer_get_time() from DT frame
+    int64_t wan_rx_us;         // when WAN MCU first parsed the SPI frame
+    char    handler_type[4];
 } http_publish_data_t;
 
 // ---------------------------------------------------------------------------
@@ -48,6 +52,11 @@ bool http_handler_is_connected(void);
  * @return true if enqueued successfully, false if queue full or not started
  */
 bool http_enqueue_telemetry(const uint8_t *data, size_t data_len);
+
+/* E2E-tagged variant. The publish task emits [E2E_TOTAL] using these. */
+bool http_enqueue_telemetry_e2e(const uint8_t *data, size_t data_len,
+                                int64_t lan_rx_us, int64_t wan_rx_us,
+                                const char *handler_type);
 
 /**
  * @brief Update running HTTP configuration (takes effect on next publish).

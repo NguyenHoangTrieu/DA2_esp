@@ -22,6 +22,8 @@
 #include "mqtt_handler.h"
 #include "pcf8563_rtc.h"
 #include "bench_throughput_wan.h"
+#include "bench_e2e.h"
+#include "bench_time_sync.h"
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -349,6 +351,33 @@ static void uplink_processor_task(void *pvParameters) {
           // Config query from LAN
           ESP_LOGI(TAG, "Config query received from LAN");
           process_config_query(&packet);
+        } else if (packet.payload[2] == FRAME_TYPE_TSYNC_REQ) {
+#if BENCH_TIME_SYNC_ENABLE
+          /* Time-sync request from LAN master. Capture T2 IMMEDIATELY
+           * (before any other work) for best accuracy. */
+          int64_t t2_us = esp_timer_get_time();
+
+          /* Build response in a stack-local buffer, then load via lan_comm
+           * which adds SPI framing (SOF/CRC). slave_build_response captures
+           * T3 right before fill — V1 captures T3 in this context, which
+           * misses the slave_load_to_wire delay (~50µs). Future V2 will use
+           * the BSP pre_tx_cb to capture T3 at the wire moment for sub-10µs. */
+          uint8_t rsp_buf[sizeof(tsync_response_t)];
+          uint16_t rsp_len = 0;
+          /* payload[2..] = [cmd][T1 8B]. Pass the inner CF tail starting from
+           * the CF header to match tsync_request_t layout: [CF(2)][cmd(1)][T1(8)]. */
+          bool ok = bench_time_sync_slave_build_response(
+              packet.payload, packet.payload_length,
+              t2_us, rsp_buf, sizeof(rsp_buf), &rsp_len);
+          if (ok && rsp_len > 0) {
+            lan_comm_load_tx_data(g_lan_handle, rsp_buf, rsp_len);
+            ESP_LOGD(TAG, "TSYNC response queued (%u bytes)", (unsigned)rsp_len);
+          } else {
+            ESP_LOGW(TAG, "TSYNC build_response rejected req");
+          }
+#else
+          ESP_LOGD(TAG, "TSYNC_REQ ignored (bench disabled)");
+#endif
         }
         // Note: FOTA trigger from LAN uses format [CF][FW] but WAN doesn't
         // receive it WAN only sends FOTA trigger to LAN, never receives it from
@@ -574,7 +603,11 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
 
 // ===== Process Data from LAN =====
 static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
-  // Format: [DT][handler_type(3)][data_length(2)][data_payload]
+#if BENCH_E2E_WAN_ENABLE
+  /* [E2E_WAN] capture SPI frame arrival time at top of the parser */
+  int64_t wan_rx_ts_us = esp_timer_get_time();
+#endif
+  // Format: [DT][handler_type(3)][data_length(2)][lan_rx_us(8 LE)][data_payload]
   if (length < DATA_PACKET_HEADER_SIZE) {
     ESP_LOGE(TAG, "Data packet too short: %u bytes", length);
     return;
@@ -584,7 +617,21 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
   uint8_t handler_type[4] = {payload[2], payload[3], payload[4], '\0'};
   uint16_t data_length = (payload[5] << 8) | payload[6];
 
-  ESP_LOGD(TAG, "Data from LAN: handler=%s, len=%u", handler_type, data_length);
+  /* Absolute LAN `esp_timer_get_time()` (µs) when the wireless module
+   * callback received the data. Zero ⇒ handler did not opt-in to bench.
+   * Used together with bench_time_sync_from_peer_us() to compute the
+   * unified [E2E_TOTAL] latency. */
+  uint64_t lan_rx_us = ((uint64_t)payload[7])        |
+                       ((uint64_t)payload[8]  <<  8) |
+                       ((uint64_t)payload[9]  << 16) |
+                       ((uint64_t)payload[10] << 24) |
+                       ((uint64_t)payload[11] << 32) |
+                       ((uint64_t)payload[12] << 40) |
+                       ((uint64_t)payload[13] << 48) |
+                       ((uint64_t)payload[14] << 56);
+
+  ESP_LOGD(TAG, "Data from LAN: handler=%s, len=%u, lan_rx_us=%llu",
+           handler_type, data_length, (unsigned long long)lan_rx_us);
 
   // Validate length
   if (length < DATA_PACKET_HEADER_SIZE + data_length) {
@@ -761,7 +808,26 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
       //                        ESP_LOG_INFO);
 
       ESP_LOGD(TAG, "Forwarding to MQTT server (server command response)");
+
+#if BENCH_E2E_WAN_ENABLE
+      {
+        int64_t ingress_us = esp_timer_get_time() - wan_rx_ts_us;
+        BENCH_E2E_WAN_LOG("stage=ingress handler=%c%c%c wan_ingress_us=%lld lan_rx_us=%llu payload_len=%u",
+                          (char)handler_type[0], (char)handler_type[1], (char)handler_type[2],
+                          (long long)ingress_us,
+                          (unsigned long long)lan_rx_us,
+                          (unsigned)uplink_len);
+      }
+
+      /* Propagate absolute LAN µs timestamp + WAN-side RX time so the
+       * publish task can compute the unified [E2E_TOTAL] via subtraction
+       * (using bench_time_sync_from_peer_us). */
+      server_handler_enqueue_uplink_e2e(uplink_buffer, uplink_len,
+                                        (int64_t)lan_rx_us, wan_rx_ts_us,
+                                        (const char *)handler_type);
+#else
       server_handler_enqueue_uplink(uplink_buffer, uplink_len);
+#endif
       free(uplink_buffer);
     } else {
       ESP_LOGE(TAG, "Failed to allocate uplink buffer");
@@ -1019,19 +1085,29 @@ static void send_fota_trigger_to_lan(void) {
 
 // ===== Public API: Enqueue Uplink to Server =====
 bool server_handler_enqueue_uplink(const uint8_t *data, uint16_t len) {
+  return server_handler_enqueue_uplink_e2e(data, len, 0u, 0, NULL);
+}
+
+bool server_handler_enqueue_uplink_e2e(const uint8_t *data, uint16_t len,
+                                       int64_t lan_rx_us, int64_t wan_rx_us,
+                                       const char *handler_type) {
   if (data == NULL || len == 0) {
     return false;
   }
 
   switch (g_server_type) {
   case CONFIG_SERVERTYPE_MQTT:
-    return mqtt_enqueue_telemetry(data, len);
+    return mqtt_enqueue_telemetry_e2e(data, len, lan_rx_us, wan_rx_us,
+                                      handler_type);
   case CONFIG_SERVERTYPE_HTTP:
-    return http_enqueue_telemetry(data, len);
+    return http_enqueue_telemetry_e2e(data, len, lan_rx_us, wan_rx_us,
+                                      handler_type);
   case CONFIG_SERVERTYPE_COAP:
-    return coap_enqueue_telemetry(data, len);
+    return coap_enqueue_telemetry_e2e(data, len, lan_rx_us, wan_rx_us,
+                                      handler_type);
   default:
-    return mqtt_enqueue_telemetry(data, len);
+    return mqtt_enqueue_telemetry_e2e(data, len, lan_rx_us, wan_rx_us,
+                                      handler_type);
   }
 }
 

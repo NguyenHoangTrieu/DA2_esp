@@ -117,6 +117,17 @@ void *mcu_lan_handler_take_config_result_waiter(void);
 bool server_handler_enqueue_uplink(const uint8_t *data, uint16_t len);
 
 /**
+ * @brief E2E-tagged uplink. Carries the absolute LAN `esp_timer_get_time()`
+ *        value (from the SPI frame) + the WAN-side parse moment so the
+ *        publish task (MQTT/HTTP/CoAP) can emit a single `[E2E_TOTAL]` log
+ *        via `bench_time_sync_from_peer_us()` subtraction. Pass 0/0/NULL
+ *        to disable bench reporting on this item.
+ */
+bool server_handler_enqueue_uplink_e2e(const uint8_t *data, uint16_t len,
+                                       int64_t lan_rx_us, int64_t wan_rx_us,
+                                       const char *handler_type);
+
+/**
  * @brief Request LAN config (async, called from UART/USB task)
  */
 esp_err_t mcu_lan_handler_request_config_async(uint8_t *buffer,

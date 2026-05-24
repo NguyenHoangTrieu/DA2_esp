@@ -27,7 +27,7 @@ extern "C" {
  *       queue → memcpy → downlink_handler_task → lan_comm_load_tx_data.
  *       Measures real downlink generation cost.
  */
-#define BENCH_THROUGHPUT_WAN_ENABLE 1
+#define BENCH_THROUGHPUT_WAN_ENABLE 0
 
 #define BENCH_TP_WAN_MODE_OFF        (BENCH_THROUGHPUT_WAN_ENABLE == 0)
 #define BENCH_TP_WAN_MODE_DRIVER     (BENCH_THROUGHPUT_WAN_ENABLE == 1)

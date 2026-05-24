@@ -8,6 +8,9 @@
 #include "mcu_lan_handler.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "bench_e2e.h"
+#include "bench_time_sync.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -532,6 +535,27 @@ static void coap_publish_task(void *arg) {
             if (rc != ESP_OK) {
                 ESP_LOGW(TAG, "CoAP telemetry publish failed");
             }
+#if BENCH_E2E_WAN_ENABLE
+            {
+                /* `lan_rx_us` is already in WAN clock domain (pre-converted by LAN). */
+                int64_t wan_publish_us = esp_timer_get_time();
+                if (item.lan_rx_us > 0) {
+                    int64_t total_us = wan_publish_us - item.lan_rx_us;
+                    ESP_LOGI("E2E_TOTAL",
+                             "handler=%s total_us=%lld lan_rx_us_in_wan=%lld json_len=%d (CoAP)",
+                             item.handler_type[0] ? item.handler_type : "?",
+                             (long long)total_us, (long long)item.lan_rx_us, json_len);
+                } else {
+                    int64_t wan_seg_us = (item.wan_rx_us > 0)
+                                           ? (wan_publish_us - item.wan_rx_us)
+                                           : 0;
+                    ESP_LOGI("E2E_TOTAL",
+                             "handler=%s SYNCING wan_seg_us=%lld json_len=%d (CoAP)",
+                             item.handler_type[0] ? item.handler_type : "?",
+                             (long long)wan_seg_us, json_len);
+                }
+            }
+#endif
 
             /* Also POST to /rpc/{id} so the widget's RPC promise can resolve */
             if (s_last_rpc_id >= 0) {
@@ -658,7 +682,9 @@ bool coap_handler_is_connected(void) {
     return s_coap_server_connected;
 }
 
-bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+bool coap_enqueue_telemetry_e2e(const uint8_t *data, size_t data_len,
+                                int64_t lan_rx_us, int64_t wan_rx_us,
+                                const char *handler_type) {
     if (!data || data_len == 0 || !g_coap_publish_queue) {
         return false;
     }
@@ -669,16 +695,35 @@ bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
         data_len = COAP_PUBLISH_DATA_MAX_LEN;
     }
 
-    coap_publish_data_t item;
-    memcpy(item.data, data, data_len);
-    item.length = data_len;
+    /* Heap-allocate to keep 2 KB off the caller's stack. */
+    coap_publish_data_t *item =
+        (coap_publish_data_t *)heap_caps_malloc(sizeof(coap_publish_data_t),
+                                                MALLOC_CAP_8BIT);
+    if (!item) {
+        ESP_LOGE(TAG, "CoAP enqueue: out of memory");
+        return false;
+    }
+    memcpy(item->data, data, data_len);
+    item->length = data_len;
+    item->lan_rx_us = lan_rx_us;
+    item->wan_rx_us = wan_rx_us;
+    item->handler_type[0] = (handler_type && handler_type[0]) ? handler_type[0] : '?';
+    item->handler_type[1] = (handler_type && handler_type[0]) ? handler_type[1] : '?';
+    item->handler_type[2] = (handler_type && handler_type[0]) ? handler_type[2] : '?';
+    item->handler_type[3] = '\0';
 
-    if (xQueueSend(g_coap_publish_queue, &item, pdMS_TO_TICKS(COAP_ENQUEUE_WAIT_MS)) != pdTRUE) {
+    BaseType_t sent = xQueueSend(g_coap_publish_queue, item,
+                                  pdMS_TO_TICKS(COAP_ENQUEUE_WAIT_MS));
+    heap_caps_free(item);
+    if (sent != pdTRUE) {
         ESP_LOGE(TAG, "CoAP publish queue full payload dropped");
         return false;
     }
-
     return true;
+}
+
+bool coap_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+    return coap_enqueue_telemetry_e2e(data, data_len, 0, 0, NULL);
 }
 
 void coap_handler_update_config(const coap_config_data_t *cfg) {

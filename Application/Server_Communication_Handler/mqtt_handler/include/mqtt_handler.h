@@ -20,6 +20,10 @@ typedef struct {
   uint8_t data[MQTT_PUBLISH_DATA_MAX_LEN];
   size_t length;
   int64_t enqueued_at_us;
+  /* [E2E_TOTAL] fields. Zero when bench is off / handler didn't measure. */
+  int64_t lan_rx_us;         // absolute LAN esp_timer_get_time() from DT frame
+  int64_t wan_rx_us;         // when WAN MCU first parsed the SPI frame
+  char    handler_type[4];   // "BLE"/"LOR"/"ZIG"/"RS4" + NUL, for logging
 } mqtt_publish_data_t;
 
 // Start the MQTT handler
@@ -33,6 +37,13 @@ bool mqtt_handler_is_connected(void);
 
 // Unified function to enqueue any data for publishing
 bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len);
+
+/* E2E-tagged variant. Publish task uses these to emit `[E2E_TOTAL]` via
+ * a single subtraction (wan_now − converted_lan_rx_us). Pass 0/0/"" to
+ * disable bench reporting on this item. */
+bool mqtt_enqueue_telemetry_e2e(const uint8_t *data, size_t data_len,
+                                int64_t lan_rx_us, int64_t wan_rx_us,
+                                const char *handler_type);
 
 // Receive data from MQTT subscription
 void mqtt_receive_enqueue(const char *data, size_t len);

@@ -8,6 +8,8 @@
 #include "mcu_lan_handler.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
+#include "bench_e2e.h"
+#include "bench_time_sync.h"
 
 #define BROKER_URI "mqtt://demo.thingsboard.io:1883"
 #define DEVICE_TOKEN "38kozd1weulcnl6ytz8f"
@@ -422,6 +424,30 @@ static void mqtt_publish_task(void *arg) {
                  "Publishing %d bytes JSON (raw: %d bytes → hex: %d chars)",
                  json_len, copy_len, strlen(hex_string_buffer));
 
+#if BENCH_E2E_WAN_ENABLE
+        /* [E2E_TOTAL] unified internal latency.
+         *   LAN MCU embeds `lan_rx_us` already converted to WAN clock domain
+         *   (via bench_time_sync_to_peer_us on the LAN side). So WAN just
+         *   subtracts directly — no conversion call here.
+         *   `lan_rx_us == 0` ⇒ LAN sync not converged → log SYNCING. */
+        int64_t wan_publish_us = esp_timer_get_time();
+        if (incoming_data.lan_rx_us > 0) {
+          int64_t total_us = wan_publish_us - incoming_data.lan_rx_us;
+          ESP_LOGI("E2E_TOTAL",
+                   "handler=%s total_us=%lld lan_rx_us_in_wan=%lld json_len=%d",
+                   incoming_data.handler_type[0] ? incoming_data.handler_type : "?",
+                   (long long)total_us, (long long)incoming_data.lan_rx_us, json_len);
+        } else {
+          int64_t wan_seg_us = (incoming_data.wan_rx_us > 0)
+                                  ? (wan_publish_us - incoming_data.wan_rx_us)
+                                  : (wan_publish_us - incoming_data.enqueued_at_us);
+          ESP_LOGI("E2E_TOTAL",
+                   "handler=%s SYNCING wan_seg_us=%lld json_len=%d",
+                   incoming_data.handler_type[0] ? incoming_data.handler_type : "?",
+                   (long long)wan_seg_us, json_len);
+        }
+#endif
+
         int msg_id;
         if (g_last_rpc_id >= 0) {
           /* Derive response topic from subscribe topic: strip "/request/+" → append "/response/{id}" */
@@ -730,9 +756,17 @@ void mqtt_handler_task_stop(void) {
   // Clear and DELETE the queue so its internal-RAM storage is returned to
   // the heap before the next protocol handler (e.g. CoAP) tries to allocate.
   if (g_mqtt_publish_queue) {
-    mqtt_publish_data_t dummy;
-    while (xQueueReceive(g_mqtt_publish_queue, &dummy, 0) == pdTRUE) {
-      // Drain queue
+    /* mqtt_publish_data_t is ~2 KB. Putting it on the stack here would
+     * overflow the calling task (config_handler has only 4 KB).
+     * Allocate the drain buffer on the heap instead. */
+    mqtt_publish_data_t *dummy =
+        (mqtt_publish_data_t *)heap_caps_malloc(sizeof(mqtt_publish_data_t),
+                                                 MALLOC_CAP_8BIT);
+    if (dummy) {
+      while (xQueueReceive(g_mqtt_publish_queue, dummy, 0) == pdTRUE) {
+        // Drain queue
+      }
+      heap_caps_free(dummy);
     }
     vQueueDelete(g_mqtt_publish_queue);
     g_mqtt_publish_queue = NULL;
@@ -757,7 +791,9 @@ bool mqtt_handler_is_connected(void) {
 /**
  * @brief Unified function to enqueue any data for publishing.
  */
-bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+bool mqtt_enqueue_telemetry_e2e(const uint8_t *data, size_t data_len,
+                                int64_t lan_rx_us, int64_t wan_rx_us,
+                                const char *handler_type) {
   if (!g_mqtt_publish_queue) {
     ESP_LOGW(TAG, "Publish queue not initialized");
     return false;
@@ -780,8 +816,14 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
   mqtt_publish_data_t queue_data = {
       .length = data_len,
       .enqueued_at_us = esp_timer_get_time(),
+      .lan_rx_us = lan_rx_us,
+      .wan_rx_us = wan_rx_us,
   };
   memcpy(queue_data.data, data, data_len);
+  queue_data.handler_type[0] = (handler_type && handler_type[0]) ? handler_type[0] : '?';
+  queue_data.handler_type[1] = (handler_type && handler_type[0]) ? handler_type[1] : '?';
+  queue_data.handler_type[2] = (handler_type && handler_type[0]) ? handler_type[2] : '?';
+  queue_data.handler_type[3] = '\0';
 
   if (xQueueSend(g_mqtt_publish_queue, &queue_data, pdMS_TO_TICKS(MQTT_PUBLISH_ENQUEUE_WAIT_MS)) ==
       pdTRUE) {
@@ -791,4 +833,9 @@ bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
     ESP_LOGW(TAG, "Failed to enqueue data - queue full");
     return false;
   }
+}
+
+bool mqtt_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+  /* Plain enqueue — no E2E tagging (production / non-bench callers). */
+  return mqtt_enqueue_telemetry_e2e(data, data_len, 0, 0, NULL);
 }

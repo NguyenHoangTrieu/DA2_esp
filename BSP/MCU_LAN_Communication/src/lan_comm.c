@@ -11,6 +11,15 @@
 
 static const char *TAG = "LAN_COMM_SLAVE";
 
+/* Singleton handle reference for ISR callbacks. lan_comm only supports one
+ * active slave instance, so this is safe. Set in lan_comm_init, cleared in
+ * lan_comm_deinit. (Definition only — the ISR shim that dereferences it lives
+ * below the struct definition.) */
+static lan_comm_handle_t s_isr_handle = NULL;
+
+/* Forward declaration — body defined after struct lan_comm_handle_s is complete. */
+static void lan_comm_post_setup_isr(spi_slave_transaction_t *trans);
+
 struct lan_comm_handle_s {
   lan_comm_config_t config;
 
@@ -52,6 +61,20 @@ struct lan_comm_handle_s {
   size_t drain_offset;
   size_t drain_remaining;
 };
+
+/* SPI slave post-setup ISR shim. Fires right after the SPI peripheral is
+ * configured for the next transaction, but BEFORE the master begins clocking
+ * data out — this is the "closest to wire" moment available in software, used
+ * by bench_time_sync to capture T3 with µs precision.
+ *
+ * Keep this hot path tiny: no logging, no FreeRTOS calls. */
+static void IRAM_ATTR lan_comm_post_setup_isr(spi_slave_transaction_t *trans) {
+  (void)trans;
+  lan_comm_handle_t h = s_isr_handle;
+  if (h && h->config.pre_tx_cb) {
+    h->config.pre_tx_cb(h->tx_buffer, h->config.pre_tx_cb_arg);
+  }
+}
 
 static lan_comm_status_t lan_comm_parse_frame(const uint8_t *buffer,
                                               size_t length,
@@ -138,7 +161,9 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
                                             .queue_size =
                                                 LAN_COMM_TRANS_QUEUE_SIZE,
                                             .mode = config->mode,
-                                            .post_setup_cb = NULL,
+                                            .post_setup_cb = (config->pre_tx_cb != NULL)
+                                                                 ? lan_comm_post_setup_isr
+                                                                 : NULL,
                                             .post_trans_cb = NULL};
 
   esp_err_t ret = spi_slave_initialize(config->host_id, &bus_cfg, &slave_cfg,
@@ -169,6 +194,7 @@ lan_comm_status_t lan_comm_init(const lan_comm_config_t *config,
   }
 
   h->is_initialized = true;
+  s_isr_handle = h;  /* expose for post_setup_cb ISR shim */
   for (int i = 0; i < LAN_COMM_RX_QUEUE_DEPTH; i++) {
     h->slot_queued[i] = false;
   }
@@ -201,6 +227,8 @@ lan_comm_status_t lan_comm_deinit(lan_comm_handle_t handle) {
   }
 
   ESP_LOGI(TAG, "Deinitializing SPI slave");
+
+  if (s_isr_handle == handle) s_isr_handle = NULL;
 
   if (handle->gpio_configured && handle->config.gpio_data_ready >= 0) {
     gpio_reset_pin(handle->config.gpio_data_ready);

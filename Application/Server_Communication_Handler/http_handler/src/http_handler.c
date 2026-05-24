@@ -13,6 +13,9 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "bench_e2e.h"
+#include "bench_time_sync.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -590,6 +593,25 @@ static void http_publish_task(void *arg) {
                 if (rc != ESP_OK) {
                     ESP_LOGW(TAG, "HTTP publish failed, payload dropped");
                 }
+#if BENCH_E2E_WAN_ENABLE
+                /* `lan_rx_us` is already in WAN clock domain (pre-converted by LAN). */
+                int64_t wan_publish_us = esp_timer_get_time();
+                if (item.lan_rx_us > 0) {
+                    int64_t total_us = wan_publish_us - item.lan_rx_us;
+                    ESP_LOGI("E2E_TOTAL",
+                             "handler=%s total_us=%lld lan_rx_us_in_wan=%lld json_len=%d (HTTP)",
+                             item.handler_type[0] ? item.handler_type : "?",
+                             (long long)total_us, (long long)item.lan_rx_us, json_len);
+                } else {
+                    int64_t wan_seg_us = (item.wan_rx_us > 0)
+                                           ? (wan_publish_us - item.wan_rx_us)
+                                           : 0;
+                    ESP_LOGI("E2E_TOTAL",
+                             "handler=%s SYNCING wan_seg_us=%lld json_len=%d (HTTP)",
+                             item.handler_type[0] ? item.handler_type : "?",
+                             (long long)wan_seg_us, json_len);
+                }
+#endif
             }
 
             if (HTTP_POST_PUBLISH_DELAY_MS > 0) {
@@ -699,7 +721,9 @@ bool http_handler_is_connected(void) {
     return s_http_server_connected;
 }
 
-bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+bool http_enqueue_telemetry_e2e(const uint8_t *data, size_t data_len,
+                                int64_t lan_rx_us, int64_t wan_rx_us,
+                                const char *handler_type) {
     if (!data || data_len == 0 || !g_http_publish_queue) {
         return false;
     }
@@ -709,16 +733,36 @@ bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {
         data_len = HTTP_PUBLISH_DATA_MAX_LEN;
     }
 
-    http_publish_data_t item;
-    memcpy(item.data, data, data_len);
-    item.length = data_len;
+    /* Heap-allocate to avoid 2 KB stack frame in caller (config_handler has
+     * only 4 KB stack). */
+    http_publish_data_t *item =
+        (http_publish_data_t *)heap_caps_malloc(sizeof(http_publish_data_t),
+                                                MALLOC_CAP_8BIT);
+    if (!item) {
+        ESP_LOGE(TAG, "HTTP enqueue: out of memory");
+        return false;
+    }
+    memcpy(item->data, data, data_len);
+    item->length = data_len;
+    item->lan_rx_us = lan_rx_us;
+    item->wan_rx_us = wan_rx_us;
+    item->handler_type[0] = (handler_type && handler_type[0]) ? handler_type[0] : '?';
+    item->handler_type[1] = (handler_type && handler_type[0]) ? handler_type[1] : '?';
+    item->handler_type[2] = (handler_type && handler_type[0]) ? handler_type[2] : '?';
+    item->handler_type[3] = '\0';
 
-    if (xQueueSend(g_http_publish_queue, &item, pdMS_TO_TICKS(HTTP_ENQUEUE_WAIT_MS)) != pdTRUE) {
+    BaseType_t sent = xQueueSend(g_http_publish_queue, item,
+                                  pdMS_TO_TICKS(HTTP_ENQUEUE_WAIT_MS));
+    heap_caps_free(item);
+    if (sent != pdTRUE) {
         ESP_LOGE(TAG, "HTTP publish queue full payload dropped");
         return false;
     }
-
     return true;
+}
+
+bool http_enqueue_telemetry(const uint8_t *data, size_t data_len) {
+    return http_enqueue_telemetry_e2e(data, data_len, 0, 0, NULL);
 }
 
 void http_handler_update_config(const http_config_data_t *cfg) {

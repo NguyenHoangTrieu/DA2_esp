@@ -51,6 +51,21 @@ typedef enum {
 // STRUCTURES
 
 /**
+ * @brief Pre-TX callback. Fires from SPI slave ISR after the hardware
+ *        registers are set up for the next transaction but BEFORE the master
+ *        starts clocking data out. This is the closest software-visible
+ *        moment to the wire — used by bench_time_sync to capture T3.
+ *
+ *        Runs in ISR context: keep work very small. Allowed to read/modify
+ *        `tx_buffer` (the slave's current outgoing buffer pointer), no
+ *        FreeRTOS blocking APIs.
+ *
+ * @param tx_buffer Pointer to slave's outgoing buffer (size = tx_buffer_size).
+ * @param user_arg  Opaque user argument passed in at init.
+ */
+typedef void (*lan_comm_pre_tx_cb_t)(uint8_t *tx_buffer, void *user_arg);
+
+/**
  * @brief SPI Slave Configuration
  */
 typedef struct {
@@ -60,18 +75,22 @@ typedef struct {
     int gpio_io0;
     int gpio_io1;
     int gpio_data_ready;    // GPIO8 output, -1 to disable
-    
+
     // SPI settings
     uint8_t mode;           // SPI mode 0-3
     spi_host_device_t host_id;
     int dma_channel;
-    
+
     // Buffer sizes (16KB to accommodate large config JSON payloads)
     size_t rx_buffer_size;
     size_t tx_buffer_size;
-    
+
     // Features
     bool auto_signal_data_ready;  // Auto-pulse GPIO on TX load
+
+    // Optional pre-TX callback (ISR-context). NULL = disabled.
+    lan_comm_pre_tx_cb_t pre_tx_cb;
+    void                *pre_tx_cb_arg;
 } lan_comm_config_t;
 
 /**
@@ -88,7 +107,9 @@ typedef struct {
     .dma_channel = SPI_DMA_CH_AUTO, \
     .rx_buffer_size = LAN_COMM_DEFAULT_RX_BUFFER, \
     .tx_buffer_size = LAN_COMM_DEFAULT_TX_BUFFER, \
-    .auto_signal_data_ready = false \
+    .auto_signal_data_ready = false, \
+    .pre_tx_cb = NULL, \
+    .pre_tx_cb_arg = NULL \
 }
 
 /**
