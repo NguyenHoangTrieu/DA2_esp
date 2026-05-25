@@ -4,6 +4,7 @@
 
 #include "DA2_esp.h"
 #include "bench_throughput_wan.h"
+#include "bench_wan_egress.h"
 #include <esp_pm.h>
 #include <esp_timer.h>
 
@@ -660,6 +661,9 @@ void app_main(void) {
   mcu_lan_handler_start();
   if (bench_throughput_wan_start() != ESP_OK) {
     ESP_LOGW(TAG, "MCU throughput benchmark (WAN) start failed (non-fatal)");
+  }
+  if (bench_wan_egress_start() != ESP_OK) {
+    ESP_LOGW(TAG, "WAN egress bench start failed (non-fatal)");
   }
   uart_handler_task_start();
 

@@ -361,7 +361,12 @@ static esp_err_t eth_spi_hw_init(void)
     eth_w5500_config_t w5500_cfg = ETH_W5500_DEFAULT_CONFIG(ETH_SPI_HOST, &devcfg);
     w5500_cfg.int_gpio_num = ETH_INT_GPIO;
     if (ETH_INT_GPIO < 0) {
-        w5500_cfg.poll_period_ms = 100;
+        /* W5500 INT# is behind an IO-expander so we can't get a real GPIO
+         * interrupt. The driver falls back to polling the chip status.
+         * Default of 100 ms caps throughput at ~10 polls/s ≈ a few hundred
+         * kbps. Reduce to 1 ms so the driver can keep up with bench traffic.
+         * Cost: 1 SPI status read every 1 ms — negligible vs payload SPI. */
+        w5500_cfg.poll_period_ms = 1;
         ESP_LOGI(TAG, "W5500 INT# is behind IOX, using polling mode (%d ms)",
                  w5500_cfg.poll_period_ms);
     }

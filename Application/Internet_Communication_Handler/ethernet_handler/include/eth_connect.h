@@ -16,7 +16,9 @@
  * to ESP32-S3 GPIO. Use polling mode and perform reset through stack_handler. */
 #define ETH_INT_GPIO        (-1)
 #define ETH_RST_GPIO        (-1)
-#define ETH_SPI_CLOCK_MHZ   25   /* W5500 max is 80 MHz; 25 MHz is safe    */
+#define ETH_SPI_CLOCK_MHZ   40   /* W5500 max 80 MHz; pins via GPIO matrix
+                                    on this board cap at ~40 MHz reliably.
+                                    Reduce to 25 if 40 fails to init. */
 
 /* ── Static IP configuration (PC direct-connect / no DHCP) ─────────────────
  * Set ETH_USE_STATIC_IP to 1 to bypass DHCP and use a fixed IP.
