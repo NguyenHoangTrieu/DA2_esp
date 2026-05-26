@@ -22,6 +22,7 @@
 #include "mqtt_handler.h"
 #include "pcf8563_rtc.h"
 #include "bench_throughput_wan.h"
+#include "bench_latency_wan.h"  /* §5 e2e latency dispatcher */
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -55,7 +56,7 @@ extern bool g_config_cache_has_config;
 extern bool g_fota_request_pending;
 
 // Forward declarations from downlink module
-extern void downlink_send_rtc_response(void);
+extern void downlink_send_rtc_response(uint32_t nonce_echo);
 extern bool downlink_handle_config_request(void);
 extern void downlink_send_ack_to_lan(ack_type_t ack_type,
                                      uint8_t internet_flag);
@@ -321,8 +322,12 @@ static void uplink_processor_task(void *pvParameters) {
           // Handshake request
           process_handshake(packet.payload, packet.payload_length);
         } else if (packet.payload[2] == 'R' && packet.payload[3] == 'T') {
-          // RTC request
-          ESP_LOGD(TAG, "RTC request received");
+          // RTC request: payload = [CF prefix 2B][R][T][nonce 4B LE]
+          uint32_t rtc_nonce = 0;
+          if (packet.payload_length >= 8) {
+            memcpy(&rtc_nonce, &packet.payload[4], sizeof(uint32_t));
+          }
+          ESP_LOGD(TAG, "RTC request received (nonce=%u)", (unsigned)rtc_nonce);
           // Avoid overwriting TX buffer while config/downlink is pending.
           if (g_config_cache_has_config || g_active_config_request_valid ||
               g_pending_downlink_valid) {
@@ -335,7 +340,7 @@ static void uplink_processor_task(void *pvParameters) {
              * freshness for clean WAN-to-LAN bench frames. */
             ESP_LOGD(TAG, "RTC response skipped (bench active)");
           } else {
-            downlink_send_rtc_response();
+            downlink_send_rtc_response(rtc_nonce);
           }
         } else if (packet.payload[2] == 'C' && packet.payload[3] == 'F') {
           // Config request
@@ -609,6 +614,19 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
      * bytes and return. */
     bench_throughput_wan_count_rx(data_length > 19u ? data_length - 19u : data_length);
     ESP_LOGD(TAG, "BNC frame: %u bytes counted (bench RX)", data_length);
+    return;
+  }
+
+  /* §5 — End-to-end latency frame. Payload after [DT][LAT][len2] starts
+   * with a 19-byte RTC timestamp prepended by build_data_packet on LAN.
+   * Skip it to reach the actual inner [T1 8B][seq 4B][src 1B][user_payload]. */
+  if (hid == HANDLER_LAT) {
+#if BENCH_LATENCY_WAN_ENABLE
+    if (data_length > 19u) {
+      bench_latency_wan_on_frame(&payload[DATA_PACKET_HEADER_SIZE + 19u],
+                                 data_length - 19u);
+    }
+#endif
     return;
   }
 

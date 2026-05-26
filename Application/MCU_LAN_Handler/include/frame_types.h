@@ -33,6 +33,7 @@
 #define HANDLER_TYPE_ZIG "ZIG" // ZigBee
 #define HANDLER_TYPE_RS4 "RS4" // RS485
 #define HANDLER_TYPE_BENCH "BNC" // Throughput benchmark (sink only, never routed)
+#define HANDLER_TYPE_LAT "LAT"   // End-to-end latency bench (§5)
 
 // ===== Frame Types (Single Byte) =====
 typedef enum {
@@ -64,6 +65,7 @@ typedef enum {
   HANDLER_ZIGBEE = 0x03,
   HANDLER_RS485 = 0x04,
   HANDLER_BENCH = 0xFE, // Throughput benchmark traffic — never routed
+  HANDLER_LAT   = 0x08, // E2E latency bench (§5) — carries [T1 8B][seq 4B][payload]
   HANDLER_UNKNOWN = 0xFF
 } handler_id_t;
 
@@ -98,12 +100,23 @@ typedef struct __attribute__((packed)) {
 
 /**
  * @brief RTC Config Response
- * Format: [RT][dd/mm/yyyy-hh:mm:ss][network_status]
+ * Format: [RT][dd/mm/yyyy-hh:mm:ss\0][network_status][wan_us 8B LE][nonce 4B LE]
+ *
+ * wan_us = WAN esp_timer_get_time() captured immediately before the response
+ *          is loaded into the SPI slave TX buffer. LAN uses it to maintain a
+ *          µs-accurate cross-MCU clock offset.
+ * nonce_echo = exact echo of the 4-byte nonce LAN included in the [R][T]
+ *          request. LAN rejects any response whose echo doesn't match the
+ *          most recently sent nonce — this catches the case where WAN's
+ *          slave TX buffer still holds the wan_us from a PREVIOUS cycle
+ *          (would bias offset by ~1 s).
  */
 typedef struct __attribute__((packed)) {
   uint8_t prefix[2];      // "RT"
   char rtc_string[20];    // "dd/mm/yyyy-hh:mm:ss\0"
   uint8_t network_status; // 1 = connected, 0 = disconnected
+  uint64_t wan_us;        // WAN esp_timer (µs since boot) at TX prep moment
+  uint32_t nonce_echo;    // echo of LAN's request nonce — freshness check
 } rtc_config_response_t;
 
 /**
@@ -194,6 +207,8 @@ static inline const char *handler_id_to_string(handler_id_t id) {
     return HANDLER_TYPE_RS4;
   case HANDLER_BENCH:
     return HANDLER_TYPE_BENCH;
+  case HANDLER_LAT:
+    return HANDLER_TYPE_LAT;
   default:
     return "UNK";
   }
@@ -217,6 +232,8 @@ static inline handler_id_t handler_string_to_id(const uint8_t *str) {
     return HANDLER_RS485;
   if (str[0] == 'B' && str[1] == 'N' && str[2] == 'C')
     return HANDLER_BENCH;
+  if (str[0] == 'L' && str[1] == 'A' && str[2] == 'T')
+    return HANDLER_LAT;
   return HANDLER_UNKNOWN;
 }
 

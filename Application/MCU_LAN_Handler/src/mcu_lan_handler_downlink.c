@@ -4,6 +4,7 @@
  */
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -12,6 +13,7 @@
 #include "pcf8563_rtc.h"
 #include "rom/ets_sys.h"
 #include "spi_framing.h"
+#include <stddef.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
@@ -124,7 +126,7 @@ static void clear_data_ready(void) {
 }
 
 // ===== RTC Response Helper =====
-void downlink_send_rtc_response(void) {
+void downlink_send_rtc_response(uint32_t nonce_echo) {
   struct tm timeinfo;
   memset(&timeinfo, 0, sizeof(struct tm));
   time_t now = time(NULL);
@@ -152,9 +154,22 @@ void downlink_send_rtc_response(void) {
   response.network_status =
       (g_internet_status == INTERNET_STATUS_ONLINE) ? 1 : 0;
 
+  /* Echo the nonce LAN sent in its [R][T] request. LAN will reject the
+   * response if this doesn't match the nonce it just emitted — that catches
+   * the case where WAN failed to refresh the TX buffer in time and the
+   * slave returns a stale wan_us from a previous cycle. */
+  response.nonce_echo = nonce_echo;
+
+  /* §5 cross-MCU clock sync: stamp WAN µs as late as possible before the
+   * load call. The residual gap to actual SPI HW transmission is microsecond-
+   * scale and constant — folded into the offset, no measurement noise. */
+  response.wan_us = (uint64_t)esp_timer_get_time();
+
   lan_comm_load_tx_data(g_lan_handle, (uint8_t *)&response, sizeof(response));
-  ESP_LOGD(TAG, "RTC response loaded: %s, net=%s", response.rtc_string,
-           response.network_status ? "ONLINE" : "OFFLINE");
+  ESP_LOGD(TAG, "RTC response loaded: %s, net=%s, nonce=%u",
+           response.rtc_string,
+           response.network_status ? "ONLINE" : "OFFLINE",
+           (unsigned)nonce_echo);
 }
 
 // ===== ACK Response Helper =====

@@ -29,7 +29,7 @@
  *   [PC Ethernet: 192.168.137.1] ── cable ── [W5500: ETH_STATIC_IP_ADDR]
  *   PC must have ICS or IP routing enabled for the gateway to reach internet.
  */
-#define ETH_USE_STATIC_IP     1               /* 0 = DHCP (default), 1 = static */
+#define ETH_USE_STATIC_IP     0             /* 0 = DHCP (default), 1 = static */
 #define ETH_STATIC_IP_ADDR    "192.168.137.2"
 #define ETH_STATIC_NETMASK    "255.255.255.0"
 #define ETH_STATIC_GW         "192.168.137.1" /* PC Ethernet IP */

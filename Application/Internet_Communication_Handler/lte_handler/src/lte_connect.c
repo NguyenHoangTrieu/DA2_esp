@@ -238,15 +238,16 @@ static void lte_task(void *arg) {
            * silently drops the TCP/UDP routing behind NAT after idling for
            * 30-60s. The upper handlers (MQTT, HTTP, CoAP) will experience
            * timeouts / failures and set internet_status to OFFLINE. If the
-           * application consistently reports OFFLINE for 180 seconds despite
+           * application consistently reports OFFLINE for 360 seconds despite
            * PPP being UP, the cellular context is dead. (Threshold is > MQTT
-           * reconnect delay to avoid false positives). */
+           * reconnect delay to avoid false positives, and > bench-test
+           * duration to avoid tripping during latency tests). */
           static uint32_t offline_timeout_ticks = 0;
           if (mcu_lan_handler_get_internet_status() ==
               INTERNET_STATUS_OFFLINE) {
             offline_timeout_ticks++;
-            if (offline_timeout_ticks >= 180) {
-              ESP_LOGE(TAG, "Application reported OFFLINE for 180s. Zombie "
+            if (offline_timeout_ticks >= 360) {
+              ESP_LOGE(TAG, "Application reported OFFLINE for 360s. Zombie "
                             "link detected, restarting LTE...");
               lte_init_with_config(); // Full hardware de-init and power cycle
                                       // to fix frozen modems

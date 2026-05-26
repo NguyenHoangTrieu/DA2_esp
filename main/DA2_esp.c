@@ -5,6 +5,7 @@
 #include "DA2_esp.h"
 #include "bench_throughput_wan.h"
 #include "bench_wan_egress.h"
+#include "bench_latency_wan.h"
 #include <esp_pm.h>
 #include <esp_timer.h>
 
@@ -665,6 +666,15 @@ void app_main(void) {
   if (bench_wan_egress_start() != ESP_OK) {
     ESP_LOGW(TAG, "WAN egress bench start failed (non-fatal)");
   }
+
+  /* §5 — End-to-end latency bench. Time-sync travels with the existing 1 Hz
+   * RTC packet (no extra GPIO, no extra protocol). WAN's master clock IS
+   * esp_timer_get_time(); LAN derives its offset from the RTC packet. */
+  if (bench_latency_wan_init() != ESP_OK) {
+    ESP_LOGW(TAG, "bench latency WAN init failed (non-fatal)");
+  }
+  ESP_LOGI(TAG, "§5 bench latency WAN started");
+
   uart_handler_task_start();
 
   /* --- Operational tasks (NORMAL boot) -------------------------------- */
