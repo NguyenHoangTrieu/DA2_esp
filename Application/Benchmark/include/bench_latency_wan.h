@@ -19,13 +19,24 @@ extern "C" {
  */
 
 #ifndef BENCH_LATENCY_WAN_ENABLE
-#define BENCH_LATENCY_WAN_ENABLE 0
+#define BENCH_LATENCY_WAN_ENABLE 0   /* §5 OFF. Set back to 0 for production. */
 #endif
 
-/* Internal queue depth. 8 is enough at 200 pps with ~30 ms WiFi latency
- * (max in-flight ≈ 6). Larger values waste PSRAM. */
+/* Internal queue depth. Sized to absorb short bursts at high offered load so a
+ * transient hiccup doesn't drop packets before the true egress ceiling is
+ * reached. Storage is PSRAM-backed (~272 B/slot). */
 #ifndef BENCH_LATENCY_WAN_QUEUE_LEN
-#define BENCH_LATENCY_WAN_QUEUE_LEN 8
+#define BENCH_LATENCY_WAN_QUEUE_LEN 64
+#endif
+
+/* Per-packet "LAT ..." log line. KEEP 0 for high-load measurement: at >~120
+ * pkt/s a 95-byte line per packet saturates the 115200-baud console, blocks the
+ * sender task, and caps real throughput at ~70 pkt/s (false ceiling). With it
+ * OFF the sender only updates counters/histogram and the reporter prints one
+ * aggregated WIN line per window (min/avg/p50/p95/p99/max). Set to 1 only for
+ * low-rate debugging of individual packets. */
+#ifndef BENCH_LATENCY_WAN_LOG_EACH
+#define BENCH_LATENCY_WAN_LOG_EACH 0
 #endif
 
 /* Per-packet payload cap. RS485 spam from PC is 64 B by default — 256 covers
@@ -49,12 +60,21 @@ extern "C" {
 #define BENCH_LATENCY_WAN_SINK_LTE_HOST "bore.pub"
 #endif
 #ifndef BENCH_LATENCY_WAN_SINK_LTE_PORT
-#define BENCH_LATENCY_WAN_SINK_LTE_PORT 43217
+#define BENCH_LATENCY_WAN_SINK_LTE_PORT 9740
 #endif
 
 /* Reporting window: print per-window stats (min/median/p95/max/n/loss). */
 #ifndef BENCH_LATENCY_WAN_REPORT_MS
 #define BENCH_LATENCY_WAN_REPORT_MS 1000
+#endif
+
+/* Trimmed-average cut-off (ms above p50). The RTC clock-sync stall adds a
+ * periodic ~150 ms spike to a minority of packets; avgX is the mean of only
+ * the samples within (p50 + this margin), i.e. the steady forwarding latency
+ * with the RTC outliers removed. 100 ms sits below the ~150 ms spike at every
+ * load (clean samples cluster within ~±15 ms of p50). */
+#ifndef BENCH_LATENCY_WAN_TRIM_MS
+#define BENCH_LATENCY_WAN_TRIM_MS 100
 #endif
 
 esp_err_t bench_latency_wan_init(void);
