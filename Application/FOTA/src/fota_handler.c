@@ -454,8 +454,13 @@ static esp_err_t ota_download(void) {
             goto cleanup_ota;
         }
         total += len;
-        if (total % (64 * 1024) < 4096)
-            ESP_LOGI(TAG, "[OTA] Progress: %d bytes", total);
+        if (total % (64 * 1024) < 4096) {
+            if (content_len > 0)
+                ESP_LOGI(TAG, "[OTA] Download: %d / %lld B (%.1f%%)",
+                         total, content_len, 100.0f * total / content_len);
+            else
+                ESP_LOGI(TAG, "[OTA] Download: %d B", total);
+        }
     }
 
     {

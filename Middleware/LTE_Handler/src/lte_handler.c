@@ -43,6 +43,10 @@
 static const char *TAG = "LTE_HANDLER";
 volatile bool g_not_ppp_to_lan = false;
 
+/* PPP netif captured at IP_EVENT_PPP_GOT_IP — used to re-select DNS once the
+ * IPCP negotiation completes (NETIF_PPP_ERRORNONE). */
+static esp_netif_t *s_ppp_netif = NULL;
+
 ESP_EVENT_DEFINE_BASE(LTE_HANDLER_EVENT);
 
 /**
@@ -173,6 +177,59 @@ static void usb_modem_event(void *arg, esp_event_base_t event_base,
 }
 
 /**
+ * @brief Select and apply DNS servers for the PPP link.
+ *
+ * Many mobile APNs do NOT route to public resolvers (8.8.8.8 / 1.1.1.1): UDP/53
+ * to them is dropped, so name resolution times out (getaddrinfo error 202) for
+ * both this MCU and any NAPT'd client (the LAN MCU during FOTA).  Prefer the
+ * carrier-assigned DNS negotiated over IPCP; only fall back to public DNS when
+ * the carrier did not provide one.  dns_setserver() is used directly because it
+ * always updates the global lwIP table used by getaddrinfo() (esp_netif's
+ * setter is a no-op while the netif is still marked down).
+ */
+static void lte_select_and_apply_dns(esp_netif_t *netif) {
+  if (!netif) {
+    return;
+  }
+
+  esp_netif_dns_info_t c_main = {0}, c_backup = {0};
+  esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN,   &c_main);
+  esp_netif_get_dns_info(netif, ESP_NETIF_DNS_BACKUP, &c_backup);
+
+  uint32_t m = c_main.ip.u_addr.ip4.addr;
+  uint32_t b = c_backup.ip.u_addr.ip4.addr;
+  bool have_m = (m != 0 && m != IPADDR_NONE);
+  bool have_b = (b != 0 && b != IPADDR_NONE);
+
+  ip_addr_t a;
+  a.type = IPADDR_TYPE_V4;
+
+  /* --- Primary DNS --- */
+  if (have_m) {
+    a.u_addr.ip4.addr = m;
+    ESP_LOGI(TAG, "Main DNS: carrier " IPSTR, IP2STR(&c_main.ip.u_addr.ip4));
+  } else {
+    IP4_ADDR(&a.u_addr.ip4, 8, 8, 8, 8);
+    ESP_LOGI(TAG, "Main DNS: carrier absent → fallback 8.8.8.8");
+  }
+  dns_setserver(0, &a);
+
+  /* --- Backup DNS --- */
+  if (have_b) {
+    a.u_addr.ip4.addr = b;
+    ESP_LOGI(TAG, "Backup DNS: carrier " IPSTR, IP2STR(&c_backup.ip.u_addr.ip4));
+  } else if (have_m) {
+    /* Carrier gave only one server — pair it with a public backup. */
+    IP4_ADDR(&a.u_addr.ip4, 8, 8, 4, 4);
+    ESP_LOGI(TAG, "Backup DNS: fallback 8.8.4.4");
+  } else {
+    IP4_ADDR(&a.u_addr.ip4, 1, 1, 1, 1);
+    ESP_LOGI(TAG, "Backup DNS: fallback 1.1.1.1");
+  }
+  dns_setserver(1, &a);
+}
+
+/**
  * @brief IP event handler
  */
 static void on_ip_event(void *arg, esp_event_base_t event_base,
@@ -189,29 +246,10 @@ static void on_ip_event(void *arg, esp_event_base_t event_base,
     ESP_LOGI(TAG, "Netmask : " IPSTR, IP2STR(&event->ip_info.netmask));
     ESP_LOGI(TAG, "Gateway : " IPSTR, IP2STR(&event->ip_info.gw));
 
-    /* CRITICAL: Override DNS using dns_setserver() directly — not via
-     * esp_netif_set_dns_info(), which only updates the global lwIP DNS table
-     * when esp_netif_is_netif_up() is true. During IP_EVENT_PPP_GOT_IP the
-     * netif may not yet be marked "up", so esp_netif_set_dns_info() silently
-     * stores the value in the netif struct but never calls dns_setserver().
-     * Direct dns_setserver() always updates the table used by getaddrinfo(). */
-    ip_addr_t dns_addr;
-    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
-    dns_addr.type = IPADDR_TYPE_V4;
-    dns_setserver(0, &dns_addr);
-    ESP_LOGI(TAG, "Main DNS set to 8.8.8.8");
-
-    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
-    dns_setserver(1, &dns_addr);
-    ESP_LOGI(TAG, "Backup DNS set to 1.1.1.1");
-
-    /* Also update esp_netif DNS cache so info is consistent */
-    esp_netif_dns_info_t pub_dns;
-    pub_dns.ip.type = ESP_IPADDR_TYPE_V4;
-    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
-    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &pub_dns);
-    pub_dns.ip.u_addr.ip4.addr = esp_ip4addr_aton("1.1.1.1");
-    esp_netif_set_dns_info(netif, ESP_NETIF_DNS_BACKUP, &pub_dns);
+    /* Prefer carrier-assigned DNS (IPCP); fall back to public DNS only when
+     * the carrier did not provide one.  See lte_select_and_apply_dns(). */
+    s_ppp_netif = netif;
+    lte_select_and_apply_dns(netif);
 
     if (ctx) {
       snprintf(ctx->network_info.ip, sizeof(ctx->network_info.ip), IPSTR,
@@ -266,17 +304,12 @@ static void on_ppp_changed(void *arg, esp_event_base_t event_base,
   }
 
   /* NETIF_PPP_ERRORNONE (event_id == 0) fires AFTER the PPP stack finishes
-   * IPCP negotiation and may re-apply the carrier's DNS servers (overwriting
-   * our dns_setserver() from on_ip_event). Re-apply 8.8.8.8 here to ensure
-   * public DNS is always the final value written to the lwIP DNS table.  */
+   * IPCP negotiation — the point where the carrier's DNS servers are
+   * guaranteed to be present (and may have just overwritten the lwIP table).
+   * Re-run the carrier-preferred selection so the final DNS is correct. */
   if (event_id == 0) {
-    ip_addr_t dns_addr;
-    IP4_ADDR(&dns_addr.u_addr.ip4, 8, 8, 8, 8);
-    dns_addr.type = IPADDR_TYPE_V4;
-    dns_setserver(0, &dns_addr);
-    IP4_ADDR(&dns_addr.u_addr.ip4, 1, 1, 1, 1);
-    dns_setserver(1, &dns_addr);
-    ESP_LOGI(TAG, "DNS re-confirmed after PPP ready: 8.8.8.8 / 1.1.1.1");
+    lte_select_and_apply_dns(s_ppp_netif);
+    ESP_LOGI(TAG, "DNS re-confirmed after PPP ready");
   }
 }
 

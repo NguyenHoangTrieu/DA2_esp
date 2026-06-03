@@ -1287,7 +1287,19 @@ static void config_handler_task(void *arg) {
           if (lan_cmd->length >= 4 &&
               strncmp(lan_cmd->command, "CFFW", 4) == 0) {
             if (!fota_ap_is_running()) {
-              fota_ap_start();
+              esp_err_t ap_ret = fota_ap_start();
+              if (ap_ret != ESP_OK || !fota_ap_is_running()) {
+                /* AP did not come up (e.g. esp_wifi_init NO_MEM in LTE mode).
+                 * Do NOT forward the trigger — the LAN MCU would only fail to
+                 * associate and reboot.  Report the failure instead. */
+                ESP_LOGE(TAG,
+                         "[FOTA] FOTA AP failed to start (%s) — aborting LAN FOTA",
+                         esp_err_to_name(ap_ret));
+                snprintf(result_message, sizeof(result_message),
+                         "ML:FAIL:FOTA_AP");
+                free(lan_cmd);
+                break;
+              }
               vTaskDelay(pdMS_TO_TICKS(500));
             }
             is_fota = true;

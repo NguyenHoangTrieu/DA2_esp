@@ -17,6 +17,9 @@
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
+#include "mqtt_handler.h"
+#include "web_config_handler.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -47,7 +50,7 @@ static void fota_ap_started_cb(void *arg, esp_event_base_t base,
  *  Public API
  * ======================================================================== */
 
-esp_err_t fota_ap_start(void)
+static esp_err_t fota_ap_start_impl(void)
 {
     if (s_fota_ap_running) {
         ESP_LOGI(TAG, "FOTA AP already running — no-op");
@@ -119,9 +122,31 @@ esp_err_t fota_ap_start(void)
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
         s_was_apsta = true;
     } else if (!wifi_already_up) {
-        /* WiFi was not running (LTE / Ethernet case) — bring it up as AP. */
-        ESP_LOGI(TAG, "WiFi idle (LTE/Ethernet) → starting WiFi in AP mode");
+        /* WiFi was not running (LTE / Ethernet case) — bring it up as AP.
+         *
+         * esp_wifi_init() needs a contiguous block of internal, DMA-capable
+         * RAM for its static RX buffer pool. In LTE mode this code runs late,
+         * with the MQTT client (+TLS), the web config portal and the USB/PPP
+         * modem stack all holding internal RAM — esp_wifi_init() then fails
+         * with ESP_ERR_NO_MEM ("Expected to init 10 rx buffer, actual is 0")
+         * and the FOTA AP never comes up, so the LAN MCU cannot associate.
+         *
+         * Two mitigations: (a) free the biggest internal-RAM consumers first,
+         * and (b) ask the driver for a much smaller buffer pool — the FOTA AP
+         * serves a single client at modest throughput, so the default 10
+         * static RX buffers (~16 KB internal) are overkill. */
+        ESP_LOGI(TAG, "WiFi idle (LTE/Ethernet) → freeing internal heap for AP");
+        mqtt_handler_task_stop();   /* releases TLS buffers — largest win */
+        web_config_handler_stop();  /* releases httpd internal RAM */
+
+        size_t int_largest = heap_caps_get_largest_free_block(
+                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        ESP_LOGI(TAG, "WiFi idle (LTE/Ethernet) → starting WiFi in AP mode "
+                      "(internal largest free=%u B)", (unsigned)int_largest);
+
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        cfg.static_rx_buf_num  = 4;   /* 10 → 4  (~16 KB → ~6.4 KB internal) */
+        cfg.dynamic_rx_buf_num = 16;  /* 32 → 16 */
         esp_err_t init_ret = esp_wifi_init(&cfg);
         if (init_ret != ESP_OK && init_ret != ESP_ERR_WIFI_INIT_STATE) {
             ESP_LOGE(TAG, "esp_wifi_init failed: %s", esp_err_to_name(init_ret));
@@ -199,6 +224,56 @@ esp_err_t fota_ap_start(void)
              FOTA_AP_CHANNEL,
              (napt_ret == ESP_OK) ? "OK" : "FAIL");
     return ESP_OK;
+}
+
+/* ------------------------------------------------------------------------
+ * fota_ap_start() runs heavy work — stopping MQTT (esp-tls teardown),
+ * stopping the web portal (httpd), esp_wifi_init() + esp_netif + NAPT.
+ * Its callers (config_handler, mcu_lan uplink) run on small 4 KB internal
+ * stacks, so doing this work on the caller's stack overflows it.  Offload
+ * the bringup to a dedicated, generously-sized worker task and block until
+ * it finishes, returning its result — independent of the caller's stack.
+ * ---------------------------------------------------------------------- */
+typedef struct {
+    esp_err_t          result;
+    SemaphoreHandle_t  done;
+} fota_ap_worker_ctx_t;
+
+static void fota_ap_start_worker(void *arg)
+{
+    fota_ap_worker_ctx_t *ctx = (fota_ap_worker_ctx_t *)arg;
+    ctx->result = fota_ap_start_impl();
+    xSemaphoreGive(ctx->done);
+    vTaskDelete(NULL);
+}
+
+esp_err_t fota_ap_start(void)
+{
+    /* Fast path: nothing heavy to do, avoid spawning a task. */
+    if (s_fota_ap_running) {
+        return fota_ap_start_impl();
+    }
+
+    fota_ap_worker_ctx_t ctx = { .result = ESP_FAIL, .done = xSemaphoreCreateBinary() };
+    if (!ctx.done) {
+        ESP_LOGE(TAG, "fota_ap_start: failed to create semaphore");
+        return ESP_ERR_NO_MEM;
+    }
+
+    /* 8 KB internal stack — WiFi/netif/TLS-teardown call depth needs the
+     * headroom.  The task is short-lived and self-deletes, so this RAM is
+     * reclaimed as soon as bringup completes. */
+    BaseType_t ok = xTaskCreate(fota_ap_start_worker, "fota_ap_init", 8192,
+                                &ctx, 5, NULL);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "fota_ap_start: failed to create worker task");
+        vSemaphoreDelete(ctx.done);
+        return ESP_ERR_NO_MEM;
+    }
+
+    xSemaphoreTake(ctx.done, portMAX_DELAY);
+    vSemaphoreDelete(ctx.done);
+    return ctx.result;
 }
 
 /* ---------------------------------------------------------------------- */

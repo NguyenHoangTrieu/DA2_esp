@@ -3,6 +3,8 @@
  * @brief MCU LAN Handler - Uplink Processor Task (SPI Slave, Priority 6)
  */
 #include "DA2_esp.h"
+#include "bench_latency_wan.h" /* §5 e2e latency dispatcher */
+#include "bench_throughput_wan.h"
 #include "coap_handler.h"
 #include "config_handler.h"
 #include "driver/gpio.h"
@@ -21,11 +23,10 @@
 #include "mcu_lan_handler.h"
 #include "mqtt_handler.h"
 #include "pcf8563_rtc.h"
-#include "bench_throughput_wan.h"
-#include "bench_latency_wan.h"  /* §5 e2e latency dispatcher */
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+
 
 static const char *TAG = "MCU_LAN_UL";
 
@@ -85,10 +86,13 @@ static bool is_config_result_payload(const char *payload) {
     return false;
   }
 
-  return strncmp(payload, "CFBL:", 5) == 0 || strncmp(payload, "CFLR:", 5) == 0 ||
-         strncmp(payload, "CFZB:", 5) == 0 || strncmp(payload, "CFRS:", 5) == 0 ||
+  return strncmp(payload, "CFBL:", 5) == 0 ||
+         strncmp(payload, "CFLR:", 5) == 0 ||
+         strncmp(payload, "CFZB:", 5) == 0 ||
+         strncmp(payload, "CFRS:", 5) == 0 ||
          strncmp(payload, "CFBG:", 5) == 0 ||
-         strncmp(payload, "BR:JSON:", 8) == 0 || strncmp(payload, "LR:JSON:", 8) == 0;
+         strncmp(payload, "BR:JSON:", 8) == 0 ||
+         strncmp(payload, "LR:JSON:", 8) == 0;
 }
 static TickType_t g_lan_fota_wait_start_tick =
     0; // Track when LAN FOTA trigger was sent
@@ -158,7 +162,8 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
       g_uplink_task_handle = xTaskCreateStaticPinnedToCore(
           uplink_processor_task, "lan_uplink", 6144, NULL, 7, uplink_stack,
           uplink_tcb, 1);
-      ESP_LOGI(TAG, "Uplink processor task created (PSRAM stack, APP_CPU, prio 7)");
+      ESP_LOGI(TAG,
+               "Uplink processor task created (PSRAM stack, APP_CPU, prio 7)");
     } else {
       ESP_LOGE(TAG, "Failed to allocate uplink task in PSRAM");
       vSemaphoreDelete(g_rtc_cache.mutex);
@@ -195,7 +200,8 @@ esp_err_t mcu_lan_handler_start_uplink_task(void) {
     }
   }
 
-  ESP_LOGI(TAG, "Uplink processor task started (Priority 7, APP_CPU, stack 6KB)");
+  ESP_LOGI(TAG,
+           "Uplink processor task started (Priority 7, APP_CPU, stack 6KB)");
   return ESP_OK;
 }
 
@@ -269,14 +275,21 @@ static void uplink_processor_task(void *pvParameters) {
         g_prev_internet_status == INTERNET_STATUS_OFFLINE) {
       ESP_LOGI(TAG,
                "[FOTA] Internet just came online, triggering pending FOTA");
-      if (!fota_ap_is_running()) {
-        fota_ap_start();
+      esp_err_t ap_ret = fota_ap_is_running() ? ESP_OK : fota_ap_start();
+      if (ap_ret == ESP_OK && fota_ap_is_running()) {
         vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
+        send_fota_trigger_to_lan();
+        g_waiting_for_lan_update = true;
+        g_lan_fota_wait_start_tick = xTaskGetTickCount(); // Start timeout timer
+        g_fota_pending_internet = false;                  // served
+      } else {
+        /* AP did not come up (e.g. esp_wifi_init NO_MEM) — don't trigger the
+         * LAN, it would only fail to associate and reboot.  Leave the request
+         * pending so it retries on the next offline→online transition. */
+        ESP_LOGE(TAG,
+                 "[FOTA] FOTA AP failed to start (%s) — keeping FOTA pending",
+                 esp_err_to_name(ap_ret));
       }
-      send_fota_trigger_to_lan();
-      g_waiting_for_lan_update = true;
-      g_lan_fota_wait_start_tick = xTaskGetTickCount(); // Start timeout timer
-      g_fota_pending_internet = false;
     }
     g_prev_internet_status = g_internet_status;
 
@@ -441,10 +454,19 @@ static void trigger_lan_fota_if_needed(uint32_t received_lan_version) {
 
   // Internet is online - start FOTA AP and trigger LAN MCU
   ESP_LOGI(TAG, "[FOTA] Internet online, starting FOTA WiFi AP for LAN");
-  if (!fota_ap_is_running()) {
-    fota_ap_start();
-    vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
+  esp_err_t ap_ret = fota_ap_is_running() ? ESP_OK : fota_ap_start();
+  if (ap_ret != ESP_OK || !fota_ap_is_running()) {
+    /* AP did not come up (e.g. esp_wifi_init NO_MEM in LTE mode).  Don't
+     * trigger the LAN — it would only fail to associate and reboot.  Mark the
+     * FOTA pending so it retries when internet next transitions online. */
+    ESP_LOGE(TAG,
+             "[FOTA] FOTA AP failed to start (%s) — marking FOTA pending",
+             esp_err_to_name(ap_ret));
+    g_fota_pending_internet = true;
+    g_pending_lan_version_for_fota = received_lan_version;
+    return;
   }
+  vTaskDelay(pdMS_TO_TICKS(500)); /* give AP time to start */
 
   // Trigger LAN FOTA via DQ
   send_fota_trigger_to_lan();
@@ -528,7 +550,7 @@ static void process_handshake(const uint8_t *payload, uint16_t length) {
       ((uint32_t)payload[3] << 24) | ((uint32_t)payload[4] << 16) |
       ((uint32_t)payload[5] << 8) | ((uint32_t)payload[6]);
 
-  ESP_LOGI(TAG, "Mid-operation handshake: LAN FW v%u.%u.%u.%u",
+  ESP_LOGD(TAG, "Mid-operation handshake: LAN FW v%u.%u.%u.%u",
            FW_VERSION_MAJOR(lan_fw_version), FW_VERSION_MINOR(lan_fw_version),
            FW_VERSION_PATCH(lan_fw_version), FW_VERSION_BUILD(lan_fw_version));
 
@@ -612,7 +634,8 @@ static void process_data_from_lan(const uint8_t *payload, uint16_t length) {
      * without polling for ACK, so loading one here would waste the slave's
      * tx_buffer slot and serialise the loop on a useless mutex. Just count
      * bytes and return. */
-    bench_throughput_wan_count_rx(data_length > 19u ? data_length - 19u : data_length);
+    bench_throughput_wan_count_rx(data_length > 19u ? data_length - 19u
+                                                    : data_length);
     ESP_LOGD(TAG, "BNC frame: %u bytes counted (bench RX)", data_length);
     return;
   }
@@ -832,8 +855,8 @@ static void process_data_query(void) {
     config_request[3] = 'Q';
 
     // Load CFCQ into TX
-    lan_comm_status_t status =
-        lan_comm_load_tx_data(g_lan_handle, config_request, sizeof(config_request));
+    lan_comm_status_t status = lan_comm_load_tx_data(
+        g_lan_handle, config_request, sizeof(config_request));
     if (status == LAN_COMM_OK) {
       g_config_req_state = CONFIG_REQ_STATE_WAIT_CONFIG_RESP;
       served = true;
@@ -848,7 +871,7 @@ static void process_data_query(void) {
   if (!served && !blocked && g_config_cache_has_config) {
     ESP_LOGI(TAG, "Sending cached config/FOTA to LAN MCU");
     bool cache_was_fota =
-        g_fota_request_pending;       /* g_fota_request_pending is only
+        g_fota_request_pending; /* g_fota_request_pending is only
 set alongside is_fota=true in the config cache, so it's a safe proxy */
     served = downlink_handle_config_request();
     blocked = !served;
@@ -864,7 +887,8 @@ set alongside is_fota=true in the config cache, so it's a safe proxy */
           TAG,
           "[FOTA] Config-cache FOTA delivered to LAN — waiting for reconnect");
     } else if (!served) {
-      ESP_LOGW(TAG, "Cached config/FOTA is still pending after TX load failure");
+      ESP_LOGW(TAG,
+               "Cached config/FOTA is still pending after TX load failure");
     }
   }
 
@@ -879,7 +903,9 @@ set alongside is_fota=true in the config cache, so it's a safe proxy */
     // Clear GPIO handshake once something has been served
     clear_data_ready();
   } else if (blocked) {
-    ESP_LOGW(TAG, "DQ received but a pending WAN→LAN payload could not be loaded yet");
+    ESP_LOGW(
+        TAG,
+        "DQ received but a pending WAN→LAN payload could not be loaded yet");
   } else {
     ESP_LOGD(TAG, "DQ received but nothing pending to send");
   }
