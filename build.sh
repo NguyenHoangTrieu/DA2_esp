@@ -3,7 +3,7 @@ set -e  # Exit on first error
 
 # 1. Export ESP-IDF environment variables (ensure correct version and toolchain)
 echo "[build.sh] Sourcing ESP-IDF environment..."
-source ~/esp-idf/export.sh
+source ~/esp/esp-idf/export.sh
 
 # 2. (Optional) remove old build directory for clean build
 # idf.py fullclean

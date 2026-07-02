@@ -27,3 +27,4 @@ dependencies:
   espressif/w5500: ^1.0.1
   espressif/cjson: ^1.7.19
   espressif/mdns: '*'
+  espressif/mqtt: '*'
